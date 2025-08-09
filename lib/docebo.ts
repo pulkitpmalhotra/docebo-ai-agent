@@ -34,6 +34,11 @@ export class DoceboClient {
     }
 
     const data = await response.json();
+    
+    if (!data.access_token) {
+      throw new Error('No access token received from Docebo API');
+    }
+    
     this.accessToken = data.access_token;
     this.tokenExpiry = new Date(Date.now() + (data.expires_in * 1000));
     
