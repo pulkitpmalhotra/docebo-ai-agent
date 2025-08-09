@@ -1,17 +1,50 @@
+import { MockDoceboClient } from './docebo-mock';
+
 export class DoceboClient {
   private baseUrl: string;
   private clientId: string;
   private clientSecret: string;
   private accessToken?: string;
   private tokenExpiry?: Date;
+  private useMock: boolean;
+  private mockClient: MockDoceboClient;
 
   constructor() {
     this.baseUrl = `https://${process.env.DOCEBO_DOMAIN}`;
     this.clientId = process.env.DOCEBO_CLIENT_ID!;
     this.clientSecret = process.env.DOCEBO_CLIENT_SECRET!;
+    
+    // Force mock mode for sandbox or when explicitly set
+    this.useMock = true; // Always use mock for now
+    
+    console.log('🎭 Docebo Client initialized in MOCK mode');
+    this.mockClient = new MockDoceboClient();
   }
 
+  async getUsers(params: { limit?: number; search?: string } = {}) {
+    return this.mockClient.getUsers(params);
+  }
+
+  async getCourses(params: { limit?: number; search?: string } = {}) {
+    return this.mockClient.getCourses(params);
+  }
+
+  async getEnrollments(userId: number) {
+    return this.mockClient.getEnrollments(userId);
+  }
+
+  async healthCheck() {
+    return this.mockClient.healthCheck();
+  }
+
+  async enrollUser(userId: number, courseId: number, dry_run: boolean = true) {
+    return this.mockClient.enrollUser(userId, courseId, dry_run);
+  }
+
+  // Keep the real API methods for future use
   private async getAccessToken(): Promise<string> {
+    if (this.useMock) return 'mock-token';
+    
     if (this.accessToken && this.tokenExpiry && this.tokenExpiry > new Date()) {
       return this.accessToken;
     }
@@ -64,48 +97,5 @@ export class DoceboClient {
     }
 
     return response.json();
-  }
-
-  // Safe read operations
-  async getUsers(params: { limit?: number; search?: string } = {}) {
-    const queryParams = new URLSearchParams();
-    if (params.limit) queryParams.append('limit', params.limit.toString());
-    if (params.search) queryParams.append('search', params.search);
-    
-    return this.apiCall(`/manage/v1/users?${queryParams}`);
-  }
-
-  async getCourses(params: { limit?: number; search?: string } = {}) {
-    const queryParams = new URLSearchParams();
-    if (params.limit) queryParams.append('limit', params.limit.toString());
-    if (params.search) queryParams.append('search', params.search);
-    
-    return this.apiCall(`/learn/v1/courses?${queryParams}`);
-  }
-
-  async getEnrollments(userId: number) {
-    return this.apiCall(`/learn/v1/enrollments?user_id=${userId}`);
-  }
-
-  // Better health check using a simple endpoint
-  async healthCheck() {
-    try {
-      // Try the users endpoint with a small limit instead
-      const result = await this.apiCall('/manage/v1/users?limit=1');
-      return { 
-        status: 'healthy', 
-        timestamp: new Date(),
-        test_endpoint: '/manage/v1/users',
-        users_available: result.data?.length || 0
-      };
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      return { 
-        status: 'unhealthy', 
-        error: errorMessage, 
-        timestamp: new Date(),
-        attempted_endpoint: '/manage/v1/users'
-      };
-    }
   }
 }
