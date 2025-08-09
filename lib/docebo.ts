@@ -12,10 +12,12 @@ export class DoceboClient {
   }
 
   private async getAccessToken(): Promise<string> {
+    // Return existing token if still valid
     if (this.accessToken && this.tokenExpiry && this.tokenExpiry > new Date()) {
       return this.accessToken;
     }
 
+    // Get new token
     const response = await fetch(`${this.baseUrl}/oauth2/token`, {
       method: 'POST',
       headers: {
@@ -35,14 +37,16 @@ export class DoceboClient {
 
     const data = await response.json();
     
-    if (!data.access_token) {
-      throw new Error('No access token received from Docebo API');
+    if (!data.access_token || typeof data.access_token !== 'string') {
+      throw new Error('Invalid access token received from Docebo API');
     }
     
+    // Store the token and expiry
     this.accessToken = data.access_token;
     this.tokenExpiry = new Date(Date.now() + (data.expires_in * 1000));
     
-    return this.accessToken;
+    // Return the token we just set (now guaranteed to be a string)
+    return data.access_token;
   }
 
   private async apiCall(endpoint: string, method: string = 'GET', body?: any) {
