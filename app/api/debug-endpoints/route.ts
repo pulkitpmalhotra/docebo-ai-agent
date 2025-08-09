@@ -1,5 +1,14 @@
 import { NextResponse } from 'next/server';
 
+interface EndpointTestResult {
+  status: number | string;
+  statusText?: string;
+  headers?: Record<string, string>;
+  body?: any;
+  success: boolean;
+  error?: string;
+}
+
 export async function GET() {
   try {
     // Get auth token first
@@ -32,7 +41,7 @@ export async function GET() {
       '/learn/v1/learning-plans'
     ];
 
-    const results = {};
+    const results: Record<string, EndpointTestResult> = {};
 
     for (const endpoint of endpointsToTest) {
       try {
@@ -49,11 +58,18 @@ export async function GET() {
 
         const responseText = await response.text();
         
+        let parsedBody;
+        try {
+          parsedBody = response.status < 300 ? JSON.parse(responseText) : responseText;
+        } catch {
+          parsedBody = responseText;
+        }
+        
         results[endpoint] = {
           status: response.status,
           statusText: response.statusText,
           headers: Object.fromEntries(response.headers.entries()),
-          body: response.status < 300 ? JSON.parse(responseText) : responseText,
+          body: parsedBody,
           success: response.status < 300
         };
 
@@ -72,6 +88,11 @@ export async function GET() {
       token_received: !!token,
       base_url: baseUrl,
       endpoint_tests: results,
+      summary: {
+        total_endpoints: endpointsToTest.length,
+        successful_endpoints: Object.values(results).filter(r => r.success).length,
+        failed_endpoints: Object.values(results).filter(r => !r.success).length
+      },
       timestamp: new Date().toISOString()
     });
 
