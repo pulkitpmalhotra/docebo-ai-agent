@@ -15,28 +15,33 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log('Processing user message:', message);
+    console.log('=== CHAT API START ===');
+    console.log('User message:', JSON.stringify(message));
     
-    // Process the user's message with Gemini AI
+    // Process the user's message with AI
     const action = await processUserQuery(message);
-    console.log('AI processed action:', action);
+    console.log('Processed action:', JSON.stringify(action));
     
     let response: string;
 
     switch (action.intent) {
       case 'search_users':
+        console.log('Searching users with:', action.entities);
         const users = await docebo.getUsers({
           search: action.entities.query,
           limit: action.entities.limit || 5,
         });
+        console.log('Users found:', users.data?.length || 0);
         response = formatUsersResponse(users, action.entities.query);
         break;
 
       case 'search_courses':
+        console.log('Searching courses with:', action.entities);
         const courses = await docebo.getCourses({
           search: action.entities.query,
           limit: action.entities.limit || 5,
         });
+        console.log('Courses found:', courses.data?.length || 0);
         response = formatCoursesResponse(courses, action.entities.query);
         break;
 
@@ -60,14 +65,18 @@ export async function POST(request: NextRequest) {
         response = "I'm not sure how to help with that. Try asking me to:\n\n• Find users or courses\n• Check someone's enrollments\n• Enroll users in courses\n• Get help with Docebo features";
     }
 
+    console.log('Final response length:', response.length);
+    console.log('=== CHAT API END ===');
+
     return NextResponse.json({
       response,
       intent: action.intent,
+      entities: action.entities,
       timestamp: new Date().toISOString()
     });
 
   } catch (error) {
-    console.error('Chat API error:', error);
+    console.error('=== CHAT API ERROR ===', error);
     
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     
@@ -79,8 +88,11 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Helper functions
+// Helper functions remain the same...
 function formatUsersResponse(users: any, searchQuery: string): string {
+  console.log('Formatting users response for query:', searchQuery);
+  console.log('Users data:', users.data);
+  
   if (!users.data || users.data.length === 0) {
     return `No users found matching "${searchQuery}". Try a different search term or check the spelling.`;
   }
@@ -93,6 +105,9 @@ function formatUsersResponse(users: any, searchQuery: string): string {
 }
 
 function formatCoursesResponse(courses: any, searchQuery: string): string {
+  console.log('Formatting courses response for query:', searchQuery);
+  console.log('Courses data:', courses.data);
+  
   if (!courses.data || courses.data.length === 0) {
     return `No courses found matching "${searchQuery}". Try a different search term or browse available categories.`;
   }
@@ -106,7 +121,6 @@ function formatCoursesResponse(courses: any, searchQuery: string): string {
 
 async function handleUserEnrollments(userEmail: string): Promise<string> {
   try {
-    // First find the user
     const users = await docebo.getUsers({ search: userEmail });
     
     if (!users.data || users.data.length === 0) {
@@ -134,7 +148,6 @@ async function handleUserEnrollments(userEmail: string): Promise<string> {
 }
 
 async function handleEnrollmentRequest(entities: { user_email: string; course_name: string }): Promise<string> {
-  // This will create an approval request (to be implemented next)
   return `🔐 **Enrollment Request Created**
 
 I've created a request to enroll **${entities.user_email}** in **${entities.course_name}**.
