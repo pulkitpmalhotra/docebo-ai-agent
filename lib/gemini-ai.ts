@@ -202,14 +202,18 @@ function getImprovedFallback(query: string): AIAction {
   }
   
   // Statistics patterns
-  if (queryLower.includes('stat') || queryLower.includes('enrollment') && 
-      !emailMatch || queryLower.includes('overview') || queryLower.includes('report')) {
+ if (queryLower.includes('statistic') || queryLower.includes('stats') || 
+      (queryLower.includes('enrollment') && (queryLower.includes('show') || queryLower.includes('statistic'))) ||
+      queryLower.includes('overview') || queryLower.includes('report') ||
+      queryLower.includes('analytics') || queryLower.includes('dashboard')) {
     
     let type: 'overview' | 'enrollment' | 'course' | 'user' = 'overview';
     
     if (queryLower.includes('enrollment')) type = 'enrollment';
-    else if (queryLower.includes('course')) type = 'course';
-    else if (queryLower.includes('user')) type = 'user';
+    else if (queryLower.includes('course') && !queryLower.includes('show me')) type = 'course';
+    else if (queryLower.includes('user') && !queryLower.includes('find')) type = 'user';
+    
+    console.log('Statistics search detected, type:', type);
     
     return {
       intent: 'get_stats',
