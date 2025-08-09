@@ -1,10 +1,8 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { z } from 'zod';
 
-// Initialize Gemini
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GEMINI_API_KEY!);
 
-// Define what actions our AI can perform
 const ActionSchema = z.discriminatedUnion('intent', [
   z.object({
     intent: z.literal('search_users'),
@@ -54,118 +52,162 @@ const ActionSchema = z.discriminatedUnion('intent', [
 type AIAction = z.infer<typeof ActionSchema>;
 
 export async function processUserQuery(query: string): Promise<AIAction> {
-  const model = genAI.getGenerativeModel({ 
-    model: 'gemini-1.5-flash',
-    generationConfig: {
-      temperature: 0.1,
-      topK: 1,
-      topP: 0.8,
-      maxOutputTokens: 1024,
-    },
-  });
-
-  const systemPrompt = `You are an intelligent assistant for Docebo LMS administrators. Your job is to understand user requests and convert them into structured actions.
-
-AVAILABLE ACTIONS:
-1. search_users - Find users by name, email, or department
-2. search_courses - Find courses by name or category  
-3. get_user_enrollments - Get enrollment details for a specific user
-4. enroll_user - Enroll a user in a course (requires approval)
-5. get_help - Provide help about Docebo features
-6. get_stats - Get statistics and analytics
-
-IMPORTANT RULES:
-- ALWAYS respond with valid JSON matching the schema
-- Any write operations (enroll_user) must include "requires_approval": true
-- Extract specific entities from user requests
-- If request is unclear, choose the most likely intent
-- For user searches, look for names, emails, or departments
-- For course searches, look for course names or topics
-
-EXAMPLES:
-User: "Find users named John" 
-Response: {"intent": "search_users", "entities": {"query": "John"}}
-
-User: "Show me Python courses"
-Response: {"intent": "search_courses", "entities": {"query": "Python"}}
-
-User: "What are jane@company.com's enrollments?"
-Response: {"intent": "get_user_enrollments", "entities": {"user_email": "jane@company.com"}}
-
-User: "Enroll sarah@company.com in Excel training"
-Response: {"intent": "enroll_user", "entities": {"user_email": "sarah@company.com", "course_name": "Excel training"}, "requires_approval": true}
-
-User: "Help me understand learning paths"
-Response: {"intent": "get_help", "entities": {"topic": "learning paths"}}
-
-User: "Show me enrollment statistics"
-Response: {"intent": "get_stats", "entities": {"type": "enrollment"}}
-
-Now process this user request: "${query}"
-
-Respond with ONLY the JSON:`;
-
+  // First try to process with simple pattern matching as fallback
+  const fallbackAction = getSimpleFallback(query);
+  
   try {
-    const result = await model.generateContent(systemPrompt);
+    const model = genAI.getGenerativeModel({ 
+      model: 'gemini-1.5-flash',
+      generationConfig: {
+        temperature: 0.0,
+        topK: 1,
+        topP: 0.1,
+        maxOutputTokens: 500,
+      },
+    });
+
+    const prompt = `You are a JSON converter for Docebo LMS commands. Convert the user query to JSON ONLY.
+
+Available intents: search_users, search_courses, get_user_enrollments, enroll_user, get_help, get_stats
+
+Examples:
+Input: "Find users named John"
+Output: {"intent": "search_users", "entities": {"query": "John"}}
+
+Input: "Show me Python courses"  
+Output: {"intent": "search_courses", "entities": {"query": "Python"}}
+
+Input: "What are jane@company.com's enrollments?"
+Output: {"intent": "get_user_enrollments", "entities": {"user_email": "jane@company.com"}}
+
+Input: "Enroll sarah@company.com in Excel training"
+Output: {"intent": "enroll_user", "entities": {"user_email": "sarah@company.com", "course_name": "Excel training"}, "requires_approval": true}
+
+Convert this query to JSON: "${query}"
+
+JSON:`;
+
+    const result = await model.generateContent(prompt);
     const response = await result.response;
-    const text = response.text();
+    const text = response.text().trim();
     
-    // Clean the response (remove markdown formatting if present)
-    const cleanJson = text.replace(/```json\n?|\n?```/g, '').trim();
+    console.log('Raw Gemini response:', JSON.stringify(text));
     
-    console.log('Raw Gemini response:', text);
-    console.log('Cleaned JSON:', cleanJson);
+    // Clean and extract JSON
+    let jsonStr = text;
     
-    const parsed = JSON.parse(cleanJson);
+    // Remove markdown formatting
+    jsonStr = jsonStr.replace(/```json\n?|\n?```/g, '');
+    jsonStr = jsonStr.replace(/```\n?|\n?```/g, '');
+    
+    // Find JSON object in the response
+    const jsonMatch = jsonStr.match(/\{[^}]*\}/);
+    if (jsonMatch) {
+      jsonStr = jsonMatch[0];
+    }
+    
+    console.log('Cleaned JSON string:', JSON.stringify(jsonStr));
+    
+    const parsed = JSON.parse(jsonStr);
+    console.log('Parsed object:', parsed);
+    
     return ActionSchema.parse(parsed);
+    
   } catch (error) {
-    console.error('Gemini processing error:', error);
+    console.error('Gemini processing failed, using fallback:', error);
+    return fallbackAction;
+  }
+}
+
+function getSimpleFallback(query: string): AIAction {
+  const queryLower = query.toLowerCase();
+  
+  // Extract email if present
+  const emailMatch = query.match(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/);
+  
+  if (emailMatch && queryLower.includes('enroll')) {
+    // Extract course name after "in" or "into"
+    const courseMatch = query.match(/\b(?:in|into)\s+(.+)$/i);
+    const courseName = courseMatch ? courseMatch[1].trim() : 'course';
     
-    // Fallback: try to extract intent from the query manually
-    const queryLower = query.toLowerCase();
-    
-    if (queryLower.includes('find') && queryLower.includes('user')) {
-      return {
-        intent: 'search_users',
-        entities: { query: query.replace(/find|user|users/gi, '').trim() }
-      };
-    }
-    
-    if (queryLower.includes('course') || queryLower.includes('training')) {
-      return {
-        intent: 'search_courses', 
-        entities: { query: query.replace(/show|me|course|courses/gi, '').trim() }
-      };
-    }
-    
-    // Default to help
+    return {
+      intent: 'enroll_user',
+      entities: {
+        user_email: emailMatch[0],
+        course_name: courseName
+      },
+      requires_approval: true
+    };
+  }
+  
+  if (emailMatch && (queryLower.includes('enrollment') || queryLower.includes('course'))) {
+    return {
+      intent: 'get_user_enrollments',
+      entities: {
+        user_email: emailMatch[0]
+      }
+    };
+  }
+  
+  if (queryLower.includes('find') && queryLower.includes('user')) {
+    const searchTerm = query.replace(/find|user|users|named/gi, '').trim();
+    return {
+      intent: 'search_users',
+      entities: { query: searchTerm || 'all' }
+    };
+  }
+  
+  if (queryLower.includes('course') || queryLower.includes('training') || queryLower.includes('show')) {
+    const searchTerm = query.replace(/show|me|course|courses|training/gi, '').trim();
+    return {
+      intent: 'search_courses',
+      entities: { query: searchTerm || 'all' }
+    };
+  }
+  
+  if (queryLower.includes('help')) {
     return {
       intent: 'get_help',
       entities: { topic: query }
     };
   }
+  
+  if (queryLower.includes('stat') || queryLower.includes('overview')) {
+    return {
+      intent: 'get_stats',
+      entities: { type: 'overview' }
+    };
+  }
+  
+  // Default fallback
+  return {
+    intent: 'get_help',
+    entities: { topic: query }
+  };
 }
 
 export async function generateHelpResponse(topic: string): Promise<string> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+  try {
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
-  const prompt = `You are a Docebo LMS expert. Provide helpful information about: ${topic}
+    const prompt = `Provide helpful information about Docebo LMS topic: ${topic}
 
-Keep your response:
-- Concise but comprehensive (300-500 words)
-- Practical and actionable
-- Include best practices
-- Use bullet points for clarity
-- Professional but friendly tone
+Keep response under 400 words, be practical and actionable.
 
 Topic: ${topic}`;
 
-  try {
     const result = await model.generateContent(prompt);
     const response = await result.response;
     return response.text();
   } catch (error) {
-    console.error('Gemini help response error:', error);
-    return `I'd be happy to help with "${topic}". However, I'm experiencing a technical issue right now. Please try rephrasing your question or contact your administrator for assistance.`;
+    console.error('Help response error:', error);
+    return `I'd be happy to help with "${topic}". Here are some general tips:
+
+- **User Management**: Find and manage user accounts, enrollments, and progress
+- **Course Management**: Create, organize, and monitor training content  
+- **Reporting**: Track completion rates, user activity, and learning outcomes
+- **Administration**: Configure settings, permissions, and integrations
+
+For specific guidance, try asking more detailed questions about what you'd like to accomplish.`;
   }
 }
