@@ -52,8 +52,11 @@ const ActionSchema = z.discriminatedUnion('intent', [
 type AIAction = z.infer<typeof ActionSchema>;
 
 export async function processUserQuery(query: string): Promise<AIAction> {
-  // First try to process with simple pattern matching as fallback
-  const fallbackAction = getSimpleFallback(query);
+  console.log('Processing query:', query);
+  
+  // Use improved simple pattern matching first
+  const simpleResult = getImprovedFallback(query);
+  console.log('Simple fallback result:', simpleResult);
   
   try {
     const model = genAI.getGenerativeModel({ 
@@ -62,28 +65,18 @@ export async function processUserQuery(query: string): Promise<AIAction> {
         temperature: 0.0,
         topK: 1,
         topP: 0.1,
-        maxOutputTokens: 500,
+        maxOutputTokens: 200,
       },
     });
 
-    const prompt = `You are a JSON converter for Docebo LMS commands. Convert the user query to JSON ONLY.
+    const prompt = `Extract intent and entities from this user query. Respond ONLY with valid JSON.
 
-Available intents: search_users, search_courses, get_user_enrollments, enroll_user, get_help, get_stats
+Query: "${query}"
 
 Examples:
-Input: "Find users named John"
-Output: {"intent": "search_users", "entities": {"query": "John"}}
-
-Input: "Show me Python courses"  
-Output: {"intent": "search_courses", "entities": {"query": "Python"}}
-
-Input: "What are jane@company.com's enrollments?"
-Output: {"intent": "get_user_enrollments", "entities": {"user_email": "jane@company.com"}}
-
-Input: "Enroll sarah@company.com in Excel training"
-Output: {"intent": "enroll_user", "entities": {"user_email": "sarah@company.com", "course_name": "Excel training"}, "requires_approval": true}
-
-Convert this query to JSON: "${query}"
+"Find users named John" → {"intent":"search_users","entities":{"query":"John"}}
+"Show me Python courses" → {"intent":"search_courses","entities":{"query":"Python"}}
+"enrollment statistics" → {"intent":"get_stats","entities":{"type":"enrollment"}}
 
 JSON:`;
 
@@ -91,95 +84,160 @@ JSON:`;
     const response = await result.response;
     const text = response.text().trim();
     
-    console.log('Raw Gemini response:', JSON.stringify(text));
+    console.log('Gemini raw response:', text);
     
-    // Clean and extract JSON
-    let jsonStr = text;
+    // Extract JSON from response
+    let jsonStr = text.replace(/```json\n?|\n?```/g, '').replace(/```\n?|\n?```/g, '').trim();
     
-    // Remove markdown formatting
-    jsonStr = jsonStr.replace(/```json\n?|\n?```/g, '');
-    jsonStr = jsonStr.replace(/```\n?|\n?```/g, '');
-    
-    // Find JSON object in the response
+    // Find the JSON object
     const jsonMatch = jsonStr.match(/\{[^}]*\}/);
     if (jsonMatch) {
       jsonStr = jsonMatch[0];
     }
     
-    console.log('Cleaned JSON string:', JSON.stringify(jsonStr));
+    console.log('Extracted JSON:', jsonStr);
     
     const parsed = JSON.parse(jsonStr);
-    console.log('Parsed object:', parsed);
+    const validated = ActionSchema.parse(parsed);
     
-    return ActionSchema.parse(parsed);
+    console.log('Gemini processed successfully:', validated);
+    return validated;
     
   } catch (error) {
-    console.error('Gemini processing failed, using fallback:', error);
-    return fallbackAction;
+    console.error('Gemini failed, using simple fallback:', error);
+    return simpleResult;
   }
 }
 
-function getSimpleFallback(query: string): AIAction {
-  const queryLower = query.toLowerCase();
+function getImprovedFallback(query: string): AIAction {
+  const queryLower = query.toLowerCase().trim();
+  console.log('Processing fallback for:', queryLower);
   
   // Extract email if present
   const emailMatch = query.match(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/);
   
-  if (emailMatch && queryLower.includes('enroll')) {
-    // Extract course name after "in" or "into"
-    const courseMatch = query.match(/\b(?:in|into)\s+(.+)$/i);
-    const courseName = courseMatch ? courseMatch[1].trim() : 'course';
+  if (emailMatch) {
+    if (queryLower.includes('enroll')) {
+      // Extract course name
+      const coursePatterns = [
+        /\b(?:in|into)\s+(.+?)(?:\s|$)/i,
+        /\benroll.*?in\s+(.+?)(?:\s|$)/i,
+        /\b(?:course|training)[\s:]+(.+?)(?:\s|$)/i
+      ];
+      
+      let courseName = 'course';
+      for (const pattern of coursePatterns) {
+        const match = query.match(pattern);
+        if (match && match[1]) {
+          courseName = match[1].trim();
+          break;
+        }
+      }
+      
+      return {
+        intent: 'enroll_user',
+        entities: {
+          user_email: emailMatch[0],
+          course_name: courseName
+        },
+        requires_approval: true
+      };
+    }
+    
+    if (queryLower.includes('enrollment') || queryLower.includes('course')) {
+      return {
+        intent: 'get_user_enrollments',
+        entities: {
+          user_email: emailMatch[0]
+        }
+      };
+    }
+  }
+  
+  // User search patterns
+  if (queryLower.includes('find') && queryLower.includes('user')) {
+    let searchTerm = query
+      .replace(/find/gi, '')
+      .replace(/users?/gi, '')
+      .replace(/named/gi, '')
+      .replace(/called/gi, '')
+      .trim();
+    
+    // Clean up extra spaces
+    searchTerm = searchTerm.replace(/\s+/g, ' ').trim();
+    
+    if (!searchTerm) searchTerm = 'all';
+    
+    console.log('User search term extracted:', searchTerm);
     
     return {
-      intent: 'enroll_user',
-      entities: {
-        user_email: emailMatch[0],
-        course_name: courseName
-      },
-      requires_approval: true
-    };
-  }
-  
-  if (emailMatch && (queryLower.includes('enrollment') || queryLower.includes('course'))) {
-    return {
-      intent: 'get_user_enrollments',
-      entities: {
-        user_email: emailMatch[0]
-      }
-    };
-  }
-  
-  if (queryLower.includes('find') && queryLower.includes('user')) {
-    const searchTerm = query.replace(/find|user|users|named/gi, '').trim();
-    return {
       intent: 'search_users',
-      entities: { query: searchTerm || 'all' }
+      entities: { query: searchTerm }
     };
   }
   
-  if (queryLower.includes('course') || queryLower.includes('training') || queryLower.includes('show')) {
-    const searchTerm = query.replace(/show|me|course|courses|training/gi, '').trim();
+  // Course search patterns
+  if (queryLower.includes('course') || queryLower.includes('training') || 
+      queryLower.includes('show me') || queryLower.includes('python') ||
+      queryLower.includes('javascript') || queryLower.includes('excel')) {
+    
+    let searchTerm = query
+      .replace(/show\s+me/gi, '')
+      .replace(/courses?/gi, '')
+      .replace(/training/gi, '')
+      .replace(/find/gi, '')
+      .trim();
+    
+    // Clean up extra spaces
+    searchTerm = searchTerm.replace(/\s+/g, ' ').trim();
+    
+    if (!searchTerm) searchTerm = 'all';
+    
+    console.log('Course search term extracted:', searchTerm);
+    
     return {
       intent: 'search_courses',
-      entities: { query: searchTerm || 'all' }
+      entities: { query: searchTerm }
     };
   }
   
-  if (queryLower.includes('help')) {
+  // Statistics patterns
+  if (queryLower.includes('stat') || queryLower.includes('enrollment') && 
+      !emailMatch || queryLower.includes('overview') || queryLower.includes('report')) {
+    
+    let type: 'overview' | 'enrollment' | 'course' | 'user' = 'overview';
+    
+    if (queryLower.includes('enrollment')) type = 'enrollment';
+    else if (queryLower.includes('course')) type = 'course';
+    else if (queryLower.includes('user')) type = 'user';
+    
+    return {
+      intent: 'get_stats',
+      entities: { type }
+    };
+  }
+  
+  // Help patterns
+  if (queryLower.includes('help') || queryLower.includes('how') || 
+      queryLower.includes('what is') || queryLower.includes('explain')) {
     return {
       intent: 'get_help',
       entities: { topic: query }
     };
   }
   
-  if (queryLower.includes('stat') || queryLower.includes('overview')) {
+  // Default: treat as course search if it contains recognizable course terms
+  const courseKeywords = ['python', 'javascript', 'excel', 'sales', 'marketing', 'leadership'];
+  const hasKeyword = courseKeywords.some(keyword => queryLower.includes(keyword));
+  
+  if (hasKeyword) {
     return {
-      intent: 'get_stats',
-      entities: { type: 'overview' }
+      intent: 'search_courses',
+      entities: { query: query.trim() }
     };
   }
   
-  // Default fallback
+  // Final fallback
   return {
     intent: 'get_help',
     entities: { topic: query }
@@ -192,9 +250,7 @@ export async function generateHelpResponse(topic: string): Promise<string> {
 
     const prompt = `Provide helpful information about Docebo LMS topic: ${topic}
 
-Keep response under 400 words, be practical and actionable.
-
-Topic: ${topic}`;
+Keep response under 400 words, be practical and actionable.`;
 
     const result = await model.generateContent(prompt);
     const response = await result.response;
