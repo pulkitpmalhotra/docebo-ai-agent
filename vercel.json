@@ -1,7 +1,0 @@
-echo '{
-  "functions": {
-    "app/api/**/*.ts": {
-      "runtime": "@vercel/node"
-    }
-  }
-}' > vercel.json
