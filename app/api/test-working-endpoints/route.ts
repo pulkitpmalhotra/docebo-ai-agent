@@ -24,7 +24,8 @@ export async function GET() {
     // Test the working endpoint with different headers
     const testEndpoint = '/restapi/v1/users';
     
-    const headerVariations = [
+    // Define header variations with proper types
+    const headerVariations: Record<string, string>[] = [
       // Standard API headers
       {
         'Authorization': `Bearer ${token}`,
@@ -53,7 +54,7 @@ export async function GET() {
       }
     ];
 
-    const results = {};
+    const results: Record<string, any> = {};
 
     for (let i = 0; i < headerVariations.length; i++) {
       const headers = headerVariations[i];
@@ -93,14 +94,16 @@ export async function GET() {
 
     // Also test with query parameters
     try {
+      const queryHeaders: Record<string, string> = {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
+      };
+
       const response = await fetch(`${baseUrl}${testEndpoint}?limit=3&format=json`, {
         method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-          'X-Requested-With': 'XMLHttpRequest'
-        }
+        headers: queryHeaders
       });
 
       const responseText = await response.text();
@@ -131,6 +134,7 @@ export async function GET() {
       endpoint_tested: testEndpoint,
       base_url: baseUrl,
       results: results,
+      successful_tests: Object.values(results).filter((r: any) => r.success).length,
       timestamp: new Date().toISOString()
     });
 
