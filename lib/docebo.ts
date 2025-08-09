@@ -12,12 +12,10 @@ export class DoceboClient {
   }
 
   private async getAccessToken(): Promise<string> {
-    // Return existing token if still valid
     if (this.accessToken && this.tokenExpiry && this.tokenExpiry > new Date()) {
       return this.accessToken;
     }
 
-    // Get new token
     const response = await fetch(`${this.baseUrl}/oauth2/token`, {
       method: 'POST',
       headers: {
@@ -41,11 +39,9 @@ export class DoceboClient {
       throw new Error('Invalid access token received from Docebo API');
     }
     
-    // Store the token and expiry
     this.accessToken = data.access_token;
     this.tokenExpiry = new Date(Date.now() + (data.expires_in * 1000));
     
-    // Return the token we just set (now guaranteed to be a string)
     return data.access_token;
   }
 
@@ -91,14 +87,25 @@ export class DoceboClient {
     return this.apiCall(`/learn/v1/enrollments?user_id=${userId}`);
   }
 
-  // Health check for testing
+  // Better health check using a simple endpoint
   async healthCheck() {
     try {
-      await this.apiCall('/manage/v1/user/me');
-      return { status: 'healthy', timestamp: new Date() };
+      // Try the users endpoint with a small limit instead
+      const result = await this.apiCall('/manage/v1/users?limit=1');
+      return { 
+        status: 'healthy', 
+        timestamp: new Date(),
+        test_endpoint: '/manage/v1/users',
+        users_available: result.data?.length || 0
+      };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      return { status: 'unhealthy', error: errorMessage, timestamp: new Date() };
+      return { 
+        status: 'unhealthy', 
+        error: errorMessage, 
+        timestamp: new Date(),
+        attempted_endpoint: '/manage/v1/users'
+      };
     }
   }
 }
