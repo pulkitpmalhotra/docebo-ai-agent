@@ -144,7 +144,8 @@ async function handleCourseSearch(entities: any): Promise<any> {
     const searchResult = await docebo.searchCourses(query, type);
     
     if (!searchResult.found) {
-      if (searchResult.suggestions && Array.isArray(searchResult.suggestions)) {
+      // Check if we have suggestions
+      if (searchResult.suggestions && Array.isArray(searchResult.suggestions) && searchResult.suggestions.length > 0) {
         return {
           found: false,
           suggestions: searchResult.suggestions,
@@ -160,6 +161,7 @@ async function handleCourseSearch(entities: any): Promise<any> {
       };
     }
     
+    // Handle successful search
     const courses = Array.isArray(searchResult.data) ? searchResult.data : [searchResult.data];
     
     return {
