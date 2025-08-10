@@ -129,11 +129,37 @@ async function handleUserStatusCheck(entities: any): Promise<string> {
       return `❌ User "${identifier}" not found. Please check the email, username, or ID.${debugInfo}`;
     }
     
-    // ... rest of the function
+    const user = userStatus.data as any;
+    
+    // Handle different possible field names from Docebo API
+    const email = user.email || 'No email';
+    const firstname = user.firstname || user.first_name || 'Unknown';
+    const lastname = user.lastname || user.last_name || '';
+    const department = user.department || user.field_2 || 'Not specified';
+    const lastLogin = user.last_login || user.last_access_date ? 
+      new Date(user.last_login || user.last_access_date).toLocaleDateString() : 'Never';
+    const registerDate = user.register_date || user.creation_date ? 
+      new Date(user.register_date || user.creation_date).toLocaleDateString() : 'Unknown';
+    const userId = user.id || user.user_id || 'Unknown';
+    const isActive = user.active === true || user.status === 'active' || user.status === '1';
+
+    return `👤 **User Status for ${email}**
+
+- **Name**: ${firstname} ${lastname}
+- **Status**: ${isActive ? '✅ Active' : '❌ Inactive'}
+- **Department**: ${department}
+- **Last Login**: ${lastLogin}
+- **Registration Date**: ${registerDate}
+- **User ID**: ${userId}
+
+${isActive ? '🟢 User account is active and can access training.' : '🔴 User account is inactive. Contact admin to reactivate.'}`;
+
   } catch (error) {
+    console.error(`🎯 handleUserStatusCheck error:`, error);
     return `❌ Error checking user status: ${error instanceof Error ? error.message : 'Unknown error'}`;
   }
 }
+
 async function handleCourseSearch(entities: any): Promise<any> {
   try {
     const query = entities?.query || 'Python';
