@@ -1,4 +1,4 @@
-// lib/docebo-enhanced.ts - Debug version to identify the issue
+// lib/docebo-enhanced.ts - Fixed version
 import { DoceboClient } from './docebo';
 
 interface SearchResult {
@@ -7,117 +7,133 @@ interface SearchResult {
   message?: string;
   error?: string;
   suggestions?: any[];
-  debug?: any; // Add debug info
+  debug?: any;
 }
 
 export class EnhancedDoceboClient extends DoceboClient {
   
-  // User Management with enhanced debugging
   async getUserStatus(identifier: string, type: 'email' | 'username' | 'id'): Promise<SearchResult> {
+    console.log(`🔍 EnhancedDoceboClient.getUserStatus called: ${identifier} (${type})`);
+    
     try {
-      console.log(`🔍 Searching for user: ${identifier} (${type})`);
-      
       if (type === 'id') {
-        const user = await this.getUserById(parseInt(identifier));
+        console.log('📋 Searching by ID...');
+        const user = await super.getUserById(parseInt(identifier));
         console.log('📊 User by ID result:', user);
         return {
           found: !!user,
           data: user,
           debug: { searchType: 'id', identifier, rawResult: user }
         };
+        
       } else if (type === 'email') {
-        console.log('🔍 Starting email search...');
+        console.log('📧 Searching by email...');
         
-        // First, try direct getUserByEmail method
-        console.log('📧 Trying getUserByEmail method...');
-        const directUser = await this.getUserByEmail(identifier);
-        console.log('📊 Direct email search result:', directUser);
-        
-        if (directUser) {
-          return {
-            found: true,
-            data: directUser,
-            debug: { searchType: 'email_direct', identifier, rawResult: directUser }
-          };
+        // Method 1: Try direct email search
+        console.log('🔍 Trying direct getUserByEmail...');
+        try {
+          const directUser = await super.getUserByEmail(identifier);
+          console.log('📊 Direct email search result:', directUser);
+          
+          if (directUser) {
+            return {
+              found: true,
+              data: directUser,
+              debug: { searchType: 'email_direct', identifier, rawResult: directUser }
+            };
+          }
+        } catch (directError) {
+          console.log('⚠️ Direct email search failed:', directError);
         }
         
-        // If direct method fails, try broader search
-        console.log('🔍 Direct email search failed, trying broader search...');
-        const users = await this.getUsers({ search: identifier });
-        console.log('📊 Broader search result:', users);
-        
-        if (users.data && users.data.length > 0) {
-          // Look for exact email match
-          const exactMatch = users.data.find((user: any) => {
-            console.log(`🔍 Checking user: ${user.email} vs ${identifier}`);
-            return user.email && user.email.toLowerCase() === identifier.toLowerCase();
-          });
+        // Method 2: Try broader search with search_text
+        console.log('🔍 Trying broader search with getUsers...');
+        try {
+          const users = await super.getUsers({ search: identifier });
+          console.log('📊 Broader search result:', users);
           
-          if (exactMatch) {
-            console.log('✅ Found exact email match:', exactMatch);
+          if (users.data && users.data.length > 0) {
+            console.log(`📊 Found ${users.data.length} users, checking for email matches...`);
+            
+            // Look for exact email match
+            const exactMatch = users.data.find((user: any) => {
+              const userEmail = user.email?.toLowerCase();
+              const searchEmail = identifier.toLowerCase();
+              console.log(`🔍 Comparing: "${userEmail}" vs "${searchEmail}"`);
+              return userEmail === searchEmail;
+            });
+            
+            if (exactMatch) {
+              console.log('✅ Found exact email match:', exactMatch);
+              return {
+                found: true,
+                data: exactMatch,
+                debug: { 
+                  searchType: 'email_broader_exact', 
+                  identifier, 
+                  totalResults: users.data.length,
+                  exactMatch,
+                  allEmails: users.data.map((u: any) => u.email)
+                }
+              };
+            }
+            
+            // Look for partial match
+            const partialMatch = users.data.find((user: any) => 
+              user.email?.toLowerCase().includes(identifier.toLowerCase())
+            );
+            
+            if (partialMatch) {
+              console.log('⚠️ Found partial email match:', partialMatch);
+              return {
+                found: true,
+                data: partialMatch,
+                debug: { 
+                  searchType: 'email_broader_partial', 
+                  identifier, 
+                  totalResults: users.data.length,
+                  partialMatch,
+                  allEmails: users.data.map((u: any) => u.email)
+                }
+              };
+            }
+            
+            // No matches found
             return {
-              found: true,
-              data: exactMatch,
+              found: false,
+              message: `No user found with email "${identifier}". Found ${users.data.length} users but none matched.`,
               debug: { 
-                searchType: 'email_broader_exact', 
+                searchType: 'email_broader_nomatch', 
                 identifier, 
                 totalResults: users.data.length,
-                exactMatch,
-                allEmails: users.data.map((u: any) => u.email)
+                allEmails: users.data.map((u: any) => u.email),
+                allUsernames: users.data.map((u: any) => u.username),
+                sampleUsers: users.data.slice(0, 3)
               }
             };
-          }
-          
-          // Look for partial email match
-          const partialMatch = users.data.find((user: any) => {
-            return user.email && user.email.toLowerCase().includes(identifier.toLowerCase());
-          });
-          
-          if (partialMatch) {
-            console.log('⚠️ Found partial email match:', partialMatch);
+          } else {
             return {
-              found: true,
-              data: partialMatch,
-              debug: { 
-                searchType: 'email_broader_partial', 
-                identifier, 
-                totalResults: users.data.length,
-                partialMatch,
-                allEmails: users.data.map((u: any) => u.email)
-              }
+              found: false,
+              message: `No users found when searching for "${identifier}"`,
+              debug: { searchType: 'email_no_results', identifier, rawResult: users }
             };
           }
-          
-          // No email match found, but we have results
-          console.log('❌ No email matches found in results');
+        } catch (broadError) {
+          console.error('❌ Broader search failed:', broadError);
           return {
             found: false,
-            message: `No user found with email "${identifier}". Found ${users.data.length} users but none matched the email.`,
-            debug: { 
-              searchType: 'email_broader_nomatch', 
-              identifier, 
-              totalResults: users.data.length,
-              allEmails: users.data.map((u: any) => u.email),
-              allUsernames: users.data.map((u: any) => u.username)
-            }
+            error: `Search failed: ${broadError instanceof Error ? broadError.message : 'Unknown error'}`,
+            debug: { searchType: 'email_broad_error', identifier, error: broadError }
           };
         }
         
-        console.log('❌ No users found at all');
-        return {
-          found: false,
-          message: `No users found when searching for "${identifier}"`,
-          debug: { searchType: 'email_no_results', identifier, rawResult: users }
-        };
-        
       } else { // username search
-        console.log('🔍 Starting username search...');
-        const users = await this.getUsers({ search: identifier });
+        console.log('👤 Searching by username...');
+        const users = await super.getUsers({ search: identifier });
         console.log('📊 Username search result:', users);
         
         if (users.data && users.data.length > 0) {
           const foundUser = users.data.find((user: any) => user.username === identifier);
-          console.log('📊 Username match result:', foundUser);
           
           return {
             found: !!foundUser,
@@ -138,21 +154,28 @@ export class EnhancedDoceboClient extends DoceboClient {
           debug: { searchType: 'username_no_results', identifier, rawResult: users }
         };
       }
+      
     } catch (error) {
-      console.error('❌ Error getting user status:', error);
+      console.error('❌ EnhancedDoceboClient.getUserStatus error:', error);
       return {
         found: false,
         error: error instanceof Error ? error.message : 'Unknown error',
-        debug: { searchType: type, identifier, error: error }
+        debug: { 
+          searchType: type, 
+          identifier, 
+          error: error instanceof Error ? {
+            message: error.message,
+            stack: error.stack
+          } : error
+        }
       };
     }
   }
   
-  // Enhanced course search with debugging
   async searchCourses(query: string, type: 'id' | 'title'): Promise<SearchResult> {
+    console.log(`🔍 EnhancedDoceboClient.searchCourses called: ${query} (${type})`);
+    
     try {
-      console.log(`🔍 Searching for course: ${query} (${type})`);
-      
       if (type === 'id') {
         const courseId = parseInt(query);
         if (isNaN(courseId)) {
@@ -163,7 +186,7 @@ export class EnhancedDoceboClient extends DoceboClient {
           };
         }
         
-        const course = await this.getCourseById(courseId);
+        const course = await super.getCourseById(courseId);
         console.log('📊 Course by ID result:', course);
         
         return {
@@ -174,13 +197,13 @@ export class EnhancedDoceboClient extends DoceboClient {
       } else {
         // Search by title
         console.log('🔍 Searching courses by title...');
-        const courses = await this.searchCoursesByTitle(query);
+        const courses = await super.searchCoursesByTitle(query);
         console.log('📊 Course search result:', courses);
         
         if (!courses.data || courses.data.length === 0) {
           // Try to find similar courses
           console.log('🔍 No direct matches, looking for similar courses...');
-          const allCourses = await this.getCourses({ limit: 100 });
+          const allCourses = await super.getCourses({ limit: 100 });
           console.log('📊 All courses for similarity search:', allCourses);
           
           const suggestions = this.findSimilarCourses(query, allCourses.data || []);
@@ -208,7 +231,7 @@ export class EnhancedDoceboClient extends DoceboClient {
         };
       }
     } catch (error) {
-      console.error('❌ Error searching courses:', error);
+      console.error('❌ EnhancedDoceboClient.searchCourses error:', error);
       return {
         found: false,
         error: error instanceof Error ? error.message : 'Unknown error',
@@ -217,7 +240,6 @@ export class EnhancedDoceboClient extends DoceboClient {
     }
   }
 
-  // Helper method for course similarity (keeping the same implementation)
   private findSimilarCourses(query: string, allCourses: any[]): any[] {
     const queryLower = query.toLowerCase();
     return allCourses
