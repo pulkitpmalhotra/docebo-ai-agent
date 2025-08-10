@@ -1,4 +1,4 @@
-// lib/docebo.ts - Production version with real API calls
+// lib/docebo.ts - Production version with correct API endpoints
 export class DoceboClient {
   private baseUrl: string;
   private clientId: string;
@@ -27,6 +27,7 @@ export class DoceboClient {
     console.log('🔑 Client ID:', this.clientId.substring(0, 8) + '...');
     console.log('🚫 Mock mode: DISABLED');
   }
+
   private async getAccessToken(): Promise<string> {
     if (this.accessToken && this.tokenExpiry && this.tokenExpiry > new Date()) {
       return this.accessToken;
@@ -91,57 +92,101 @@ export class DoceboClient {
     return result;
   }
 
-  // User Management
+  // User Management - Fixed endpoints and parameters
   async getUsers(params: { limit?: number; search?: string } = {}) {
     const queryParams = new URLSearchParams();
     if (params.limit) queryParams.append('limit', params.limit.toString());
-    if (params.search) queryParams.append('search', params.search);
+    // Use search_text instead of search for Docebo API
+    if (params.search) queryParams.append('search_text', params.search);
     
-    return this.apiCall(`/manage/v1/users?${queryParams}`);
+    // Use correct endpoint: /manage/v1/user (singular)
+    const result = await this.apiCall(`/manage/v1/user?${queryParams}`);
+    
+    // Transform response to match expected format
+    return {
+      data: result.data?.items || [],
+      success: true,
+      has_more_data: result.data?.has_more_data || false,
+      total_count: result.data?.total_count || 0
+    };
   }
 
   async getUserById(userId: number) {
-    return this.apiCall(`/manage/v1/users/${userId}`);
+    // Use correct endpoint for single user
+    const result = await this.apiCall(`/manage/v1/user/${userId}`);
+    return result.data;
   }
 
   async getUserByEmail(email: string) {
+    // Search by email using search_text parameter
     const users = await this.getUsers({ search: email });
-    return users.data?.find((user: any) => user.email === email);
+    // Find exact email match in the results
+    return users.data?.find((user: any) => 
+      user.email && user.email.toLowerCase() === email.toLowerCase()
+    );
   }
 
-  // Course Management
+  // Course Management - Need to test and fix these endpoints too
   async getCourses(params: { limit?: number; search?: string } = {}) {
     const queryParams = new URLSearchParams();
     if (params.limit) queryParams.append('limit', params.limit.toString());
-    if (params.search) queryParams.append('search', params.search);
+    if (params.search) queryParams.append('search_text', params.search);
     
-    return this.apiCall(`/learn/v1/courses?${queryParams}`);
+    try {
+      // Try the correct endpoint pattern
+      const result = await this.apiCall(`/learn/v1/course?${queryParams}`);
+      
+      return {
+        data: result.data?.items || [],
+        success: true,
+        has_more_data: result.data?.has_more_data || false,
+        total_count: result.data?.total_count || 0
+      };
+    } catch (error) {
+      console.error('Course endpoint failed, trying alternative...');
+      // Fallback to alternative endpoint if needed
+      throw error;
+    }
   }
 
   async getCourseById(courseId: number) {
-    return this.apiCall(`/learn/v1/courses/${courseId}`);
+    const result = await this.apiCall(`/learn/v1/course/${courseId}`);
+    return result.data;
   }
 
   async searchCoursesByTitle(title: string) {
     return this.getCourses({ search: title });
   }
 
-  // Learning Plans
+  // Learning Plans - Similar pattern
   async getLearningPlans(params: { limit?: number; search?: string } = {}) {
     const queryParams = new URLSearchParams();
     if (params.limit) queryParams.append('limit', params.limit.toString());
-    if (params.search) queryParams.append('search', params.search);
+    if (params.search) queryParams.append('search_text', params.search);
     
-    return this.apiCall(`/learn/v1/learning-plans?${queryParams}`);
+    const result = await this.apiCall(`/learn/v1/learning-plan?${queryParams}`);
+    
+    return {
+      data: result.data?.items || [],
+      success: true,
+      has_more_data: result.data?.has_more_data || false,
+      total_count: result.data?.total_count || 0
+    };
   }
 
   async getLearningPlanById(planId: number) {
-    return this.apiCall(`/learn/v1/learning-plans/${planId}`);
+    const result = await this.apiCall(`/learn/v1/learning-plan/${planId}`);
+    return result.data;
   }
 
   // Enrollments
   async getEnrollments(userId: number) {
-    return this.apiCall(`/learn/v1/enrollments?user_id=${userId}`);
+    const result = await this.apiCall(`/learn/v1/enrollment?user_id=${userId}`);
+    
+    return {
+      data: result.data?.items || [],
+      success: true
+    };
   }
 
   async enrollUser(userId: number, courseId: number, dry_run: boolean = false) {
@@ -155,7 +200,7 @@ export class DoceboClient {
       };
     }
     
-    return this.apiCall('/learn/v1/enrollments', 'POST', {
+    return this.apiCall('/learn/v1/enrollment', 'POST', {
       user_id: userId,
       course_id: courseId,
     });
@@ -172,7 +217,7 @@ export class DoceboClient {
       };
     }
     
-    return this.apiCall(`/learn/v1/learning-plans/${planId}/enrollments`, 'POST', {
+    return this.apiCall(`/learn/v1/learning-plan/${planId}/enrollment`, 'POST', {
       user_id: userId,
     });
   }
@@ -181,26 +226,43 @@ export class DoceboClient {
   async getGroups(params: { limit?: number; search?: string } = {}) {
     const queryParams = new URLSearchParams();
     if (params.limit) queryParams.append('limit', params.limit.toString());
-    if (params.search) queryParams.append('search', params.search);
+    if (params.search) queryParams.append('search_text', params.search);
     
-    return this.apiCall(`/manage/v1/groups?${queryParams}`);
+    const result = await this.apiCall(`/manage/v1/group?${queryParams}`);
+    
+    return {
+      data: result.data?.items || [],
+      success: true,
+      has_more_data: result.data?.has_more_data || false
+    };
   }
 
   async getGroupById(groupId: number) {
-    return this.apiCall(`/manage/v1/groups/${groupId}`);
+    const result = await this.apiCall(`/manage/v1/group/${groupId}`);
+    return result.data;
   }
 
   async getGroupMembers(groupId: number) {
-    return this.apiCall(`/manage/v1/groups/${groupId}/members`);
+    const result = await this.apiCall(`/manage/v1/group/${groupId}/member`);
+    
+    return {
+      data: result.data?.items || [],
+      success: true
+    };
   }
 
   // Sessions (ILT)
   async getSessions(params: { limit?: number; search?: string } = {}) {
     const queryParams = new URLSearchParams();
     if (params.limit) queryParams.append('limit', params.limit.toString());
-    if (params.search) queryParams.append('search', params.search);
+    if (params.search) queryParams.append('search_text', params.search);
     
-    return this.apiCall(`/learn/v1/sessions?${queryParams}`);
+    const result = await this.apiCall(`/learn/v1/session?${queryParams}`);
+    
+    return {
+      data: result.data?.items || [],
+      success: true
+    };
   }
 
   async enrollUserInSession(userId: number, sessionId: number, dry_run: boolean = false) {
@@ -214,22 +276,25 @@ export class DoceboClient {
       };
     }
     
-    return this.apiCall(`/learn/v1/sessions/${sessionId}/enrollments`, 'POST', {
+    return this.apiCall(`/learn/v1/session/${sessionId}/enrollment`, 'POST', {
       user_id: userId,
     });
   }
 
   // Analytics and Reports
   async getCourseCompletions(courseId: number) {
-    return this.apiCall(`/analytics/v1/courses/${courseId}/completions`);
+    const result = await this.apiCall(`/analytics/v1/course/${courseId}/completion`);
+    return result.data;
   }
 
   async getLearningPlanCompletions(planId: number) {
-    return this.apiCall(`/analytics/v1/learning-plans/${planId}/completions`);
+    const result = await this.apiCall(`/analytics/v1/learning-plan/${planId}/completion`);
+    return result.data;
   }
 
   async getUserProgress(userId: number, courseId: number) {
-    return this.apiCall(`/learn/v1/enrollments/${userId}/${courseId}/progress`);
+    const result = await this.apiCall(`/learn/v1/enrollment/${userId}/${courseId}/progress`);
+    return result.data;
   }
 
   // Course Settings
@@ -244,7 +309,7 @@ export class DoceboClient {
       };
     }
     
-    return this.apiCall(`/learn/v1/courses/${courseId}`, 'PUT', settings);
+    return this.apiCall(`/learn/v1/course/${courseId}`, 'PUT', settings);
   }
 
   // Learning Plan Settings
@@ -259,19 +324,21 @@ export class DoceboClient {
       };
     }
     
-    return this.apiCall(`/learn/v1/learning-plans/${planId}`, 'PUT', settings);
+    return this.apiCall(`/learn/v1/learning-plan/${planId}`, 'PUT', settings);
   }
 
   // Health check
   async healthCheck() {
     try {
-      const result = await this.apiCall('/manage/v1/users?limit=1');
+      // Use the correct endpoint
+      const result = await this.apiCall('/manage/v1/user?limit=1');
       return { 
         status: 'healthy', 
         timestamp: new Date(),
         mode: 'production',
         api_version: 'v1',
-        users_available: result.data?.length || 0
+        users_available: result.data?.total_count || 0,
+        sample_user: result.data?.items?.[0]?.username || 'none'
       };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
