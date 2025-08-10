@@ -1,12 +1,91 @@
 // Mock data that simulates real Docebo responses
+// lib/docebo-mock.ts - Replace the mockUsers array with this enhanced version:
+
 const mockUsers = [
-  { id: 1, email: 'john.smith@company.com', firstname: 'John', lastname: 'Smith', department: 'Marketing' },
-  { id: 2, email: 'jane.doe@company.com', firstname: 'Jane', lastname: 'Doe', department: 'Sales' },
-  { id: 3, email: 'mike.wilson@company.com', firstname: 'Mike', lastname: 'Wilson', department: 'IT' },
-  { id: 4, email: 'sarah.johnson@company.com', firstname: 'Sarah', lastname: 'Johnson', department: 'HR' },
-  { id: 5, email: 'david.brown@company.com', firstname: 'David', lastname: 'Brown', department: 'Finance' },
-  { id: 6, email: 'john.davis@company.com', firstname: 'John', lastname: 'Davis', department: 'Operations' },
-  { id: 7, email: 'emily.chen@company.com', firstname: 'Emily', lastname: 'Chen', department: 'Marketing' },
+  { 
+    id: 1, 
+    email: 'john.smith@company.com', 
+    firstname: 'John', 
+    lastname: 'Smith', 
+    department: 'Marketing',
+    username: 'john.smith',
+    active: true,
+    last_login: '2024-08-08T10:30:00Z',
+    register_date: '2024-01-15T09:00:00Z',
+    status: 'active'
+  },
+  { 
+    id: 2, 
+    email: 'jane.doe@company.com', 
+    firstname: 'Jane', 
+    lastname: 'Doe', 
+    department: 'Sales',
+    username: 'jane.doe',
+    active: true,
+    last_login: '2024-08-07T14:20:00Z',
+    register_date: '2024-02-01T08:30:00Z',
+    status: 'active'
+  },
+  { 
+    id: 3, 
+    email: 'mike.wilson@company.com', 
+    firstname: 'Mike', 
+    lastname: 'Wilson', 
+    department: 'IT',
+    username: 'mike.wilson',
+    active: true,
+    last_login: '2024-08-09T09:15:00Z',
+    register_date: '2024-01-20T10:00:00Z',
+    status: 'active'
+  },
+  { 
+    id: 4, 
+    email: 'sarah.johnson@company.com', 
+    firstname: 'Sarah', 
+    lastname: 'Johnson', 
+    department: 'HR',
+    username: 'sarah.johnson',
+    active: false,
+    last_login: '2024-07-15T16:45:00Z',
+    register_date: '2024-03-10T11:00:00Z',
+    status: 'inactive'
+  },
+  { 
+    id: 5, 
+    email: 'david.brown@company.com', 
+    firstname: 'David', 
+    lastname: 'Brown', 
+    department: 'Finance',
+    username: 'david.brown',
+    active: true,
+    last_login: '2024-08-08T13:20:00Z',
+    register_date: '2024-02-20T09:30:00Z',
+    status: 'active'
+  },
+  { 
+    id: 6, 
+    email: 'john.davis@company.com', 
+    firstname: 'John', 
+    lastname: 'Davis', 
+    department: 'Operations',
+    username: 'john.davis',
+    active: true,
+    last_login: '2024-08-09T11:00:00Z',
+    register_date: '2024-01-25T08:00:00Z',
+    status: 'active'
+  },
+  { 
+    id: 7, 
+    email: 'emily.chen@company.com', 
+    firstname: 'Emily', 
+    lastname: 'Chen', 
+    department: 'Marketing',
+    username: 'emily.chen',
+    active: true,
+    last_login: '2024-08-09T08:30:00Z',
+    register_date: '2024-04-01T10:15:00Z',
+    status: 'active'
+  },
 ];
 
 const mockCourses = [
