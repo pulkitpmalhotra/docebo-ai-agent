@@ -117,36 +117,19 @@ async function handleUserStatusCheck(entities: any): Promise<string> {
     const identifier = entities?.identifier || 'john.smith@company.com';
     const type = entities?.type || 'email';
     
+    console.log(`🎯 handleUserStatusCheck called with: ${identifier} (${type})`);
+    
     const userStatus = await docebo.getUserStatus(identifier, type);
     
+    console.log(`🎯 getUserStatus returned:`, userStatus);
+    
     if (!userStatus.found || !userStatus.data) {
-      // Include debug information in development
-      const debugInfo = userStatus.debug ? `\n\n🔍 Debug: ${JSON.stringify(userStatus.debug, null, 2)}` : '';
+      // ALWAYS include debug information
+      const debugInfo = userStatus.debug ? `\n\n🔍 **Debug Info:**\n\`\`\`json\n${JSON.stringify(userStatus.debug, null, 2)}\n\`\`\`` : '\n\n🔍 **Debug Info:** No debug data available';
       return `❌ User "${identifier}" not found. Please check the email, username, or ID.${debugInfo}`;
     }
     
-    const user = userStatus.data as any;
-    
-    const email = user.email || 'No email';
-    const firstname = user.firstname || user.first_name || 'Unknown';
-    const lastname = user.lastname || user.last_name || '';
-    const department = user.department || 'Not specified';
-    const lastLogin = user.last_login || user.last_access_date ? new Date(user.last_login || user.last_access_date).toLocaleDateString() : 'Never';
-    const registerDate = user.register_date || user.creation_date ? new Date(user.register_date || user.creation_date).toLocaleDateString() : 'Unknown';
-    const userId = user.id || user.user_id || 'Unknown';
-    const isActive = user.active === true || user.status === 'active' || user.status === '1';
-
-    return `👤 **User Status for ${email}**
-
-- **Name**: ${firstname} ${lastname}
-- **Status**: ${isActive ? '✅ Active' : '❌ Inactive'}
-- **Department**: ${department}
-- **Last Login**: ${lastLogin}
-- **Registration Date**: ${registerDate}
-- **User ID**: ${userId}
-
-${isActive ? '🟢 User account is active and can access training.' : '🔴 User account is inactive. Contact admin to reactivate.'}`;
-
+    // ... rest of the function
   } catch (error) {
     return `❌ Error checking user status: ${error instanceof Error ? error.message : 'Unknown error'}`;
   }
