@@ -92,12 +92,16 @@ export class DoceboClient {
     return result;
   }
 
-  // User Management - Fixed endpoints and parameters
+  // User Management - Fixed for sandbox environment
   async getUsers(params: { limit?: number; search?: string } = {}) {
+    // For sandbox, we need to provide search_text parameter
+    // If no search is provided, use a wildcard or empty search to get all users
+    const searchText = params.search || '';
+    
     const queryParams = new URLSearchParams();
+    // Sandbox doesn't support limit parameter alone - must have search_text
+    queryParams.append('search_text', searchText);
     if (params.limit) queryParams.append('limit', params.limit.toString());
-    // Use search_text instead of search for Docebo API
-    if (params.search) queryParams.append('search_text', params.search);
     
     // Use correct endpoint: /manage/v1/user (singular)
     const result = await this.apiCall(`/manage/v1/user?${queryParams}`);
