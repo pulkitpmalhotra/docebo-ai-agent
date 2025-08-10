@@ -45,25 +45,25 @@ export async function POST(request: NextRequest) {
 
     switch (result.intent) {
       case 'user_status_check':
-        response = await handleUserStatusCheck(result.entities);
+        response = await handleUserStatusCheck(result.entities || {});
         break;
         
       case 'course_search':
-        const courseResult = await handleCourseSearch(result.entities);
+        const courseResult = await handleCourseSearch(result.entities || {});
         response = formatter.formatResponse(courseResult, 'course_search', userRole as DoceboRole);
         additionalData = courseResult;
         break;
         
       case 'learning_plan_search':
-        response = await handleLearningPlanSearch(result.entities);
+        response = await handleLearningPlanSearch(result.entities || {});
         break;
         
       case 'enrollment_request':
-        response = await handleEnrollmentRequest(result.entities, userRole as DoceboRole);
+        response = await handleEnrollmentRequest(result.entities || {}, userRole as DoceboRole);
         break;
         
       case 'statistics_request':
-        const statsResult = await handleStatisticsRequest(result.entities, userRole as DoceboRole);
+        const statsResult = await handleStatisticsRequest(result.entities || {}, userRole as DoceboRole);
         response = formatter.formatResponse(statsResult, 'statistics', userRole as DoceboRole);
         additionalData = statsResult;
         break;
@@ -96,13 +96,16 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Enhanced handler functions
+// Enhanced handler functions with proper type safety
 async function handleUserStatusCheck(entities: any): Promise<string> {
   try {
-    const userStatus = await docebo.getUserStatus(entities.identifier, entities.type);
+    const identifier = entities?.identifier || 'unknown';
+    const type = entities?.type || 'email';
+    
+    const userStatus = await docebo.getUserStatus(identifier, type);
     
     if (!userStatus.found || !userStatus.data) {
-      return `❌ User "${entities.identifier}" not found. Please check the email, username, or ID.`;
+      return `❌ User "${identifier}" not found. Please check the email, username, or ID.`;
     }
     
     const user = userStatus.data;
@@ -132,25 +135,27 @@ ${isActive ? '🟢 User account is active and can access training.' : '🔴 User
     return `❌ Error checking user status: ${error instanceof Error ? error.message : 'Unknown error'}`;
   }
 }
-Also, let's fix the handleCourseSearch function to be more type-safe:
-typescript// Replace the handleCourseSearch function with this fixed version:
+
 async function handleCourseSearch(entities: any): Promise<any> {
   try {
-    const searchResult = await docebo.searchCourses(entities.query, entities.type);
+    const query = entities?.query || 'unknown';
+    const type = entities?.type || 'title';
+    
+    const searchResult = await docebo.searchCourses(query, type);
     
     if (!searchResult.found) {
       if (searchResult.suggestions && Array.isArray(searchResult.suggestions)) {
         return {
           found: false,
           suggestions: searchResult.suggestions,
-          message: searchResult.message || `No exact match found for "${entities.query}"`,
+          message: searchResult.message || `No exact match found for "${query}"`,
           type: 'suggestions'
         };
       }
       
       return {
         found: false,
-        message: searchResult.message || `No courses found for "${entities.query}". Try using exact course ID or title.`,
+        message: searchResult.message || `No courses found for "${query}". Try using exact course ID or title.`,
         type: 'not_found'
       };
     }
@@ -180,8 +185,8 @@ async function handleCourseSearch(entities: any): Promise<any> {
 }
 
 async function handleLearningPlanSearch(entities: any): Promise<string> {
-  // Similar to course search but for learning plans
-  return `🎯 Learning plan search for "${entities.query}" - Feature implementing...`;
+  const query = entities?.query || 'unknown';
+  return `🎯 Learning plan search for "${query}" - Feature implementing...`;
 }
 
 async function handleEnrollmentRequest(entities: any, userRole: DoceboRole): Promise<string> {
@@ -189,9 +194,12 @@ async function handleEnrollmentRequest(entities: any, userRole: DoceboRole): Pro
     return `❌ Your role (${userRole}) doesn't have permission to enroll users. Contact your administrator.`;
   }
   
+  const user = entities?.user || 'unknown user';
+  const course = entities?.course || 'unknown course';
+  
   return `📝 **Enrollment Request Created**
 
-Enrolling **${entities.user}** in **${entities.course}**
+Enrolling **${user}** in **${course}**
 
 ⏳ Processing enrollment...
 ✅ User verification: Pending
