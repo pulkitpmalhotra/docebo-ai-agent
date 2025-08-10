@@ -1,11 +1,4 @@
-export async function POST(request: NextRequest) {
-  try {
-    console.log('🚀 CHAT API - Environment Check:');
-    console.log('DOCEBO_DOMAIN:', process.env.DOCEBO_DOMAIN);
-    console.log('Mock flag:', process.env.USE_MOCK_DOCEBO);
-    console.log('Client type: EnhancedDoceboClient (PRODUCTION)');
-    
-    import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { EnhancedDoceboClient } from '@/lib/docebo-enhanced';
 import { RoleAwareAIProcessor } from '@/lib/ai/role-aware-processor';
 import { RoleSpecificFormatter } from '@/lib/response-formatters/role-specific';
@@ -27,6 +20,11 @@ function hasPermission(userRole: DoceboRole, requiredPermissions: Permission[]):
 
 export async function POST(request: NextRequest) {
   try {
+    console.log('🚀 CHAT API - Environment Check:');
+    console.log('DOCEBO_DOMAIN:', process.env.DOCEBO_DOMAIN);
+    console.log('Mock flag:', process.env.USE_MOCK_DOCEBO);
+    console.log('Client type: EnhancedDoceboClient (PRODUCTION)');
+    
     const { message, userRole = 'superadmin', userId = 'demo-user' } = await request.json();
     
     if (!message || typeof message !== 'string') {
