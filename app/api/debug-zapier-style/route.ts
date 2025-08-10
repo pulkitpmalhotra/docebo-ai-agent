@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
     console.log('✅ OAuth token obtained');
 
     // Step 2: Test different header combinations like Zapier might use
-    const zapierStyleTests = [
+    const zapierStyleTests: Array<{name: string, headers: Record<string, string>}> = [
       {
         name: 'Zapier Standard Headers',
         headers: {
@@ -55,14 +55,14 @@ export async function GET(request: NextRequest) {
       {
         name: 'Minimal Headers (like curl)',
         headers: {
-          'Authorization': `Bearer ${token}`,
+          'Authorization': `Bearer ${token}`
         }
       },
       {
         name: 'Standard REST Headers',
         headers: {
           'Authorization': `Bearer ${token}`,
-          'Accept': 'application/json',
+          'Accept': 'application/json'
         }
       },
       {
