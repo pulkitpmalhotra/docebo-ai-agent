@@ -9,7 +9,7 @@ export enum DoceboRole {
 export const PERMISSIONS = {
   [DoceboRole.SUPERADMIN]: [
     'user.search', 'course.search', 'course.modify', 'enroll.all', 
-    'analytics.all', 'notifications.create'
+    'analytics.all', 'notifications.create', 'settings.modify'
   ],
   [DoceboRole.POWER_USER]: [
     'user.search', 'course.search', 'course.modify', 'enroll.managed',
