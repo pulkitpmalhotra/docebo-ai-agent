@@ -19,6 +19,14 @@ export interface ApiResponse<T = any> {
   total_page_count?: number;
 }
 
+export interface DoceboApiListResponse<T = any> {
+  items: T[];
+  has_more_data?: boolean;
+  total_count?: number;
+  current_page?: number;
+  total_page_count?: number;
+}
+
 export interface DoceboUser {
   user_id: string;
   username: string;
@@ -224,7 +232,7 @@ export class DoceboAPI {
       ...params
     };
 
-    const result = await this.apiRequest<{items: DoceboUser[]}>('/manage/v1/user', 'GET', null, queryParams);
+    const result = await this.apiRequest<DoceboApiListResponse<DoceboUser>>('/manage/v1/user', 'GET', null, queryParams);
     
     return {
       data: result.data.items || [],
@@ -283,7 +291,7 @@ export class DoceboAPI {
       ...params
     };
 
-    const result = await this.apiRequest<{items: DoceboCourse[]}>('/learn/v1/courses', 'GET', null, queryParams);
+    const result = await this.apiRequest<DoceboApiListResponse<DoceboCourse>>('/learn/v1/courses', 'GET', null, queryParams);
     
     return {
       data: result.data.items || [],
@@ -339,7 +347,7 @@ export class DoceboAPI {
       ...params
     };
 
-    const result = await this.apiRequest<{items: DoceboEnrollment[]}>('/learn/v1/enrollments', 'GET', null, queryParams);
+    const result = await this.apiRequest<DoceboApiListResponse<DoceboEnrollment>>('/learn/v1/enrollments', 'GET', null, queryParams);
     
     return {
       data: result.data.items || [],
