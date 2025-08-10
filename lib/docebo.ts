@@ -7,14 +7,26 @@ export class DoceboClient {
   private tokenExpiry?: Date;
 
   constructor() {
-    this.baseUrl = `https://${process.env.DOCEBO_DOMAIN}`;
-    this.clientId = process.env.DOCEBO_CLIENT_ID!;
-    this.clientSecret = process.env.DOCEBO_CLIENT_SECRET!;
+    // Check for required environment variables
+    if (!process.env.DOCEBO_DOMAIN) {
+      throw new Error('DOCEBO_DOMAIN environment variable is required');
+    }
+    if (!process.env.DOCEBO_CLIENT_ID) {
+      throw new Error('DOCEBO_CLIENT_ID environment variable is required');
+    }
+    if (!process.env.DOCEBO_CLIENT_SECRET) {
+      throw new Error('DOCEBO_CLIENT_SECRET environment variable is required');
+    }
     
-    console.log('🔗 Docebo Client initialized for PRODUCTION API');
-    console.log('Domain:', process.env.DOCEBO_DOMAIN);
+    this.baseUrl = `https://${process.env.DOCEBO_DOMAIN}`;
+    this.clientId = process.env.DOCEBO_CLIENT_ID;
+    this.clientSecret = process.env.DOCEBO_CLIENT_SECRET;
+    
+    console.log('🔗 PRODUCTION Docebo Client initialized');
+    console.log('🌐 Domain:', process.env.DOCEBO_DOMAIN);
+    console.log('🔑 Client ID:', this.clientId.substring(0, 8) + '...');
+    console.log('🚫 Mock mode: DISABLED');
   }
-
   private async getAccessToken(): Promise<string> {
     if (this.accessToken && this.tokenExpiry && this.tokenExpiry > new Date()) {
       return this.accessToken;
