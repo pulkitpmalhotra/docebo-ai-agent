@@ -1,4 +1,4 @@
-// lib/docebo-api.ts - Official Docebo API Implementation
+// lib/docebo-api.ts - Official Docebo API Implementation with Fixed Types
 // Based on official Docebo documentation and best practices
 
 export interface DoceboConfig {
