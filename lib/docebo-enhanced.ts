@@ -94,7 +94,6 @@ export class EnhancedDoceboClient extends DoceboClient {
         ],
         "expired": false
       },
-      // Add more realistic mock users
       {
         "user_id": "51154",
         "username": "john.smith",
@@ -115,6 +114,27 @@ export class EnhancedDoceboClient extends DoceboClient {
         "field_2": "Marketing",
         "field_4": "US",
         "expired": false
+      },
+      {
+        "user_id": "51155",
+        "username": "jane.doe",
+        "first_name": "Jane",
+        "last_name": "Doe", 
+        "email": "jane.doe@company.com",
+        "uuid": "9d618756-89g3-33h2-ce4h-2g2g7h216cg7",
+        "is_manager": false,
+        "fullname": "Jane Doe",
+        "last_access_date": "2025-08-09 16:45:30",
+        "last_update": "2025-08-09 15:20:10",
+        "creation_date": "2025-06-15 14:30:45",
+        "status": "1",
+        "avatar": "",
+        "language": "English",
+        "lang_code": "english",
+        "level": "user",
+        "field_2": "Sales",
+        "field_4": "UK",
+        "expired": false
       }
     ];
 
@@ -130,7 +150,7 @@ export class EnhancedDoceboClient extends DoceboClient {
     return {
       found: !!foundUser,
       data: foundUser,
-      message: foundUser ? undefined : `User "${identifier}" not found. Available users: susantha@google.com, john.smith@company.com`,
+      message: foundUser ? undefined : `User "${identifier}" not found. Available users: susantha@google.com, john.smith@company.com, jane.doe@company.com`,
       debug: { 
         searchType: `mock_${type}`, 
         identifier, 
@@ -152,13 +172,152 @@ export class EnhancedDoceboClient extends DoceboClient {
   
   private getMockCourseSearch(query: string, type: string): SearchResult {
     const mockCourses = [
-      { id: 101, name: 'Python Fundamentals', course_type: 'elearning', enrolled_users: 24, category: 'Programming', status: 'published', published: true },
-      { id: 102, name: 'Advanced Python Programming', course_type: 'elearning', enrolled_users: 15, category: 'Programming', status: 'published', published: true },
-      { id: 103, name: 'Python for Data Analysis', course_type: 'webinar', enrolled_users: 18, category: 'Data Science', status: 'published', published: true },
-      { id: 104, name: 'Advanced Excel Training', course_type: 'webinar', enrolled_users: 32, category: 'Office Skills', status: 'published', published: true },
-      { id: 105, name: 'Digital Marketing Basics', course_type: 'elearning', enrolled_users: 28, category: 'Marketing', status: 'published', published: true }
+      { 
+        id: 101, 
+        name: 'Python Fundamentals', 
+        course_type: 'elearning', 
+        enrolled_users: 24, 
+        category: 'Programming', 
+        status: 'published', 
+        published: true 
+      },
+      { 
+        id: 102, 
+        name: 'Advanced Python Programming', 
+        course_type: 'elearning', 
+        enrolled_users: 15, 
+        category: 'Programming', 
+        status: 'published', 
+        published: true 
+      },
+      { 
+        id: 103, 
+        name: 'Python for Data Analysis', 
+        course_type: 'webinar', 
+        enrolled_users: 18, 
+        category: 'Data Science', 
+        status: 'published', 
+        published: true 
+      },
+      { 
+        id: 104, 
+        name: 'Advanced Excel Training', 
+        course_type: 'webinar', 
+        enrolled_users: 32, 
+        category: 'Office Skills', 
+        status: 'published', 
+        published: true 
+      },
+      { 
+        id: 105, 
+        name: 'Digital Marketing Basics', 
+        course_type: 'elearning', 
+        enrolled_users: 28, 
+        category: 'Marketing', 
+        status: 'published', 
+        published: true 
+      },
+      { 
+        id: 106, 
+        name: 'JavaScript for Beginners', 
+        course_type: 'elearning', 
+        enrolled_users: 22, 
+        category: 'Programming', 
+        status: 'published', 
+        published: true 
+      },
+      { 
+        id: 107, 
+        name: 'Sales Techniques', 
+        course_type: 'classroom', 
+        enrolled_users: 12, 
+        category: 'Sales', 
+        status: 'published', 
+        published: true 
+      },
+      { 
+        id: 108, 
+        name: 'Leadership Development', 
+        course_type: 'blended', 
+        enrolled_users: 19, 
+        category: 'Management', 
+        status: 'published', 
+        published: true 
+      }
     ];
 
     if (type === 'id') {
       const courseId = parseInt(query);
-      cons
+      const foundCourse = mockCourses.find(course => course.id === courseId);
+      return {
+        found: !!foundCourse,
+        data: foundCourse ? [foundCourse] : [],
+        debug: { 
+          searchType: 'mock_course_id', 
+          query, 
+          mode: 'development_mock',
+          availableCourseIds: mockCourses.map(c => c.id)
+        }
+      };
+    } else {
+      const queryLower = query.toLowerCase();
+      const foundCourses = mockCourses.filter(course => 
+        course.name.toLowerCase().includes(queryLower) ||
+        course.category.toLowerCase().includes(queryLower)
+      );
+
+      return {
+        found: foundCourses.length > 0,
+        data: foundCourses,
+        message: foundCourses.length === 0 ? 
+          `No courses found matching "${query}". Try: Python, Excel, Marketing, JavaScript, Sales, Leadership` : 
+          undefined,
+        debug: { 
+          searchType: 'mock_course_title', 
+          query, 
+          mode: 'development_mock',
+          availableCourses: mockCourses.map(c => c.name)
+        }
+      };
+    }
+  }
+
+  // Helper methods for similarity matching (keeping existing implementation)
+  private findSimilarCourses(query: string, allCourses: any[]): any[] {
+    const queryLower = query.toLowerCase();
+    return allCourses
+      .filter(course => {
+        const nameLower = course.name?.toLowerCase() || '';
+        return nameLower.includes(queryLower) || 
+               this.calculateSimilarity(queryLower, nameLower) > 0.6;
+      })
+      .slice(0, 3);
+  }
+  
+  private calculateSimilarity(str1: string, str2: string): number {
+    const longer = str1.length > str2.length ? str1 : str2;
+    const shorter = str1.length > str2.length ? str2 : str1;
+    const editDistance = this.levenshteinDistance(longer, shorter);
+    return (longer.length - editDistance) / longer.length;
+  }
+  
+  private levenshteinDistance(str1: string, str2: string): number {
+    const matrix = Array(str2.length + 1).fill(null).map(() => Array(str1.length + 1).fill(null));
+    
+    for (let i = 0; i <= str1.length; i++) matrix[0][i] = i;
+    for (let j = 0; j <= str2.length; j++) matrix[j][0] = j;
+    
+    for (let j = 1; j <= str2.length; j++) {
+      for (let i = 1; i <= str1.length; i++) {
+        const cost = str1[i - 1] === str2[j - 1] ? 0 : 1;
+        matrix[j][i] = Math.min(
+          matrix[j - 1][i] + 1,
+          matrix[j][i - 1] + 1, 
+          matrix[j - 1][i - 1] + cost
+        );
+      }
+    }
+    
+    return matrix[str2.length][str1.length];
+  }
+}
