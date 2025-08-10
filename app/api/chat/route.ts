@@ -8,6 +8,14 @@ const docebo = new EnhancedDoceboClient();
 const aiProcessor = new RoleAwareAIProcessor();
 const formatter = new RoleSpecificFormatter();
 
+// Helper function for permission checks
+function hasPermission(userRole: DoceboRole, requiredPermissions: string[]): boolean {
+  const userPermissions = PERMISSIONS[userRole];
+  if (!userPermissions) return false;
+  
+  return requiredPermissions.some(permission => userPermissions.includes(permission));
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { message, userRole = 'superadmin', userId = 'demo-user' } = await request.json();
@@ -108,17 +116,17 @@ async function handleUserStatusCheck(entities: any): Promise<string> {
       return `❌ User "${identifier}" not found. Please check the email, username, or ID.`;
     }
     
-    const user = userStatus.data;
+    const user = userStatus.data as any;
     
     // Safely access user properties with fallbacks
     const email = user.email || 'No email';
     const firstname = user.firstname || 'Unknown';
     const lastname = user.lastname || '';
     const department = user.department || 'Not specified';
-    const lastLogin = user.last_login || 'Never';
-    const registerDate = user.register_date || 'Unknown';
+    const lastLogin = user.last_login ? new Date(user.last_login).toLocaleDateString() : 'Never';
+    const registerDate = user.register_date ? new Date(user.register_date).toLocaleDateString() : 'Unknown';
     const userId = user.id || 'Unknown';
-    const isActive = user.active === true;
+    const isActive = user.active === true || user.status === 'active';
 
     return `👤 **User Status for ${email}**
 
@@ -144,7 +152,6 @@ async function handleCourseSearch(entities: any): Promise<any> {
     const searchResult = await docebo.searchCourses(query, type);
     
     if (!searchResult.found) {
-      // Check if we have suggestions
       if (searchResult.suggestions && Array.isArray(searchResult.suggestions) && searchResult.suggestions.length > 0) {
         return {
           found: false,
@@ -161,7 +168,6 @@ async function handleCourseSearch(entities: any): Promise<any> {
       };
     }
     
-    // Handle successful search
     const courses = Array.isArray(searchResult.data) ? searchResult.data : [searchResult.data];
     
     return {
@@ -192,7 +198,7 @@ async function handleLearningPlanSearch(entities: any): Promise<string> {
 }
 
 async function handleEnrollmentRequest(entities: any, userRole: DoceboRole): Promise<string> {
-  if (!PERMISSIONS[userRole].includes('enroll.all') && !PERMISSIONS[userRole].includes('enroll.managed')) {
+  if (!hasPermission(userRole, ['enroll.all', 'enroll.managed'])) {
     return `❌ Your role (${userRole}) doesn't have permission to enroll users. Contact your administrator.`;
   }
   
@@ -212,7 +218,7 @@ This will be processed automatically based on your permissions.`;
 }
 
 async function handleStatisticsRequest(entities: any, userRole: DoceboRole): Promise<any> {
-  if (!PERMISSIONS[userRole].includes('analytics.all') && !PERMISSIONS[userRole].includes('analytics.managed')) {
+  if (!hasPermission(userRole, ['analytics.all', 'analytics.managed'])) {
     return {
       error: true,
       message: `❌ Your role (${userRole}) doesn't have permission to view statistics. Contact your administrator.`
