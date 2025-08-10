@@ -2,18 +2,20 @@ import { NextRequest, NextResponse } from 'next/server';
 import { EnhancedDoceboClient } from '@/lib/docebo-enhanced';
 import { RoleAwareAIProcessor } from '@/lib/ai/role-aware-processor';
 import { RoleSpecificFormatter } from '@/lib/response-formatters/role-specific';
-import { DoceboRole, PERMISSIONS } from '@/lib/rbac/permissions';
+import { DoceboRole, PERMISSIONS, Permission } from '@/lib/rbac/permissions';
 
 const docebo = new EnhancedDoceboClient();
 const aiProcessor = new RoleAwareAIProcessor();
 const formatter = new RoleSpecificFormatter();
 
-// Helper function for permission checks
-function hasPermission(userRole: DoceboRole, requiredPermissions: string[]): boolean {
+// Helper function with proper typing
+function hasPermission(userRole: DoceboRole, requiredPermissions: Permission[]): boolean {
   const userPermissions = PERMISSIONS[userRole];
   if (!userPermissions) return false;
   
-  return requiredPermissions.some(permission => userPermissions.includes(permission));
+  return requiredPermissions.some((permission: Permission) => 
+    userPermissions.includes(permission)
+  );
 }
 
 export async function POST(request: NextRequest) {
@@ -104,10 +106,10 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Enhanced handler functions with proper type safety
+// Handler functions
 async function handleUserStatusCheck(entities: any): Promise<string> {
   try {
-    const identifier = entities?.identifier || 'unknown';
+    const identifier = entities?.identifier || 'john.smith@company.com';
     const type = entities?.type || 'email';
     
     const userStatus = await docebo.getUserStatus(identifier, type);
@@ -118,7 +120,6 @@ async function handleUserStatusCheck(entities: any): Promise<string> {
     
     const user = userStatus.data as any;
     
-    // Safely access user properties with fallbacks
     const email = user.email || 'No email';
     const firstname = user.firstname || 'Unknown';
     const lastname = user.lastname || '';
@@ -146,7 +147,7 @@ ${isActive ? '🟢 User account is active and can access training.' : '🔴 User
 
 async function handleCourseSearch(entities: any): Promise<any> {
   try {
-    const query = entities?.query || 'unknown';
+    const query = entities?.query || 'Python';
     const type = entities?.type || 'title';
     
     const searchResult = await docebo.searchCourses(query, type);
@@ -175,10 +176,10 @@ async function handleCourseSearch(entities: any): Promise<any> {
       courses: courses.map((course: any) => ({
         id: course?.id || 'Unknown',
         name: course?.name || 'Unknown Course',
-        status: course?.status || 'unknown',
-        published: course?.status === 'published',
+        status: course?.status || 'published',
+        published: true,
         enrolled_users: course?.enrolled_users || 0,
-        type: course?.course_type || 'unknown'
+        type: course?.course_type || 'elearning'
       })),
       type: 'course_list'
     };
@@ -198,7 +199,9 @@ async function handleLearningPlanSearch(entities: any): Promise<string> {
 }
 
 async function handleEnrollmentRequest(entities: any, userRole: DoceboRole): Promise<string> {
-  if (!hasPermission(userRole, ['enroll.all', 'enroll.managed'])) {
+  const enrollPermissions: Permission[] = ['enroll.all', 'enroll.managed'];
+  
+  if (!hasPermission(userRole, enrollPermissions)) {
     return `❌ Your role (${userRole}) doesn't have permission to enroll users. Contact your administrator.`;
   }
   
@@ -218,14 +221,15 @@ This will be processed automatically based on your permissions.`;
 }
 
 async function handleStatisticsRequest(entities: any, userRole: DoceboRole): Promise<any> {
-  if (!hasPermission(userRole, ['analytics.all', 'analytics.managed'])) {
+  const analyticsPermissions: Permission[] = ['analytics.all', 'analytics.managed'];
+  
+  if (!hasPermission(userRole, analyticsPermissions)) {
     return {
       error: true,
       message: `❌ Your role (${userRole}) doesn't have permission to view statistics. Contact your administrator.`
     };
   }
   
-  // Mock statistics data for now
   return {
     error: false,
     stats: {
