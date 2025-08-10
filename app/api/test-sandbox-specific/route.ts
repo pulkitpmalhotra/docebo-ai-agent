@@ -1,5 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+// Define proper types for the endpoint configuration
+interface EndpointConfig {
+  endpoint: string;
+  headers: Record<string, string>;
+}
+
+interface TestResult {
+  status: number;
+  contentType: string;
+  isJson: boolean;
+  success: boolean;
+  headers_used: Record<string, string>;
+  body_preview: any;
+  error?: string;
+}
+
 export async function GET() {
   try {
     const baseUrl = `https://${process.env.DOCEBO_DOMAIN}`;
@@ -29,7 +45,7 @@ export async function GET() {
     const token = authData.access_token;
     
     // Test sandbox-specific patterns based on your earlier findings
-    const sandboxEndpoints = [
+    const sandboxEndpoints: (string | EndpointConfig)[] = [
       // These were returning 200 in your earlier tests but as HTML
       '/restapi/v1/users',
       '/manage/user',
@@ -57,15 +73,19 @@ export async function GET() {
       }
     ];
     
-    const results = {};
+    const results: Record<string, TestResult> = {};
     
     for (const endpointConfig of sandboxEndpoints) {
       const endpoint = typeof endpointConfig === 'string' ? endpointConfig : endpointConfig.endpoint;
-      const headers = typeof endpointConfig === 'string' ? {
-        'Authorization': `Bearer ${token}`,
-        'Accept': 'application/json',
-        'Content-Type': 'application/json'
-      } : endpointConfig.headers;
+      
+      // Ensure headers are properly typed with all string values
+      const headers: Record<string, string> = typeof endpointConfig === 'string' 
+        ? {
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+          }
+        : endpointConfig.headers;
       
       try {
         console.log(`Testing sandbox endpoint: ${endpoint}`);
@@ -100,8 +120,13 @@ export async function GET() {
         
       } catch (error) {
         results[endpoint] = {
-          error: error instanceof Error ? error.message : 'Unknown error',
-          success: false
+          status: 0,
+          contentType: '',
+          isJson: false,
+          success: false,
+          headers_used: headers,
+          body_preview: '',
+          error: error instanceof Error ? error.message : 'Unknown error'
         };
       }
     }
