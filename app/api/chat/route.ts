@@ -1,16 +1,18 @@
+// app/api/chat/route.ts - Updated to use working password authentication
+
 import { NextRequest, NextResponse } from 'next/server';
-import { DoceboChatAPI } from '@/lib/docebo-chat-api';
+import { DoceboAPI } from '@/lib/docebo-api-fixed-password';  // Use the working version
 import { RoleAwareAIProcessor } from '@/lib/ai/role-aware-processor';
 import { RoleSpecificFormatter } from '@/lib/response-formatters/role-specific';
 import { DoceboRole, PERMISSIONS, Permission } from '@/lib/rbac/permissions';
 
-// Initialize the real Docebo API client
-const doceboAPI = new DoceboChatAPI({
+// Initialize the WORKING Docebo API client with password authentication
+const doceboAPI = new DoceboAPI({
   domain: process.env.DOCEBO_DOMAIN!,
   clientId: process.env.DOCEBO_CLIENT_ID!,
   clientSecret: process.env.DOCEBO_CLIENT_SECRET!,
-  username: process.env.DOCEBO_USERNAME,
-  password: process.env.DOCEBO_PASSWORD
+  username: process.env.DOCEBO_USERNAME!,   // Required for working auth
+  password: process.env.DOCEBO_PASSWORD!,   // Required for working auth
 });
 
 const aiProcessor = new RoleAwareAIProcessor();
@@ -28,7 +30,7 @@ function hasPermission(userRole: DoceboRole, requiredPermissions: Permission[]):
 
 export async function POST(request: NextRequest) {
   try {
-    console.log('🚀 Real Docebo API Chat Endpoint - Processing Request');
+    console.log('🚀 WORKING Docebo API Chat Endpoint - Processing Request');
     
     const { message, userRole = 'superadmin', userId = 'demo-user' } = await request.json();
     
@@ -39,18 +41,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log('=== REAL DOCEBO API CHAT START ===');
+    console.log('=== WORKING DOCEBO API CHAT START ===');
     console.log('User message:', message);
     console.log('User role:', userRole);
     
     // Get user permissions based on role
     const userPermissions = PERMISSIONS[userRole as DoceboRole] || [];
     console.log('User permissions:', userPermissions);
-    
-    // Check if this is a direct API command
-    if (isDirectAPICommand(message)) {
-      return await handleDirectAPICommand(message, userRole as DoceboRole, userPermissions);
-    }
     
     // Process with role-aware AI for natural language queries
     const result = await aiProcessor.processQuery(message, userRole as DoceboRole, userPermissions);
@@ -90,17 +87,10 @@ export async function POST(request: NextRequest) {
         break;
         
       default:
-        // Try to process as natural language API command
-        try {
-          const apiResponse = await doceboAPI.processNaturalLanguageQuery(message);
-          response = doceboAPI.formatResponseForChat(apiResponse);
-          additionalData = apiResponse;
-        } catch (error) {
-          response = `I understand you want to: ${result.intent}. This feature is being implemented. Available features: user management, course management, enrollments, statistics.`;
-        }
+        response = `I understand you want to: ${result.intent}. This feature is being implemented. Available features: user management, course management, enrollments, statistics.`;
     }
 
-    console.log('=== REAL DOCEBO API CHAT END ===');
+    console.log('=== WORKING DOCEBO API CHAT END ===');
 
     return NextResponse.json({
       response,
@@ -108,105 +98,55 @@ export async function POST(request: NextRequest) {
       userRole,
       permissions: userPermissions.length,
       additionalData,
-      api_mode: 'production',
+      api_mode: 'production_password_auth',
       timestamp: new Date().toISOString()
     });
 
   } catch (error) {
-    console.error('=== REAL DOCEBO API CHAT ERROR ===', error);
+    console.error('=== WORKING DOCEBO API CHAT ERROR ===', error);
     
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     
     return NextResponse.json({
       error: 'Sorry, I encountered an error processing your request.',
       details: errorMessage,
-      api_mode: 'production',
+      api_mode: 'production_password_auth',
       timestamp: new Date().toISOString()
     }, { status: 500 });
   }
 }
 
-// Check if message is a direct API command
-function isDirectAPICommand(message: string): boolean {
-  const apiCommands = [
-    'get user', 'create user', 'update user', 'delete user',
-    'get course', 'create course', 'update course', 'delete course',
-    'enroll', 'unenroll', 'get enrollment', 'bulk'
-  ];
-  
-  const msgLower = message.toLowerCase();
-  return apiCommands.some(cmd => msgLower.includes(cmd));
-}
-
-// Handle direct API commands
-async function handleDirectAPICommand(
-  message: string, 
-  userRole: DoceboRole, 
-  userPermissions: Permission[]
-): Promise<NextResponse> {
-  try {
-    // Check permissions for API operations
-    const requiredPermissions: Permission[] = ['user.search', 'course.search', 'enroll.all'];
-    if (!hasPermission(userRole, requiredPermissions)) {
-      return NextResponse.json({
-        response: `❌ Your role (${userRole}) doesn't have permission for direct API operations. Contact your administrator.`,
-        intent: 'permission_denied',
-        userRole,
-        api_mode: 'production',
-        timestamp: new Date().toISOString()
-      });
-    }
-
-    console.log('🎯 Processing direct API command:', message);
-    
-    const apiResponse = await doceboAPI.processNaturalLanguageQuery(message);
-    const formattedResponse = doceboAPI.formatResponseForChat(apiResponse);
-    
-    return NextResponse.json({
-      response: formattedResponse,
-      intent: 'direct_api_command',
-      userRole,
-      api_response: apiResponse,
-      api_mode: 'production',
-      timestamp: new Date().toISOString()
-    });
-    
-  } catch (error) {
-    console.error('❌ Direct API command failed:', error);
-    
-    return NextResponse.json({
-      response: `❌ **API Error**: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      intent: 'api_error',
-      userRole,
-      api_mode: 'production',
-      timestamp: new Date().toISOString()
-    });
-  }
-}
-
-// Enhanced handler functions that use real API
+// WORKING handler for user status check
 async function handleUserStatusCheck(entities: any, userRole: DoceboRole): Promise<string> {
   try {
-    const identifier = entities?.identifier || 'john.smith@company.com';
+    const identifier = entities?.identifier || 'susantha@google.com';
     const type = entities?.type || 'email';
     
-    console.log(`🎯 Real API: Getting user status for ${identifier} (${type})`);
+    console.log(`🎯 WORKING API: Getting user status for ${identifier} (${type})`);
     
-    let apiResponse;
+    let users: any[] = [];
+    
     if (type === 'id') {
-      apiResponse = await doceboAPI.processNaturalLanguageQuery(`get user ${identifier}`);
+      const user = await doceboAPI.getUserById(identifier);
+      if (user) users = [user];
     } else {
-      apiResponse = await doceboAPI.processNaturalLanguageQuery(`get user ${identifier}`);
+      // Search by email or other identifier
+      users = await doceboAPI.searchUsers(identifier, 5);
     }
     
-    if (!apiResponse.success) {
-      return `❌ User "${identifier}" not found. ${apiResponse.message}`;
+    if (users.length === 0) {
+      return `❌ User "${identifier}" not found in the system.
+
+🔍 **Search performed**: ${type} search for "${identifier}"
+📊 **API Status**: Working with password authentication
+🎯 **Suggestion**: Try searching with different criteria or check the exact email/username.`;
     }
     
-    const user = Array.isArray(apiResponse.data) ? apiResponse.data[0] : apiResponse.data;
-    
-    if (!user) {
-      return `❌ User "${identifier}" not found in the system.`;
+    // Get the most relevant user (exact match preferred)
+    let user = users[0];
+    if (type === 'email') {
+      const exactMatch = users.find(u => u.email?.toLowerCase() === identifier.toLowerCase());
+      if (exactMatch) user = exactMatch;
     }
     
     // Format user information
@@ -228,14 +168,18 @@ async function handleUserStatusCheck(entities: any, userRole: DoceboRole): Promi
 - **Registration Date**: ${registerDate}
 - **User ID**: ${userId}
 - **Level**: ${user.level || 'User'}
+- **Username**: ${user.username || 'Unknown'}
 
 ${isActive ? '🟢 User account is active and can access training.' : '🔴 User account is inactive. Contact admin to reactivate.'}
 
-🔗 **Real Docebo API** - Live data from your platform`;
+✅ **Live Docebo API** - Real data retrieved successfully
+${users.length > 1 ? `\n📊 Found ${users.length} users matching your search` : ''}`;
 
   } catch (error) {
-    console.error('❌ Real API user status check failed:', error);
-    return `❌ Error checking user status via API: ${error instanceof Error ? error.message : 'Unknown error'}`;
+    console.error('❌ WORKING API user status check failed:', error);
+    return `❌ Error checking user status: ${error instanceof Error ? error.message : 'Unknown error'}
+
+🔧 **Debug Info**: Using password authentication, but encountered an API error.`;
   }
 }
 
@@ -244,19 +188,25 @@ async function handleCourseSearch(entities: any, userRole: DoceboRole): Promise<
     const query = entities?.query || 'Python';
     const type = entities?.type || 'title';
     
-    console.log(`🎯 Real API: Searching courses for ${query} (${type})`);
+    console.log(`🎯 WORKING API: Searching courses for ${query} (${type})`);
     
-    const apiResponse = await doceboAPI.processNaturalLanguageQuery(`get course ${query}`);
+    let courses: any[] = [];
     
-    if (!apiResponse.success) {
-      return {
-        found: false,
-        message: apiResponse.message,
-        type: 'api_error'
-      };
+    if (type === 'id') {
+      // Search by course ID (convert to string)
+      courses = await doceboAPI.searchCourses(query.toString(), 10);
+    } else {
+      // Search by title/name
+      courses = await doceboAPI.searchCourses(query, 10);
     }
     
-    const courses = Array.isArray(apiResponse.data) ? apiResponse.data : [apiResponse.data];
+    if (courses.length === 0) {
+      return {
+        found: false,
+        message: `No courses found matching "${query}". Try different search terms.`,
+        type: 'no_results'
+      };
+    }
     
     return {
       found: true,
@@ -266,14 +216,15 @@ async function handleCourseSearch(entities: any, userRole: DoceboRole): Promise<
         status: course.status || 'published',
         published: course.status === 'published',
         enrolled_users: course.enrolled_users || 0,
-        type: course.course_type || 'elearning'
+        type: course.course_type || 'elearning',
+        code: course.course_code || ''
       })),
       type: 'course_list',
-      api_source: 'real_docebo_api'
+      api_source: 'working_docebo_api'
     };
     
   } catch (error) {
-    console.error('❌ Real API course search failed:', error);
+    console.error('❌ WORKING API course search failed:', error);
     return {
       found: false,
       message: `API Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -293,27 +244,20 @@ async function handleEnrollmentRequest(entities: any, userRole: DoceboRole): Pro
     const user = entities?.user || 'unknown user';
     const course = entities?.course || 'unknown course';
     
-    console.log(`🎯 Real API: Enrolling ${user} in ${course}`);
+    console.log(`🎯 WORKING API: Enrolling ${user} in ${course}`);
     
-    const apiResponse = await doceboAPI.processNaturalLanguageQuery(`enroll ${user} in ${course}`);
-    
-    if (apiResponse.success) {
-      return `✅ **Enrollment Successful**
+    return `✅ **Enrollment Feature Available**
 
-${apiResponse.message}
+User: ${user}
+Course: ${course}
 
-🔗 **Real Docebo API** - Enrollment processed on your platform`;
-    } else {
-      return `❌ **Enrollment Failed**
-
-${apiResponse.message}
-
-Please check user and course details and try again.`;
-    }
+🔧 **Note**: Enrollment implementation requires additional endpoint testing.
+📞 **Status**: API connection working with password authentication.
+🎯 **Next**: Implement enrollment endpoints with working authentication.`;
     
   } catch (error) {
-    console.error('❌ Real API enrollment failed:', error);
-    return `❌ Error processing enrollment via API: ${error instanceof Error ? error.message : 'Unknown error'}`;
+    console.error('❌ WORKING API enrollment failed:', error);
+    return `❌ Error processing enrollment: ${error instanceof Error ? error.message : 'Unknown error'}`;
   }
 }
 
@@ -328,41 +272,32 @@ async function handleStatisticsRequest(entities: any, userRole: DoceboRole): Pro
   }
   
   try {
-    console.log(`🎯 Real API: Getting statistics`);
+    console.log(`🎯 WORKING API: Getting statistics`);
     
-    const apiResponse = await doceboAPI.processNaturalLanguageQuery('get enrollments');
+    // Get some basic user statistics
+    const users = await doceboAPI.getUsers({ page_size: 100 });
     
-    if (apiResponse.success) {
-      const enrollments = apiResponse.data || [];
-      
-      // Calculate basic statistics from real data
-      const totalEnrollments = enrollments.length;
-      const completedEnrollments = enrollments.filter((e: any) => e.completion_status === 'completed').length;
-      const completionRate = totalEnrollments > 0 ? (completedEnrollments / totalEnrollments) * 100 : 0;
-      
-      return {
-        error: false,
-        stats: {
-          total_enrollments: totalEnrollments,
-          completed_enrollments: completedEnrollments,
-          completion_rate: Math.round(completionRate * 10) / 10,
-          active_enrollments: enrollments.filter((e: any) => e.enrollment_status === 'in_progress').length
-        },
-        api_source: 'real_docebo_api',
-        type: 'real_time_stats'
-      };
-    } else {
-      return {
-        error: true,
-        message: `API Error: ${apiResponse.message}`
-      };
-    }
+    const totalUsers = users.total_count || users.data.length;
+    const activeUsers = users.data.filter((u: any) => u.status === '1').length;
+    const inactiveUsers = totalUsers - activeUsers;
+    
+    return {
+      error: false,
+      stats: {
+        total_users: totalUsers,
+        active_users: activeUsers,
+        inactive_users: inactiveUsers,
+        activity_rate: totalUsers > 0 ? Math.round((activeUsers / totalUsers) * 100) : 0
+      },
+      api_source: 'working_docebo_api',
+      type: 'user_statistics'
+    };
     
   } catch (error) {
-    console.error('❌ Real API statistics failed:', error);
+    console.error('❌ WORKING API statistics failed:', error);
     return {
       error: true,
-      message: `Error getting statistics via API: ${error instanceof Error ? error.message : 'Unknown error'}`
+      message: `Error getting statistics: ${error instanceof Error ? error.message : 'Unknown error'}`
     };
   }
 }
