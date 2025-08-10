@@ -38,13 +38,17 @@ export class DoceboAPIFixed {
     }
 
     const data = await response.json();
-    if (!data.access_token) {
-      throw new Error('No access token received');
+    if (!data.access_token || typeof data.access_token !== 'string') {
+      throw new Error('No valid access token received');
     }
     
     this.accessToken = data.access_token;
     this.tokenExpiry = new Date(Date.now() + (data.expires_in * 1000));
     
+    // TypeScript-safe return
+    if (!this.accessToken) {
+      throw new Error('Failed to store access token');
+    }
     return this.accessToken;
   }
 
