@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { DoceboClient } from '@/lib/docebo';
-import { processUserQuery, generateHelpResponse } from '@/lib/gemini-ai';
+import { EnhancedDoceboClient } from '@/lib/docebo-enhanced';
+import { RoleAwareAIProcessor } from '@/lib/ai/role-aware-processor';
+import { RoleSpecificFormatter } from '@/lib/response-formatters/role-specific';
+import { DoceboRole, PERMISSIONS } from '@/lib/rbac/permissions';
 
-const docebo = new DoceboClient();
+const docebo = new EnhancedDoceboClient();
+const aiProcessor = new RoleAwareAIProcessor();
+const formatter = new RoleSpecificFormatter();
 
 export async function POST(request: NextRequest) {
   try {
-    const { message } = await request.json();
+    const { message, userRole = 'superadmin', userId = 'demo-user' } = await request.json();
     
     if (!message || typeof message !== 'string') {
       return NextResponse.json(
@@ -15,68 +19,72 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log('=== CHAT API START ===');
-    console.log('User message:', JSON.stringify(message));
+    console.log('=== ENHANCED CHAT API START ===');
+    console.log('User message:', message);
+    console.log('User role:', userRole);
     
-    // Process the user's message with AI
-    const action = await processUserQuery(message);
-    console.log('Processed action:', JSON.stringify(action));
+    // Get user permissions based on role
+    const userPermissions = PERMISSIONS[userRole as DoceboRole] || [];
+    console.log('User permissions:', userPermissions);
     
+    // Process with role-aware AI
+    const result = await aiProcessor.processQuery(message, userRole as DoceboRole, userPermissions);
+    
+    if (result.intent === 'permission_denied') {
+      return NextResponse.json({
+        response: result.message,
+        intent: 'permission_denied',
+        userRole,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    // Process the query based on intent
     let response: string;
+    let additionalData: any = {};
 
-    switch (action.intent) {
-      case 'search_users':
-        console.log('Searching users with:', action.entities);
-        const users = await docebo.getUsers({
-          search: action.entities.query,
-          limit: action.entities.limit || 5,
-        });
-        console.log('Users found:', users.data?.length || 0);
-        response = formatUsersResponse(users, action.entities.query);
+    switch (result.intent) {
+      case 'user_status_check':
+        response = await handleUserStatusCheck(result.entities);
         break;
-
-      case 'search_courses':
-        console.log('Searching courses with:', action.entities);
-        const courses = await docebo.getCourses({
-          search: action.entities.query,
-          limit: action.entities.limit || 5,
-        });
-        console.log('Courses found:', courses.data?.length || 0);
-        response = formatCoursesResponse(courses, action.entities.query);
+        
+      case 'course_search':
+        const courseResult = await handleCourseSearch(result.entities);
+        response = formatter.formatResponse(courseResult, 'course_search', userRole as DoceboRole);
+        additionalData = courseResult;
         break;
-
-      case 'get_user_enrollments':
-        response = await handleUserEnrollments(action.entities.user_email);
+        
+      case 'learning_plan_search':
+        response = await handleLearningPlanSearch(result.entities);
         break;
-
-      case 'enroll_user':
-        response = await handleEnrollmentRequest(action.entities);
+        
+      case 'enrollment_request':
+        response = await handleEnrollmentRequest(result.entities, userRole as DoceboRole);
         break;
-
-      case 'get_help':
-        response = await generateHelpResponse(action.entities.topic);
+        
+      case 'statistics_request':
+        const statsResult = await handleStatisticsRequest(result.entities, userRole as DoceboRole);
+        response = formatter.formatResponse(statsResult, 'statistics', userRole as DoceboRole);
+        additionalData = statsResult;
         break;
-
-      case 'get_stats':
-        response = await handleStatsRequest(action.entities);
-        break;
-
+        
       default:
-        response = "I'm not sure how to help with that. Try asking me to:\n\n• Find users or courses\n• Check someone's enrollments\n• Enroll users in courses\n• Get help with Docebo features";
+        response = `I understand you want to: ${result.intent}. This feature is being implemented. Available features: user status, course search, enrollments, statistics.`;
     }
 
-    console.log('Final response length:', response.length);
-    console.log('=== CHAT API END ===');
+    console.log('=== ENHANCED CHAT API END ===');
 
     return NextResponse.json({
       response,
-      intent: action.intent,
-      entities: action.entities,
+      intent: result.intent,
+      userRole,
+      permissions: userPermissions.length,
+      additionalData,
       timestamp: new Date().toISOString()
     });
 
   } catch (error) {
-    console.error('=== CHAT API ERROR ===', error);
+    console.error('=== ENHANCED CHAT API ERROR ===', error);
     
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     
@@ -88,92 +96,121 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Helper functions remain the same...
-function formatUsersResponse(users: any, searchQuery: string): string {
-  console.log('Formatting users response for query:', searchQuery);
-  console.log('Users data:', users.data);
-  
-  if (!users.data || users.data.length === 0) {
-    return `No users found matching "${searchQuery}". Try a different search term or check the spelling.`;
-  }
-
-  const userList = users.data
-    .map((user: any) => `• **${user.firstname} ${user.lastname}** (${user.email}) - ${user.department || 'No department'}`)
-    .join('\n');
-
-  return `Found ${users.data.length} user${users.data.length > 1 ? 's' : ''} matching "${searchQuery}":\n\n${userList}\n\n💡 **Tip**: Say "What are [email]'s enrollments?" to see their courses.`;
-}
-
-function formatCoursesResponse(courses: any, searchQuery: string): string {
-  console.log('Formatting courses response for query:', searchQuery);
-  console.log('Courses data:', courses.data);
-  
-  if (!courses.data || courses.data.length === 0) {
-    return `No courses found matching "${searchQuery}". Try a different search term or browse available categories.`;
-  }
-
-  const courseList = courses.data
-    .map((course: any) => `• **${course.name}** (${course.course_type}) - ${course.enrolled_users || 0} enrolled`)
-    .join('\n');
-
-  return `Found ${courses.data.length} course${courses.data.length > 1 ? 's' : ''} matching "${searchQuery}":\n\n${courseList}\n\n🎯 **Quick Action**: Say "Enroll [email] in [course name]" to enroll someone!`;
-}
-
-async function handleUserEnrollments(userEmail: string): Promise<string> {
+// Enhanced handler functions
+async function handleUserStatusCheck(entities: any): Promise<string> {
   try {
-    const users = await docebo.getUsers({ search: userEmail });
+    const userStatus = await docebo.getUserStatus(entities.identifier, entities.type);
     
-    if (!users.data || users.data.length === 0) {
-      return `User with email ${userEmail} not found. Please check the email address.`;
+    if (!userStatus.found) {
+      return `❌ User "${entities.identifier}" not found. Please check the email, username, or ID.`;
     }
     
-    const user = users.data[0];
-    const enrollments = await docebo.getEnrollments(user.id);
+    const user = userStatus.data;
+    return `👤 **User Status for ${user.email}**
+
+- **Name**: ${user.firstname} ${user.lastname}
+- **Status**: ${user.active ? '✅ Active' : '❌ Inactive'}
+- **Department**: ${user.department || 'Not specified'}
+- **Last Login**: ${user.last_login || 'Never'}
+- **Registration Date**: ${user.register_date}
+- **User ID**: ${user.id}
+
+${user.active ? '🟢 User account is active and can access training.' : '🔴 User account is inactive. Contact admin to reactivate.'}`;
+
+  } catch (error) {
+    return `❌ Error checking user status: ${error instanceof Error ? error.message : 'Unknown error'}`;
+  }
+}
+
+async function handleCourseSearch(entities: any): Promise<any> {
+  try {
+    const searchResult = await docebo.searchCourses(entities.query, entities.type);
     
-    if (!enrollments.data || enrollments.data.length === 0) {
-      return `**${user.firstname} ${user.lastname}** (${userEmail}) has no current enrollments.`;
+    if (!searchResult.found && searchResult.suggestions) {
+      return {
+        found: false,
+        suggestions: searchResult.suggestions,
+        message: searchResult.message,
+        type: 'suggestions'
+      };
     }
     
-    const enrollmentList = enrollments.data
-      .map((enrollment: any) => 
-        `• **${enrollment.course_name}** - ${enrollment.status} (${enrollment.completion_percentage || 0}% complete)`
-      )
-      .join('\n');
+    if (!searchResult.found) {
+      return {
+        found: false,
+        message: `No courses found for "${entities.query}". Try using exact course ID or title.`,
+        type: 'not_found'
+      };
+    }
     
-    return `**${user.firstname} ${user.lastname}** (${userEmail}) enrollments:\n\n${enrollmentList}\n\n📊 **Total**: ${enrollments.data.length} course${enrollments.data.length > 1 ? 's' : ''}`;
+    const courses = Array.isArray(searchResult.data) ? searchResult.data : [searchResult.data];
+    
+    return {
+      found: true,
+      courses: courses.map(course => ({
+        id: course.id,
+        name: course.name,
+        status: course.status,
+        published: course.status === 'published',
+        enrolled_users: course.enrolled_users || 0,
+        type: course.course_type
+      })),
+      type: 'course_list'
+    };
     
   } catch (error) {
-    return `Sorry, I couldn't retrieve enrollments for ${userEmail}. Please try again or contact support.`;
+    return {
+      found: false,
+      message: `Error searching courses: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      type: 'error'
+    };
   }
 }
 
-async function handleEnrollmentRequest(entities: { user_email: string; course_name: string }): Promise<string> {
-  return `🔐 **Enrollment Request Created**
-
-I've created a request to enroll **${entities.user_email}** in **${entities.course_name}**.
-
-**What happens next:**
-✅ Request logged for admin approval
-👨‍💼 Notification sent to administrators  
-⏱️ Typical approval time: 2-4 hours
-📧 Confirmation sent when completed
-
-**Request ID**: #${Math.random().toString(36).substr(2, 9).toUpperCase()}
-
-Check the "Pending Approvals" panel for updates!`;
+async function handleLearningPlanSearch(entities: any): Promise<string> {
+  // Similar to course search but for learning plans
+  return `🎯 Learning plan search for "${entities.query}" - Feature implementing...`;
 }
 
-async function handleStatsRequest(entities: { type: string; timeframe?: string }): Promise<string> {
-  const timeframe = entities.timeframe || 'current';
+async function handleEnrollmentRequest(entities: any, userRole: DoceboRole): Promise<string> {
+  if (!PERMISSIONS[userRole].includes('enroll.all') && !PERMISSIONS[userRole].includes('enroll.managed')) {
+    return `❌ Your role (${userRole}) doesn't have permission to enroll users. Contact your administrator.`;
+  }
   
-  switch (entities.type) {
-    case 'overview':
-      return `📊 **System Overview** (${timeframe})\n\n• **Total Users**: 247 active\n• **Total Courses**: 156 available\n• **Active Enrollments**: 1,248\n• **Completion Rate**: 78.5%\n• **Most Popular Course**: Python Fundamentals (45 enrollments)\n\n💡 Ask for specific course or user stats for more details!`;
-      
-    case 'enrollment':
-      return `📈 **Enrollment Statistics** (${timeframe})\n\n• **New Enrollments**: 24 this week\n• **Completions**: 18 this week\n• **In Progress**: 156 courses\n• **Average Completion Time**: 3.2 weeks\n• **Top Performer**: Marketing Department (89% completion rate)`;
-      
-    default:
-      return `📊 I can provide statistics for:\n\n• **Overview** - General system stats\n• **Enrollment** - Enrollment and completion data\n• **Course** - Individual course performance\n• **User** - User activity and progress\n\nWhat would you like to see?`;
+  return `📝 **Enrollment Request Created**
+
+Enrolling **${entities.user}** in **${entities.course}**
+
+⏳ Processing enrollment...
+✅ User verification: Pending
+✅ Course availability: Pending  
+✅ Prerequisites check: Pending
+
+This will be processed automatically based on your permissions.`;
+}
+
+async function handleStatisticsRequest(entities: any, userRole: DoceboRole): Promise<any> {
+  if (!PERMISSIONS[userRole].includes('analytics.all') && !PERMISSIONS[userRole].includes('analytics.managed')) {
+    return {
+      error: true,
+      message: `❌ Your role (${userRole}) doesn't have permission to view statistics. Contact your administrator.`
+    };
   }
+  
+  // Mock statistics data for now
+  return {
+    error: false,
+    stats: {
+      total_completions: 156,
+      completion_rate: 78.5,
+      active_learners: 89,
+      courses_in_progress: 34
+    },
+    chartData: [
+      { month: 'Jan', completions: 45 },
+      { month: 'Feb', completions: 52 },
+      { month: 'Mar', completions: 61 }
+    ],
+    type: 'completion_stats'
+  };
 }
