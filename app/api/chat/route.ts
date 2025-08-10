@@ -101,44 +101,56 @@ async function handleUserStatusCheck(entities: any): Promise<string> {
   try {
     const userStatus = await docebo.getUserStatus(entities.identifier, entities.type);
     
-    if (!userStatus.found) {
+    if (!userStatus.found || !userStatus.data) {
       return `❌ User "${entities.identifier}" not found. Please check the email, username, or ID.`;
     }
     
     const user = userStatus.data;
-    return `👤 **User Status for ${user.email}**
+    
+    // Safely access user properties with fallbacks
+    const email = user.email || 'No email';
+    const firstname = user.firstname || 'Unknown';
+    const lastname = user.lastname || '';
+    const department = user.department || 'Not specified';
+    const lastLogin = user.last_login || 'Never';
+    const registerDate = user.register_date || 'Unknown';
+    const userId = user.id || 'Unknown';
+    const isActive = user.active === true;
 
-- **Name**: ${user.firstname} ${user.lastname}
-- **Status**: ${user.active ? '✅ Active' : '❌ Inactive'}
-- **Department**: ${user.department || 'Not specified'}
-- **Last Login**: ${user.last_login || 'Never'}
-- **Registration Date**: ${user.register_date}
-- **User ID**: ${user.id}
+    return `👤 **User Status for ${email}**
 
-${user.active ? '🟢 User account is active and can access training.' : '🔴 User account is inactive. Contact admin to reactivate.'}`;
+- **Name**: ${firstname} ${lastname}
+- **Status**: ${isActive ? '✅ Active' : '❌ Inactive'}
+- **Department**: ${department}
+- **Last Login**: ${lastLogin}
+- **Registration Date**: ${registerDate}
+- **User ID**: ${userId}
+
+${isActive ? '🟢 User account is active and can access training.' : '🔴 User account is inactive. Contact admin to reactivate.'}`;
 
   } catch (error) {
     return `❌ Error checking user status: ${error instanceof Error ? error.message : 'Unknown error'}`;
   }
 }
-
+Also, let's fix the handleCourseSearch function to be more type-safe:
+typescript// Replace the handleCourseSearch function with this fixed version:
 async function handleCourseSearch(entities: any): Promise<any> {
   try {
     const searchResult = await docebo.searchCourses(entities.query, entities.type);
     
-    if (!searchResult.found && searchResult.suggestions) {
-      return {
-        found: false,
-        suggestions: searchResult.suggestions,
-        message: searchResult.message,
-        type: 'suggestions'
-      };
-    }
-    
     if (!searchResult.found) {
+      if (searchResult.suggestions && Array.isArray(searchResult.suggestions)) {
+        return {
+          found: false,
+          suggestions: searchResult.suggestions,
+          message: searchResult.message || `No exact match found for "${entities.query}"`,
+          type: 'suggestions'
+        };
+      }
+      
       return {
         found: false,
-        message: `No courses found for "${entities.query}". Try using exact course ID or title.`,
+        message: searchResult.message || `No courses found for "${entities.query}". Try using exact course ID or title.`,
         type: 'not_found'
       };
     }
@@ -147,13 +159,13 @@ async function handleCourseSearch(entities: any): Promise<any> {
     
     return {
       found: true,
-      courses: courses.map(course => ({
-        id: course.id,
-        name: course.name,
-        status: course.status,
-        published: course.status === 'published',
-        enrolled_users: course.enrolled_users || 0,
-        type: course.course_type
+      courses: courses.map((course: any) => ({
+        id: course?.id || 'Unknown',
+        name: course?.name || 'Unknown Course',
+        status: course?.status || 'unknown',
+        published: course?.status === 'published',
+        enrolled_users: course?.enrolled_users || 0,
+        type: course?.course_type || 'unknown'
       })),
       type: 'course_list'
     };
