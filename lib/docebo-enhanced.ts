@@ -1,5 +1,4 @@
-// lib/docebo-enhanced.ts - Replace entire file with this fixed version:
-
+// lib/docebo-enhanced.ts - Production version
 import { DoceboClient } from './docebo';
 
 interface SearchResult {
@@ -12,28 +11,34 @@ interface SearchResult {
 
 export class EnhancedDoceboClient extends DoceboClient {
   
-  // User Management
+  // User Management with real API
   async getUserStatus(identifier: string, type: 'email' | 'username' | 'id'): Promise<SearchResult> {
     try {
+      console.log(`🔍 Searching for user: ${identifier} (${type})`);
+      
       if (type === 'id') {
-        const users = await this.getUsers({ search: identifier });
-        const foundUser = users.data?.find((user: any) => user.id.toString() === identifier);
+        const user = await this.getUserById(parseInt(identifier));
         return {
-          found: !!foundUser,
-          data: foundUser
+          found: !!user,
+          data: user
+        };
+      } else if (type === 'email') {
+        const user = await this.getUserByEmail(identifier);
+        return {
+          found: !!user,
+          data: user
         };
       } else {
+        // For username, search all users
         const users = await this.getUsers({ search: identifier });
-        const foundUser = users.data?.find((user: any) => 
-          (type === 'email' && user.email === identifier) ||
-          (type === 'username' && user.username === identifier)
-        );
+        const foundUser = users.data?.find((user: any) => user.username === identifier);
         return {
           found: !!foundUser,
           data: foundUser
         };
       }
     } catch (error) {
+      console.error('❌ Error getting user status:', error);
       return {
         found: false,
         error: error instanceof Error ? error.message : 'Unknown error'
@@ -41,220 +46,249 @@ export class EnhancedDoceboClient extends DoceboClient {
     }
   }
   
-  // Course Management with suggestions
+  // Enhanced course search with real API
   async searchCourses(query: string, type: 'id' | 'title'): Promise<SearchResult> {
     try {
-      const courses = await this.getCourses({ search: query });
+      console.log(`🔍 Searching for course: ${query} (${type})`);
       
-      if (!courses.data || courses.data.length === 0) {
-        // Try to find similar courses for suggestions
-        const allCourses = await this.getCourses({});
-        const suggestions = this.findSimilarCourses(query, allCourses.data || []);
-        
-        if (suggestions.length > 0) {
+      if (type === 'id') {
+        const courseId = parseInt(query);
+        if (isNaN(courseId)) {
           return {
             found: false,
-            message: `No exact match found for "${query}". Here are similar courses:`,
-            suggestions: suggestions
+            message: `"${query}" is not a valid course ID. Please provide a numeric ID.`
+          };
+        }
+        
+        const course = await this.getCourseById(courseId);
+        return {
+          found: !!course,
+          data: course ? [course] : []
+        };
+      } else {
+        // Search by title
+        const courses = await this.searchCoursesByTitle(query);
+        
+        if (!courses.data || courses.data.length === 0) {
+          // Try to find similar courses
+          const allCourses = await this.getCourses({ limit: 100 });
+          const suggestions = this.findSimilarCourses(query, allCourses.data || []);
+          
+          if (suggestions.length > 0) {
+            return {
+              found: false,
+              message: `No exact match found for "${query}". Here are similar courses:`,
+              suggestions: suggestions
+            };
+          }
+          
+          return {
+            found: false,
+            message: `No courses found matching "${query}". Try using the exact course name or ID.`
           };
         }
         
         return {
-          found: false,
-          message: `No courses found for "${query}"`
+          found: true,
+          data: courses.data
         };
       }
-      
-      return {
-        found: true,
-        data: courses.data
-      };
     } catch (error) {
+      console.error('❌ Error searching courses:', error);
       return {
         found: false,
         error: error instanceof Error ? error.message : 'Unknown error'
       };
     }
   }
-  
-  // Helper method to find similar courses
-  private findSimilarCourses(query: string, allCourses: any[]): any[] {
-    const queryLower = query.toLowerCase();
-    const suggestions = allCourses.filter(course => {
-      const nameLower = course.name.toLowerCase();
-      const categoryLower = (course.category || '').toLowerCase();
-      
-      // Simple fuzzy matching
-      return nameLower.includes(queryLower) || 
-             categoryLower.includes(queryLower) ||
-             this.calculateSimilarity(queryLower, nameLower) > 0.5;
-    }).slice(0, 3); // Limit to 3 suggestions
-    
-    return suggestions;
-  }
-  
-  // Simple similarity calculation
-  private calculateSimilarity(str1: string, str2: string): number {
-    const longer = str1.length > str2.length ? str1 : str2;
-    const shorter = str1.length > str2.length ? str2 : str1;
-    
-    if (longer.length === 0) return 1.0;
-    
-    const editDistance = this.levenshteinDistance(longer, shorter);
-    return (longer.length - editDistance) / longer.length;
-  }
-  
-  // Levenshtein distance for fuzzy matching
-  private levenshteinDistance(str1: string, str2: string): number {
-    const matrix = [];
-    
-    for (let i = 0; i <= str2.length; i++) {
-      matrix[i] = [i];
-    }
-    
-    for (let j = 0; j <= str1.length; j++) {
-      matrix[0][j] = j;
-    }
-    
-    for (let i = 1; i <= str2.length; i++) {
-      for (let j = 1; j <= str1.length; j++) {
-        if (str2.charAt(i - 1) === str1.charAt(j - 1)) {
-          matrix[i][j] = matrix[i - 1][j - 1];
-        } else {
-          matrix[i][j] = Math.min(
-            matrix[i - 1][j - 1] + 1,
-            matrix[i][j - 1] + 1,
-            matrix[i - 1][j] + 1
-          );
-        }
-      }
-    }
-    
-    return matrix[str2.length][str1.length];
-  }
-  
-  // Use public methods instead of private apiCall
-  async getCourseDetails(courseId: number): Promise<any> {
-    try {
-      // Use the public getCourses method to find the course by ID
-      const courses = await this.getCourses({});
-      const course = courses.data?.find((c: any) => c.id === courseId);
-      
-      if (!course) {
-        throw new Error(`Course with ID ${courseId} not found`);
-      }
-      
-      return course;
-    } catch (error) {
-      throw new Error(`Could not get course details: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  }
-  
-  async getCourseStatus(courseId: number): Promise<any> {
-    try {
-      const course = await this.getCourseDetails(courseId);
-      return {
-        id: courseId,
-        published: course.status === 'published',
-        status: course.status || 'published'
-      };
-    } catch (error) {
-      return {
-        id: courseId,
-        published: false,
-        status: 'unknown',
-        error: error instanceof Error ? error.message : 'Unknown error'
-      };
-    }
-  }
-  
-  // Learning Plans
+
+  // Learning Plans search
   async searchLearningPlans(query: string, type: 'id' | 'title'): Promise<SearchResult> {
     try {
-      // Mock implementation for now since we don't have learning plans in mock data
-      return {
-        found: false,
-        message: `Learning plan search for "${query}" - Feature coming soon`
-      };
+      console.log(`🔍 Searching for learning plan: ${query} (${type})`);
+      
+      if (type === 'id') {
+        const planId = parseInt(query);
+        if (isNaN(planId)) {
+          return {
+            found: false,
+            message: `"${query}" is not a valid learning plan ID. Please provide a numeric ID.`
+          };
+        }
+        
+        const plan = await this.getLearningPlanById(planId);
+        return {
+          found: !!plan,
+          data: plan ? [plan] : []
+        };
+      } else {
+        const plans = await this.getLearningPlans({ search: query });
+        
+        if (!plans.data || plans.data.length === 0) {
+          return {
+            found: false,
+            message: `No learning plans found matching "${query}".`
+          };
+        }
+        
+        return {
+          found: true,
+          data: plans.data
+        };
+      }
     } catch (error) {
+      console.error('❌ Error searching learning plans:', error);
       return {
         found: false,
         error: error instanceof Error ? error.message : 'Unknown error'
       };
     }
   }
-  
-  // Enhanced enrollment methods using public APIs
-  async enrollUserInCourse(userIdentifier: string, courseIdentifier: string): Promise<any> {
+
+  // Enhanced enrollment with real API
+  async enrollUserInCourse(userIdentifier: string, courseIdentifier: string, dry_run: boolean = true): Promise<any> {
     try {
-      // Find user first
-      const users = await this.getUsers({ search: userIdentifier });
-      if (!users.data || users.data.length === 0) {
+      console.log(`📝 Enrolling user ${userIdentifier} in course ${courseIdentifier}`);
+      
+      // Find user
+      let user;
+      if (userIdentifier.includes('@')) {
+        user = await this.getUserByEmail(userIdentifier);
+      } else if (/^\d+$/.test(userIdentifier)) {
+        user = await this.getUserById(parseInt(userIdentifier));
+      } else {
+        const users = await this.getUsers({ search: userIdentifier });
+        user = users.data?.[0];
+      }
+      
+      if (!user) {
         throw new Error(`User "${userIdentifier}" not found`);
       }
       
       // Find course
-      const courses = await this.getCourses({ search: courseIdentifier });
-      if (!courses.data || courses.data.length === 0) {
+      let course;
+      if (/^\d+$/.test(courseIdentifier)) {
+        course = await this.getCourseById(parseInt(courseIdentifier));
+      } else {
+        const courses = await this.searchCoursesByTitle(courseIdentifier);
+        course = courses.data?.[0];
+      }
+      
+      if (!course) {
         throw new Error(`Course "${courseIdentifier}" not found`);
       }
       
-      const user = users.data[0];
-      const course = courses.data[0];
-      
-      // Use the public enrollUser method
-      return await this.enrollUser(user.id, course.id, false);
+      // Perform enrollment
+      return await this.enrollUser(user.id, course.id, dry_run);
     } catch (error) {
+      console.error('❌ Enrollment failed:', error);
       throw new Error(`Enrollment failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
-  
+
   // Group enrollment
-  async enrollGroupInCourse(groupIdentifier: string, courseIdentifier: string): Promise<any> {
+  async enrollGroupInCourse(groupIdentifier: string, courseIdentifier: string, dry_run: boolean = true): Promise<any> {
     try {
-      // For now, return a mock response since we don't have group management in mock
+      console.log(`📝 Enrolling group ${groupIdentifier} in course ${courseIdentifier}`);
+      
+      // Find group
+      let group;
+      if (/^\d+$/.test(groupIdentifier)) {
+        group = await this.getGroupById(parseInt(groupIdentifier));
+      } else {
+        const groups = await this.getGroups({ search: groupIdentifier });
+        group = groups.data?.[0];
+      }
+      
+      if (!group) {
+        throw new Error(`Group "${groupIdentifier}" not found`);
+      }
+      
+      // Find course
+      let course;
+      if (/^\d+$/.test(courseIdentifier)) {
+        course = await this.getCourseById(parseInt(courseIdentifier));
+      } else {
+        const courses = await this.searchCoursesByTitle(courseIdentifier);
+        course = courses.data?.[0];
+      }
+      
+      if (!course) {
+        throw new Error(`Course "${courseIdentifier}" not found`);
+      }
+      
+      if (dry_run) {
+        return {
+          message: `Dry run: Group "${group.name}" (${group.id}) would be enrolled in course "${course.name}" (${course.id})`,
+          dry_run: true,
+          group_id: group.id,
+          course_id: course.id
+        };
+      }
+      
+      // Get group members and enroll them
+      const members = await this.getGroupMembers(group.id);
+      const enrollments = [];
+      
+      for (const member of members.data || []) {
+        try {
+          const enrollment = await this.enrollUser(member.id, course.id, false);
+          enrollments.push(enrollment);
+        } catch (error) {
+          console.error(`Failed to enroll user ${member.id}:`, error);
+        }
+      }
+      
       return {
-        message: `Mock: Group "${groupIdentifier}" would be enrolled in course "${courseIdentifier}"`,
-        group_identifier: groupIdentifier,
-        course_identifier: courseIdentifier,
-        mode: 'mock'
+        message: `Group "${group.name}" enrolled in course "${course.name}"`,
+        group_id: group.id,
+        course_id: course.id,
+        enrolled_users: enrollments.length,
+        total_members: members.data?.length || 0
       };
+      
     } catch (error) {
+      console.error('❌ Group enrollment failed:', error);
       throw new Error(`Group enrollment failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
-  
-  // Analytics methods
-  async getCourseCompletionStats(courseId: number): Promise<any> {
-    try {
-      // Mock implementation with realistic data
-      return {
-        course_id: courseId,
-        total_enrolled: 45,
-        completed: 34,
-        in_progress: 8,
-        not_started: 3,
-        completion_rate: 75.6,
-        average_score: 82.3
-      };
-    } catch (error) {
-      throw new Error(`Could not get completion stats: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
+
+  // Helper method for course similarity
+  private findSimilarCourses(query: string, allCourses: any[]): any[] {
+    const queryLower = query.toLowerCase();
+    return allCourses
+      .filter(course => {
+        const nameLower = course.name.toLowerCase();
+        return nameLower.includes(queryLower) || 
+               this.calculateSimilarity(queryLower, nameLower) > 0.6;
+      })
+      .slice(0, 3);
   }
   
-  async getLearningPlanCompletionStats(planId: number): Promise<any> {
-    try {
-      // Mock implementation
-      return {
-        plan_id: planId,
-        total_enrolled: 23,
-        completed: 18,
-        in_progress: 4,
-        not_started: 1,
-        completion_rate: 78.3
-      };
-    } catch (error) {
-      throw new Error(`Could not get learning plan stats: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  private calculateSimilarity(str1: string, str2: string): number {
+    const longer = str1.length > str2.length ? str1 : str2;
+    const shorter = str1.length > str2.length ? str2 : str1;
+    const editDistance = this.levenshteinDistance(longer, shorter);
+    return (longer.length - editDistance) / longer.length;
+  }
+  
+  private levenshteinDistance(str1: string, str2: string): number {
+    const matrix = Array(str2.length + 1).fill(null).map(() => Array(str1.length + 1).fill(null));
+    
+    for (let i = 0; i <= str1.length; i++) matrix[0][i] = i;
+    for (let j = 0; j <= str2.length; j++) matrix[j][0] = j;
+    
+    for (let j = 1; j <= str2.length; j++) {
+      for (let i = 1; i <= str1.length; i++) {
+        const cost = str1[i - 1] === str2[j - 1] ? 0 : 1;
+        matrix[j][i] = Math.min(
+          matrix[j - 1][i] + 1,
+          matrix[j][i - 1] + 1, 
+          matrix[j - 1][i - 1] + cost
+        );
+      }
     }
+    
+    return matrix[str2.length][str1.length];
   }
 }
