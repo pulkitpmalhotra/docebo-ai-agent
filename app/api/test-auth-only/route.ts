@@ -1,5 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+// Define the type for test results
+interface TestResult {
+  status: number;
+  statusText: string;
+  contentType: string | null;
+  isJson: boolean;
+  bodyPreview: string;
+  success: boolean;
+  error?: string;
+}
+
 export async function GET() {
   try {
     const baseUrl = `https://${process.env.DOCEBO_DOMAIN}`;
@@ -45,7 +56,8 @@ export async function GET() {
       '/api/v1/users?limit=1',  // Generic API path
     ];
     
-    const testResults = {};
+    // Use proper typing for testResults
+    const testResults: Record<string, TestResult> = {};
     
     for (const endpoint of endpointsToTest) {
       try {
@@ -66,7 +78,7 @@ export async function GET() {
           status: response.status,
           statusText: response.statusText,
           contentType: response.headers.get('content-type'),
-          isJson: response.headers.get('content-type')?.includes('application/json'),
+          isJson: response.headers.get('content-type')?.includes('application/json') || false,
           bodyPreview: responseText.substring(0, 200),
           success: response.status >= 200 && response.status < 300
         };
@@ -77,6 +89,11 @@ export async function GET() {
         
       } catch (error) {
         testResults[endpoint] = {
+          status: 0,
+          statusText: 'Error',
+          contentType: null,
+          isJson: false,
+          bodyPreview: '',
           error: error instanceof Error ? error.message : 'Unknown error',
           success: false
         };
