@@ -183,10 +183,10 @@ export async function GET() {
 
     return NextResponse.json({
       message: 'Authentication method comparison',
-      has_username_password: hasCredentials,
+      has_username_password: !!hasCredentials,
       test_results: results,
       analysis,
-      next_steps: generateNextSteps(results, hasCredentials),
+      next_steps: generateNextSteps(results, !!hasCredentials),
       timestamp: new Date().toISOString()
     });
     
