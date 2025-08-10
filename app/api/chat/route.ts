@@ -120,7 +120,9 @@ async function handleUserStatusCheck(entities: any): Promise<string> {
     const userStatus = await docebo.getUserStatus(identifier, type);
     
     if (!userStatus.found || !userStatus.data) {
-      return `❌ User "${identifier}" not found. Please check the email, username, or ID.`;
+      // Include debug information in development
+      const debugInfo = userStatus.debug ? `\n\n🔍 Debug: ${JSON.stringify(userStatus.debug, null, 2)}` : '';
+      return `❌ User "${identifier}" not found. Please check the email, username, or ID.${debugInfo}`;
     }
     
     const user = userStatus.data as any;
