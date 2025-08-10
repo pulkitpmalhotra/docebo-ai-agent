@@ -26,7 +26,8 @@ export const PERMISSIONS: Record<DoceboRole, Permission[]> = {
     'course.modify', 
     'enroll.all', 
     'analytics.all', 
-    'notifications.create', 
+    'notifications.create',
+    'analytics.managed',
     'settings.modify'
   ],
   [DoceboRole.POWER_USER]: [
