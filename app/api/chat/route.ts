@@ -1,4 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server';
+export async function POST(request: NextRequest) {
+  try {
+    console.log('🚀 CHAT API - Environment Check:');
+    console.log('DOCEBO_DOMAIN:', process.env.DOCEBO_DOMAIN);
+    console.log('Mock flag:', process.env.USE_MOCK_DOCEBO);
+    console.log('Client type: EnhancedDoceboClient (PRODUCTION)');
+    
+    import { NextRequest, NextResponse } from 'next/server';
 import { EnhancedDoceboClient } from '@/lib/docebo-enhanced';
 import { RoleAwareAIProcessor } from '@/lib/ai/role-aware-processor';
 import { RoleSpecificFormatter } from '@/lib/response-formatters/role-specific';
