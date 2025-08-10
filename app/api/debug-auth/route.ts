@@ -65,7 +65,7 @@ export async function GET() {
     console.log('✅ Got token:', token.substring(0, 20) + '...');
     
     // Step 2: Test API calls with different approaches
-    const testCalls = [
+    const testCalls: Array<{name: string, url: string, headers: Record<string, string>}> = [
       {
         name: 'Standard API call',
         url: '/manage/v1/user?limit=1',
