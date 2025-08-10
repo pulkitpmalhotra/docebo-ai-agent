@@ -128,13 +128,13 @@ async function handleUserStatusCheck(entities: any): Promise<string> {
     const user = userStatus.data as any;
     
     const email = user.email || 'No email';
-    const firstname = user.firstname || 'Unknown';
-    const lastname = user.lastname || '';
+    const firstname = user.firstname || user.first_name || 'Unknown';
+    const lastname = user.lastname || user.last_name || '';
     const department = user.department || 'Not specified';
-    const lastLogin = user.last_login ? new Date(user.last_login).toLocaleDateString() : 'Never';
-    const registerDate = user.register_date ? new Date(user.register_date).toLocaleDateString() : 'Unknown';
-    const userId = user.id || 'Unknown';
-    const isActive = user.active === true || user.status === 'active';
+    const lastLogin = user.last_login || user.last_access_date ? new Date(user.last_login || user.last_access_date).toLocaleDateString() : 'Never';
+    const registerDate = user.register_date || user.creation_date ? new Date(user.register_date || user.creation_date).toLocaleDateString() : 'Unknown';
+    const userId = user.id || user.user_id || 'Unknown';
+    const isActive = user.active === true || user.status === 'active' || user.status === '1';
 
     return `👤 **User Status for ${email}**
 
@@ -151,7 +151,6 @@ ${isActive ? '🟢 User account is active and can access training.' : '🔴 User
     return `❌ Error checking user status: ${error instanceof Error ? error.message : 'Unknown error'}`;
   }
 }
-
 async function handleCourseSearch(entities: any): Promise<any> {
   try {
     const query = entities?.query || 'Python';
