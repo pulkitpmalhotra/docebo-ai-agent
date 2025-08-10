@@ -123,8 +123,8 @@ export class DoceboAPI {
 
       const tokenData = await response.json();
       
-      if (!tokenData.access_token) {
-        throw new Error('No access token received from Docebo');
+      if (!tokenData.access_token || typeof tokenData.access_token !== 'string') {
+        throw new Error('No valid access token received from Docebo');
       }
       
       this.accessToken = tokenData.access_token;
@@ -132,6 +132,11 @@ export class DoceboAPI {
       this.tokenExpiry = new Date(Date.now() + (tokenData.expires_in || 3600) * 1000);
       
       console.log('✅ Access token obtained successfully');
+      
+      // TypeScript-safe return - we know this.accessToken is now a string
+      if (!this.accessToken) {
+        throw new Error('Failed to store access token');
+      }
       return this.accessToken;
       
     } catch (error) {
