@@ -2,8 +2,14 @@
 
 import { useState } from 'react';
 
+interface Message {
+  id: string;
+  content: string;
+  type: 'user' | 'assistant';
+}
+
 export default function DoceboAIChat() {
-  const [messages, setMessages] = useState([
+  const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
       content: 'Welcome to Docebo AI Assistant! Ask me anything.',
@@ -14,12 +20,12 @@ export default function DoceboAIChat() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!input.trim() || loading) return;
 
     // Add user message
-    const userMessage = {
+    const userMessage: Message = {
       id: Date.now().toString(),
       content: input.trim(),
       type: 'user',
@@ -39,7 +45,7 @@ export default function DoceboAIChat() {
 
       const data = await response.json();
       
-      const assistantMessage = {
+      const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         content: data.response || 'Sorry, no response received.',
         type: 'assistant',
@@ -47,7 +53,7 @@ export default function DoceboAIChat() {
 
       setMessages(prev => [...prev, assistantMessage]);
     } catch (error) {
-      const errorMessage = {
+      const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         content: 'Error: Could not process your request.',
         type: 'assistant',
@@ -146,19 +152,37 @@ export default function DoceboAIChat() {
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
           <button 
             onClick={() => setInput("Find users named John")}
-            style={{ padding: '8px 12px', backgroundColor: '#f8f9fa', border: '1px solid #ccc', borderRadius: '4px' }}
+            style={{ 
+              padding: '8px 12px', 
+              backgroundColor: '#f8f9fa', 
+              border: '1px solid #ccc', 
+              borderRadius: '4px',
+              cursor: 'pointer'
+            }}
           >
             Find users named John
           </button>
           <button 
             onClick={() => setInput("Show me Python courses")}
-            style={{ padding: '8px 12px', backgroundColor: '#f8f9fa', border: '1px solid #ccc', borderRadius: '4px' }}
+            style={{ 
+              padding: '8px 12px', 
+              backgroundColor: '#f8f9fa', 
+              border: '1px solid #ccc', 
+              borderRadius: '4px',
+              cursor: 'pointer'
+            }}
           >
             Show me Python courses
           </button>
           <button 
             onClick={() => setInput("Show me enrollment statistics")}
-            style={{ padding: '8px 12px', backgroundColor: '#f8f9fa', border: '1px solid #ccc', borderRadius: '4px' }}
+            style={{ 
+              padding: '8px 12px', 
+              backgroundColor: '#f8f9fa', 
+              border: '1px solid #ccc', 
+              borderRadius: '4px',
+              cursor: 'pointer'
+            }}
           >
             Show enrollment statistics
           </button>
