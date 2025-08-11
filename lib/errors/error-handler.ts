@@ -338,4 +338,45 @@ export class ErrorHandler {
   }
 
   static internalError(message: string, details?: any, context?: Partial<ErrorContext>): AppError {
-    return new App
+    return new AppError(
+      ErrorType.INTERNAL_ERROR,
+      message,
+      500,
+      'An internal error occurred. Please try again.',
+      details,
+      context
+    );
+  }
+}
+
+// Utility function for Next.js API routes
+export function handleApiError(error: unknown, context: Partial<ErrorContext> = {}) {
+  const { statusCode, response } = ErrorHandler.handle(error, context);
+  return new Response(JSON.stringify(response), {
+    status: statusCode,
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+}
+
+// Async error boundary wrapper
+export function withErrorHandler<T extends any[], R>(
+  fn: (...args: T) => Promise<R>
+) {
+  return async (...args: T): Promise<R> => {
+    try {
+      return await fn(...args);
+    } catch (error) {
+      if (error instanceof AppError) {
+        throw error; // Re-throw AppErrors as-is
+      }
+      
+      // Wrap other errors in AppError
+      throw ErrorHandler.internalError(
+        error instanceof Error ? error.message : 'Unknown error occurred',
+        error
+      );
+    }
+  };
+}
