@@ -363,7 +363,7 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    const { message, userRole, userId } = validation.data!;
+    const { message, userRole = 'user', userId } = validation.data!;
     console.log(`🎯 Processing: "${message}" for ${userRole}`);
 
     const intent = detectIntent(message);
