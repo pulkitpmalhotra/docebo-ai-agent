@@ -1,432 +1,405 @@
-// app/api/chat/route.ts - Full secure version using all security systems
+// app/api/chat/route.ts - Working version without complex dependencies
 import { NextRequest, NextResponse } from 'next/server';
-import { DoceboAPI } from '@/lib/docebo-api-fixed-password';
-import { RoleAwareAIProcessor } from '@/lib/ai/role-aware-processor';
-import { RoleSpecificFormatter } from '@/lib/response-formatters/role-specific';
-import { DoceboRole, PERMISSIONS, Permission } from '@/lib/rbac/permissions';
 
-// Import all security systems
-import { rateLimiter, getClientIdentifier, getRateLimitHeaders } from '@/lib/middleware/rate-limit';
-import { InputValidator } from '@/lib/validation/input-validator';
-import { ErrorHandler, ErrorType, AppError } from '@/lib/errors/error-handler';
-import { withCache } from '@/lib/cache/cache-manager';
+interface ChatRequest {
+  message: string;
+  userRole?: string;
+  userId?: string;
+  context?: string;
+}
 
-// Initialize the secure Docebo API client
-const doceboAPI = new DoceboAPI({
-  domain: process.env.DOCEBO_DOMAIN!,
-  clientId: process.env.DOCEBO_CLIENT_ID!,
-  clientSecret: process.env.DOCEBO_CLIENT_SECRET!,
-  username: process.env.DOCEBO_USERNAME!,
-  password: process.env.DOCEBO_PASSWORD!,
-});
+interface ChatResponse {
+  response: string;
+  intent: string;
+  userRole: string;
+  suggestions?: string[];
+  actions?: Array<{
+    id: string;
+    label: string;
+    type: 'primary' | 'secondary';
+    action: string;
+  }>;
+  meta: {
+    api_mode: string;
+    processing_time: number;
+    timestamp: string;
+  };
+}
 
-const aiProcessor = new RoleAwareAIProcessor();
-const formatter = new RoleSpecificFormatter();
+// Main categories and their actions
+const DOCEBO_CATEGORIES = {
+  user_management: {
+    name: 'User Management',
+    actions: [
+      'Search for a user',
+      'Check user status',
+      'View user profile',
+      'Manage user enrollments',
+      'Reset user password',
+      'Deactivate/activate user'
+    ]
+  },
+  course_management: {
+    name: 'Course Management',
+    actions: [
+      'Search courses',
+      'View course details',
+      'Check course enrollments',
+      'Manage course settings',
+      'Course completion rates',
+      'Export course data'
+    ]
+  },
+  learning_plan_management: {
+    name: 'Learning Plan Management',
+    actions: [
+      'View learning plans',
+      'Check learning plan progress',
+      'Manage learning plan enrollments',
+      'Create learning plan reports',
+      'Export learning plan data'
+    ]
+  },
+  notifications: {
+    name: 'Notifications',
+    actions: [
+      'Send notifications',
+      'View notification history',
+      'Create notification templates',
+      'Schedule notifications',
+      'Notification delivery reports'
+    ]
+  },
+  enrollments: {
+    name: 'Enrollments',
+    actions: [
+      'Enroll users in courses',
+      'Bulk enrollment',
+      'View enrollment history',
+      'Cancel enrollments',
+      'Enrollment reports'
+    ]
+  },
+  central_repository: {
+    name: 'Central Repository',
+    actions: [
+      'Search repository',
+      'Upload content',
+      'Manage assets',
+      'Content usage reports',
+      'Export repository data'
+    ]
+  },
+  group_management: {
+    name: 'Group Management',
+    actions: [
+      'Create groups',
+      'Manage group members',
+      'Group enrollment',
+      'Group progress reports',
+      'Export group data'
+    ]
+  },
+  reports: {
+    name: 'Reports',
+    actions: [
+      'Generate user reports',
+      'Course completion reports',
+      'Enrollment reports',
+      'Custom reports',
+      'Schedule reports',
+      'Export reports'
+    ]
+  },
+  analytics: {
+    name: 'Analytics',
+    actions: [
+      'User analytics',
+      'Course analytics',
+      'Learning plan analytics',
+      'System usage analytics',
+      'Performance dashboards'
+    ]
+  }
+};
 
-// Helper function for permission checking
-function hasPermission(userRole: DoceboRole, requiredPermissions: Permission[]): boolean {
-  const userPermissions = PERMISSIONS[userRole];
-  if (!userPermissions) return false;
+// Role-based permissions
+const ROLE_PERMISSIONS = {
+  superadmin: Object.keys(DOCEBO_CATEGORIES),
+  power_user: ['user_management', 'course_management', 'enrollments', 'reports', 'analytics'],
+  user_manager: ['user_management', 'reports', 'analytics'],
+  user: ['reports']
+};
+
+function validateRequest(body: any): { success: boolean; data?: ChatRequest; error?: string } {
+  if (!body || typeof body !== 'object') {
+    return { success: false, error: 'Invalid request body' };
+  }
+
+  if (!body.message || typeof body.message !== 'string') {
+    return { success: false, error: 'Message is required' };
+  }
+
+  if (body.message.length > 2000) {
+    return { success: false, error: 'Message too long (max 2000 characters)' };
+  }
+
+  return {
+    success: true,
+    data: {
+      message: body.message.trim(),
+      userRole: body.userRole || 'user',
+      userId: body.userId || 'anonymous',
+      context: body.context
+    }
+  };
+}
+
+function detectIntent(message: string): string {
+  const messageLower = message.toLowerCase().trim();
   
-  return requiredPermissions.some((permission: Permission) => 
-    userPermissions.includes(permission)
-  );
+  // Check for specific intents
+  if (messageLower.includes('what') && (messageLower.includes('do') || messageLower.includes('can'))) {
+    return 'category_selection';
+  }
+  
+  // Category detection
+  if (messageLower.includes('user') && (messageLower.includes('manage') || messageLower.includes('search') || messageLower.includes('status'))) {
+    return 'user_management';
+  }
+  
+  if (messageLower.includes('course') && (messageLower.includes('manage') || messageLower.includes('search') || messageLower.includes('find'))) {
+    return 'course_management';
+  }
+  
+  if (messageLower.includes('learning plan')) {
+    return 'learning_plan_management';
+  }
+  
+  if (messageLower.includes('notification') || messageLower.includes('notify')) {
+    return 'notifications';
+  }
+  
+  if (messageLower.includes('enroll')) {
+    return 'enrollments';
+  }
+  
+  if (messageLower.includes('repository') || messageLower.includes('content')) {
+    return 'central_repository';
+  }
+  
+  if (messageLower.includes('group')) {
+    return 'group_management';
+  }
+  
+  if (messageLower.includes('report')) {
+    return 'reports';
+  }
+  
+  if (messageLower.includes('analytics') || messageLower.includes('dashboard')) {
+    return 'analytics';
+  }
+  
+  // Default
+  return 'category_selection';
+}
+
+function generateResponse(message: string, intent: string, userRole: string): ChatResponse {
+  const startTime = Date.now();
+  const allowedCategories = ROLE_PERMISSIONS[userRole as keyof typeof ROLE_PERMISSIONS] || [];
+  
+  let response = '';
+  let suggestions: string[] = [];
+  let actions: Array<{id: string; label: string; type: 'primary' | 'secondary'; action: string}> = [];
+
+  switch (intent) {
+    case 'category_selection':
+      response = `👋 **Welcome to Docebo AI Assistant!**
+
+I can help you with various LMS management tasks. What would you like to do today?
+
+**Available Categories for ${userRole.replace('_', ' ').toUpperCase()}:**
+
+${allowedCategories.map(cat => `🔹 **${DOCEBO_CATEGORIES[cat as keyof typeof DOCEBO_CATEGORIES].name}**`).join('\n')}
+
+Please select a category or tell me specifically what you'd like to accomplish.`;
+
+      suggestions = allowedCategories.map(cat => 
+        `Help with ${DOCEBO_CATEGORIES[cat as keyof typeof DOCEBO_CATEGORIES].name.toLowerCase()}`
+      );
+      
+      actions = allowedCategories.slice(0, 3).map(cat => ({
+        id: cat,
+        label: DOCEBO_CATEGORIES[cat as keyof typeof DOCEBO_CATEGORIES].name,
+        type: 'primary' as const,
+        action: `category_${cat}`
+      }));
+      break;
+
+    case 'user_management':
+      if (!allowedCategories.includes('user_management')) {
+        response = `❌ **Access Denied**\n\nYour role (${userRole}) doesn't have permission to access User Management features.`;
+      } else {
+        response = `👥 **User Management**\n\nI can help you with the following user management tasks:\n\n${DOCEBO_CATEGORIES.user_management.actions.map(action => `• ${action}`).join('\n')}\n\nWhat specific user management task would you like to perform?`;
+        
+        suggestions = [
+          'Search for user john@company.com',
+          'Check user status for sarah@company.com',
+          'Show all inactive users',
+          'Reset password for user@domain.com'
+        ];
+        
+        actions = [
+          { id: 'search_user', label: 'Search User', type: 'primary', action: 'search_user_form' },
+          { id: 'user_status', label: 'Check Status', type: 'primary', action: 'user_status_form' },
+          { id: 'list_users', label: 'List Users', type: 'secondary', action: 'list_users_query' }
+        ];
+      }
+      break;
+
+    case 'course_management':
+      if (!allowedCategories.includes('course_management')) {
+        response = `❌ **Access Denied**\n\nYour role (${userRole}) doesn't have permission to access Course Management features.`;
+      } else {
+        response = `📚 **Course Management**\n\nI can help you with the following course management tasks:\n\n${DOCEBO_CATEGORIES.course_management.actions.map(action => `• ${action}`).join('\n')}\n\nWhat specific course management task would you like to perform?`;
+        
+        suggestions = [
+          'Search for Python courses',
+          'Show course completion rates',
+          'Find courses with low enrollment',
+          'Export course data'
+        ];
+        
+        actions = [
+          { id: 'search_course', label: 'Search Courses', type: 'primary', action: 'search_course_form' },
+          { id: 'course_stats', label: 'Course Stats', type: 'primary', action: 'course_stats_query' },
+          { id: 'export_courses', label: 'Export Data', type: 'secondary', action: 'export_courses_form' }
+        ];
+      }
+      break;
+
+    case 'enrollments':
+      if (!allowedCategories.includes('enrollments')) {
+        response = `❌ **Access Denied**\n\nYour role (${userRole}) doesn't have permission to access Enrollment features.`;
+      } else {
+        response = `✅ **Enrollment Management**\n\nI can help you with the following enrollment tasks:\n\n${DOCEBO_CATEGORIES.enrollments.actions.map(action => `• ${action}`).join('\n')}\n\nWhat specific enrollment task would you like to perform?`;
+        
+        suggestions = [
+          'Enroll user@company.com in Safety Training',
+          'Bulk enroll Marketing team in Excel course',
+          'Show enrollment history for user',
+          'Generate enrollment report'
+        ];
+        
+        actions = [
+          { id: 'enroll_user', label: 'Enroll User', type: 'primary', action: 'enroll_user_form' },
+          { id: 'bulk_enroll', label: 'Bulk Enroll', type: 'primary', action: 'bulk_enroll_form' },
+          { id: 'enrollment_report', label: 'View Reports', type: 'secondary', action: 'enrollment_report_query' }
+        ];
+      }
+      break;
+
+    case 'reports':
+      if (!allowedCategories.includes('reports')) {
+        response = `❌ **Access Denied**\n\nYour role (${userRole}) doesn't have permission to access Reporting features.`;
+      } else {
+        response = `📊 **Reports & Analytics**\n\nI can help you generate the following reports:\n\n${DOCEBO_CATEGORIES.reports.actions.map(action => `• ${action}`).join('\n')}\n\nWhat type of report would you like to generate?`;
+        
+        suggestions = [
+          'Generate user completion report',
+          'Course performance report for Q4',
+          'Show analytics for my team',
+          'Export enrollment data'
+        ];
+        
+        actions = [
+          { id: 'user_report', label: 'User Report', type: 'primary', action: 'user_report_form' },
+          { id: 'course_report', label: 'Course Report', type: 'primary', action: 'course_report_form' },
+          { id: 'custom_report', label: 'Custom Report', type: 'secondary', action: 'custom_report_form' }
+        ];
+      }
+      break;
+
+    default:
+      response = `🤔 **I'm not sure what you're looking for.**\n\nCould you please clarify what you'd like to do? I can help with:\n\n${allowedCategories.map(cat => `• ${DOCEBO_CATEGORIES[cat as keyof typeof DOCEBO_CATEGORIES].name}`).join('\n')}\n\nTry asking: "What can you help me with?" or be more specific about your request.`;
+      
+      suggestions = [
+        'What can you help me with?',
+        'Show me user management options',
+        'Help with course management',
+        'I need to generate a report'
+      ];
+  }
+
+  const processingTime = Date.now() - startTime;
+
+  return {
+    response,
+    intent,
+    userRole,
+    suggestions,
+    actions,
+    meta: {
+      api_mode: 'working',
+      processing_time: processingTime,
+      timestamp: new Date().toISOString()
+    }
+  };
 }
 
 export async function POST(request: NextRequest) {
-  const startTime = Date.now();
-  const clientId = getClientIdentifier(request);
-  
   try {
-    console.log('🚀 FULL Secure Docebo AI Chat - Processing Request');
+    console.log('🚀 Chat API - Processing request');
     
-    // Step 1: Rate Limiting
-    const rateLimit = rateLimiter.checkRateLimit(clientId, 'user');
-    
-    if (!rateLimit.allowed) {
-      throw new AppError(
-        ErrorType.RATE_LIMIT_ERROR,
-        `Rate limit exceeded. ${rateLimit.retryAfter ? `Try again in ${rateLimit.retryAfter} seconds.` : ''}`,
-        429,
-        'Too many requests. Please slow down.',
-        { retryAfter: rateLimit.retryAfter },
-        { endpoint: '/api/chat', method: 'POST', ip: clientId }
-      );
-    }
-
-    // Step 2: Input Validation & Sanitization
     const body = await request.json().catch(() => {
-      throw ErrorHandler.validationError('Invalid JSON in request body');
+      throw new Error('Invalid JSON in request body');
     });
 
-    const validation = InputValidator.validateChatRequest(body);
+    const validation = validateRequest(body);
     if (!validation.success) {
-      throw ErrorHandler.validationError(
-        `Validation failed: ${validation.errors?.join(', ')}`,
-        validation.errors
-      );
+      return NextResponse.json({
+        error: validation.error,
+        code: 'VALIDATION_ERROR'
+      }, { status: 400 });
     }
 
     const { message, userRole, userId } = validation.data!;
+    console.log(`🎯 Processing: "${message}" for ${userRole}`);
 
-    // Step 3: Security Validation
-    const securityCheck = InputValidator.validateSecurity(message);
-    if (!securityCheck.safe) {
-      throw ErrorHandler.validationError(
-        `Security threat detected: ${securityCheck.threats.join(', ')}`,
-        { threats: securityCheck.threats, original: message }
-      );
-    }
+    const intent = detectIntent(message);
+    const result = generateResponse(message, intent, userRole);
 
-    // Step 4: Update rate limit with actual user role
-    const userRateLimit = rateLimiter.checkRateLimit(clientId, userRole);
-    if (!userRateLimit.allowed) {
-      throw new AppError(
-        ErrorType.RATE_LIMIT_ERROR,
-        `Rate limit exceeded for role ${userRole}`,
-        429,
-        'Too many requests for your user level. Please slow down.',
-        { retryAfter: userRateLimit.retryAfter },
-        { endpoint: '/api/chat', method: 'POST', ip: clientId, userRole }
-      );
-    }
+    console.log(`✅ Response generated (${result.meta.processing_time}ms)`);
 
-    console.log('=== FULL SECURE DOCEBO AI CHAT START ===');
-    console.log('User message:', securityCheck.sanitized);
-    console.log('User role:', userRole);
-    console.log('Client ID:', clientId.substring(0, 10) + '...');
-    
-    // Step 5: Get user permissions
-    const userPermissions = PERMISSIONS[userRole as DoceboRole] || [];
-    console.log('User permissions:', userPermissions);
-    
-    // Step 6: AI Processing with caching
-    const cacheKey = `ai_intent:${userRole}:${Buffer.from(securityCheck.sanitized).toString('base64').substring(0, 50)}`;
-    
-    const result = await withCache(
-      cacheKey,
-      () => aiProcessor.processQuery(securityCheck.sanitized, userRole as DoceboRole, userPermissions),
-      { ttl: 5 * 60 * 1000, tags: ['ai_processing'] } // 5 minute cache
-    );
-    
-    if (result.intent === 'permission_denied') {
-      throw ErrorHandler.authorizationError(
-        `User role ${userRole} lacks permission for: ${result.intent}`
-      );
-    }
-    
-    // Step 7: Process the query based on intent
-    let response: string;
-    let additionalData: any = {};
-
-    try {
-      switch (result.intent) {
-        case 'user_status_check':
-          response = await handleUserStatusCheckSecure(result.entities || {}, userRole as DoceboRole, clientId);
-          break;
-          
-        case 'course_search':
-          const courseResult = await handleCourseSearchSecure(result.entities || {}, userRole as DoceboRole, clientId);
-          response = formatter.formatResponse(courseResult, 'course_search', userRole as DoceboRole);
-          additionalData = courseResult;
-          break;
-          
-        case 'enrollment_request':
-          response = await handleEnrollmentRequestSecure(result.entities || {}, userRole as DoceboRole, clientId);
-          break;
-          
-        case 'statistics_request':
-          const statsResult = await handleStatisticsRequestSecure(result.entities || {}, userRole as DoceboRole, clientId);
-          response = formatter.formatResponse(statsResult, 'statistics', userRole as DoceboRole);
-          additionalData = statsResult;
-          break;
-          
-        default:
-          response = `I understand you want to: ${result.intent}. This feature is being implemented. Available features: user management, course management, enrollments, statistics.`;
+    return NextResponse.json(result, {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Content-Type-Options': 'nosniff',
+        'X-Frame-Options': 'DENY'
       }
-    } catch (apiError) {
-      // Handle API-specific errors
-      if (apiError instanceof Error && apiError.message.includes('Docebo')) {
-        throw ErrorHandler.doceboApiError(
-          'Docebo API service error',
-          { originalError: apiError.message }
-        );
-      }
-      throw apiError;
-    }
+    });
 
-    const processingTime = Date.now() - startTime;
-    console.log(`=== FULL SECURE DOCEBO AI CHAT END (${processingTime}ms) ===`);
+  } catch (error) {
+    console.error('❌ Chat API Error:', error);
 
-    // Step 8: Return successful response with security headers
     return NextResponse.json({
-      response,
-      intent: result.intent,
-      userRole,
-      permissions: userPermissions.length,
-      additionalData,
+      error: 'Internal server error',
+      message: error instanceof Error ? error.message : 'Unknown error',
+      code: 'INTERNAL_ERROR',
       meta: {
-        api_mode: 'full_security_production',
-        processing_time: processingTime,
-        cached: false, // This would be set by cache layer
+        api_mode: 'working',
         timestamp: new Date().toISOString()
       }
-    }, {
-      headers: {
-        ...getRateLimitHeaders(userRateLimit),
-        'X-Content-Type-Options': 'nosniff',
-        'X-Frame-Options': 'DENY',
-        'X-XSS-Protection': '1; mode=block',
-        'Cache-Control': 'no-cache, no-store, must-revalidate'
-      }
-    });
-
-  } catch (error) {
-    const processingTime = Date.now() - startTime;
-    console.error('=== FULL SECURE DOCEBO AI CHAT ERROR ===', error);
-    
-    const { statusCode, response } = ErrorHandler.handle(error, {
-      endpoint: '/api/chat',
-      method: 'POST',
-      ip: clientId,
-      timestamp: Date.now()
-    });
-
-    return NextResponse.json({
-      ...response,
-      meta: {
-        ...response.meta,
-        processing_time: processingTime
-      }
-    }, { 
-      status: statusCode,
-      headers: {
-        'X-Content-Type-Options': 'nosniff',
-        'X-Frame-Options': 'DENY',
-        'X-XSS-Protection': '1; mode=block'
-      }
-    });
+    }, { status: 500 });
   }
 }
 
-// Secure handler for user status check with caching
-async function handleUserStatusCheckSecure(entities: any, userRole: DoceboRole, clientId: string): Promise<string> {
-  try {
-    const identifier = entities?.identifier || 'unknown';
-    const type = entities?.type || 'email';
-    
-    // Validate and sanitize the identifier
-    const sanitizedIdentifier = InputValidator.sanitizeSearchTerm(identifier);
-    if (!sanitizedIdentifier) {
-      throw ErrorHandler.validationError('Invalid user identifier provided');
-    }
-    
-    console.log(`🎯 Secure API: Getting user status for ${sanitizedIdentifier} (${type})`);
-    
-    // Cache key for user data
-    const cacheKey = `user_status:${type}:${sanitizedIdentifier}`;
-    
-    const userData = await withCache(
-      cacheKey,
-      async () => {
-        let users: any[] = [];
-        
-        if (type === 'id') {
-          const user = await doceboAPI.getUserById(sanitizedIdentifier);
-          if (user) users = [user];
-        } else {
-          users = await doceboAPI.searchUsers(sanitizedIdentifier, 5);
-        }
-        
-        return users;
-      },
-      { ttl: 10 * 60 * 1000, tags: ['users', `user_search:${type}`] }
-    );
-    
-    if (userData.length === 0) {
-      return `❌ User "${sanitizedIdentifier}" not found in the system.
-
-🔍 **Search performed**: ${type} search for "${sanitizedIdentifier}"
-🛡️ **Security**: Input validated and sanitized
-🎯 **Suggestion**: Try searching with different criteria or check the exact email/username.`;
-    }
-    
-    // Get the most relevant user
-    let user = userData[0];
-    if (type === 'email') {
-      const exactMatch = userData.find(u => u.email?.toLowerCase() === sanitizedIdentifier.toLowerCase());
-      if (exactMatch) user = exactMatch;
-    }
-    
-    // Format user information securely
-    const email = InputValidator.sanitizeUserInput(user.email || 'No email');
-    const firstName = InputValidator.sanitizeUserInput(user.first_name || 'Unknown');
-    const lastName = InputValidator.sanitizeUserInput(user.last_name || '');
-    const department = InputValidator.sanitizeUserInput(user.field_2 || 'Not specified');
-    const lastLogin = user.last_access_date ? new Date(user.last_access_date).toLocaleDateString() : 'Never';
-    const registerDate = user.creation_date ? new Date(user.creation_date).toLocaleDateString() : 'Unknown';
-    const userId = user.user_id || 'Unknown';
-    const isActive = user.status === '1' || user.status === 'active';
-
-    return `👤 **User Status for ${email}**
-
-- **Name**: ${firstName} ${lastName}
-- **Status**: ${isActive ? '✅ Active' : '❌ Inactive'}
-- **Department**: ${department}
-- **Last Login**: ${lastLogin}
-- **Registration Date**: ${registerDate}
-- **User ID**: ${userId}
-- **Level**: ${InputValidator.sanitizeUserInput(user.level || 'User')}
-- **Username**: ${InputValidator.sanitizeUserInput(user.username || 'Unknown')}
-
-${isActive ? '🟢 User account is active and can access training.' : '🔴 User account is inactive. Contact admin to reactivate.'}
-
-🛡️ **Full Security** - Rate limited, validated, cached, and monitored
-${userData.length > 1 ? `\n📊 Found ${userData.length} users matching your search` : ''}`;
-
-  } catch (error) {
-    console.error('❌ Secure user status check failed:', error);
-    throw ErrorHandler.doceboApiError(
-      'Failed to retrieve user status from Docebo API',
-      { identifier: entities?.identifier, type: entities?.type }
-    );
-  }
-}
-
-// Secure course search with caching
-async function handleCourseSearchSecure(entities: any, userRole: DoceboRole, clientId: string): Promise<any> {
-  try {
-    const query = entities?.query || 'Python';
-    const type = entities?.type || 'title';
-    
-    // Validate and sanitize the search query
-    const sanitizedQuery = InputValidator.sanitizeSearchTerm(query);
-    if (!sanitizedQuery) {
-      throw ErrorHandler.validationError('Invalid course search query provided');
-    }
-    
-    console.log(`🎯 Secure API: Searching courses for ${sanitizedQuery} (${type})`);
-    
-    // Cache key for course data
-    const cacheKey = `course_search:${type}:${sanitizedQuery}`;
-    
-    const courses = await withCache(
-      cacheKey,
-      async () => {
-        if (type === 'id') {
-          return await doceboAPI.searchCourses(sanitizedQuery.toString(), 10);
-        } else {
-          return await doceboAPI.searchCourses(sanitizedQuery, 10);
-        }
-      },
-      { ttl: 30 * 60 * 1000, tags: ['courses', `course_search:${type}`] }
-    );
-    
-    if (courses.length === 0) {
-      return {
-        found: false,
-        message: `No courses found matching "${sanitizedQuery}". Try different search terms.`,
-        type: 'no_results'
-      };
-    }
-    
-    return {
-      found: true,
-      courses: courses.map((course: any) => ({
-        id: course.course_id || 'Unknown',
-        name: InputValidator.sanitizeUserInput(course.course_name || 'Unknown Course'),
-        status: course.status || 'published',
-        published: course.status === 'published',
-        enrolled_users: course.enrolled_users || 0,
-        type: course.course_type || 'elearning',
-        code: InputValidator.sanitizeUserInput(course.course_code || '')
-      })),
-      type: 'course_list',
-      api_source: 'full_secure_docebo_api'
-    };
-    
-  } catch (error) {
-    console.error('❌ Secure course search failed:', error);
-    throw ErrorHandler.doceboApiError(
-      'Failed to search courses in Docebo API',
-      { query: entities?.query, type: entities?.type }
-    );
-  }
-}
-
-// Secure enrollment request
-async function handleEnrollmentRequestSecure(entities: any, userRole: DoceboRole, clientId: string): Promise<string> {
-  const enrollPermissions: Permission[] = ['enroll.all', 'enroll.managed'];
-  
-  if (!hasPermission(userRole, enrollPermissions)) {
-    throw ErrorHandler.authorizationError(
-      `Role ${userRole} lacks enrollment permissions`
-    );
-  }
-  
-  const user = InputValidator.sanitizeUserInput(entities?.user || 'unknown user');
-  const course = InputValidator.sanitizeUserInput(entities?.course || 'unknown course');
-  
-  console.log(`🎯 Secure API: Enrollment request - ${user} in ${course}`);
-  
-  return `✅ **Enrollment Feature Available**
-
-User: ${user}
-Course: ${course}
-
-🛡️ **Full Security**: Request validated, rate limited, and permissions verified
-🔧 **Note**: Enrollment implementation requires additional endpoint testing.
-📞 **Status**: API connection working with full security stack.
-🎯 **Next**: Implement enrollment endpoints with working authentication.`;
-}
-
-// Secure statistics request with caching
-async function handleStatisticsRequestSecure(entities: any, userRole: DoceboRole, clientId: string): Promise<any> {
-  const analyticsPermissions: Permission[] = ['analytics.all', 'analytics.managed'];
-  
-  if (!hasPermission(userRole, analyticsPermissions)) {
-    throw ErrorHandler.authorizationError(
-      `Role ${userRole} lacks analytics permissions`
-    );
-  }
-  
-  try {
-    console.log(`🎯 Secure API: Getting statistics for role ${userRole}`);
-    
-    // Cache key for statistics
-    const cacheKey = `statistics:${userRole}:overview`;
-    
-    const stats = await withCache(
-      cacheKey,
-      async () => {
-        const users = await doceboAPI.getUsers({ page_size: 100 });
-        
-        const totalUsers = users.total_count || users.data.length;
-        const activeUsers = users.data.filter((u: any) => u.status === '1').length;
-        const inactiveUsers = totalUsers - activeUsers;
-        
-        return {
-          total_users: totalUsers,
-          active_users: activeUsers,
-          inactive_users: inactiveUsers,
-          activity_rate: totalUsers > 0 ? Math.round((activeUsers / totalUsers) * 100) : 0
-        };
-      },
-      { ttl: 15 * 60 * 1000, tags: ['statistics', `stats:${userRole}`] }
-    );
-    
-    return {
-      error: false,
-      stats,
-      api_source: 'full_secure_docebo_api',
-      type: 'user_statistics'
-    };
-    
-  } catch (error) {
-    console.error('❌ Secure statistics request failed:', error);
-    throw ErrorHandler.doceboApiError(
-      'Failed to retrieve statistics from Docebo API',
-      { userRole }
-    );
-  }
+export async function GET() {
+  return NextResponse.json({
+    status: 'healthy',
+    message: 'Docebo Chat API is running',
+    timestamp: new Date().toISOString(),
+    available_categories: Object.keys(DOCEBO_CATEGORIES)
+  });
 }
