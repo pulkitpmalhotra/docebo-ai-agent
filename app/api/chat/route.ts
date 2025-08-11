@@ -87,6 +87,11 @@ class DoceboAPI {
     this.tokenExpiry = new Date(Date.now() + (tokenData.expires_in || 3600) * 1000);
     
     console.log('✅ Docebo access token obtained');
+    
+    if (!this.accessToken) {
+      throw new Error('Failed to store access token');
+    }
+    
     return this.accessToken;
   }
 
