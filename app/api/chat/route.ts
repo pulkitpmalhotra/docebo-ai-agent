@@ -1,18 +1,23 @@
-// app/api/chat/route.ts - Updated to use working password authentication
-
+// app/api/chat/route.ts - Secure, production-ready chat API
 import { NextRequest, NextResponse } from 'next/server';
-import { DoceboAPI } from '@/lib/docebo-api-fixed-password';  // Use the working version
+import { DoceboAPI } from '@/lib/docebo-api-fixed-password';
 import { RoleAwareAIProcessor } from '@/lib/ai/role-aware-processor';
 import { RoleSpecificFormatter } from '@/lib/response-formatters/role-specific';
 import { DoceboRole, PERMISSIONS, Permission } from '@/lib/rbac/permissions';
 
-// Initialize the WORKING Docebo API client with password authentication
+// Security & Architecture imports
+import { rateLimiter, getClientIdentifier, getRateLimitHeaders } from '@/lib/middleware/rate-limit';
+import { InputValidator } from '@/lib/validation/input-validator';
+import { ErrorHandler, ErrorType, AppError } from '@/lib/errors/error-handler';
+import { withCache, apiCache } from '@/lib/cache/cache-manager';
+
+// Initialize the secure Docebo API client
 const doceboAPI = new DoceboAPI({
   domain: process.env.DOCEBO_DOMAIN!,
   clientId: process.env.DOCEBO_CLIENT_ID!,
   clientSecret: process.env.DOCEBO_CLIENT_SECRET!,
-  username: process.env.DOCEBO_USERNAME!,   // Required for working auth
-  password: process.env.DOCEBO_PASSWORD!,   // Required for working auth
+  username: process.env.DOCEBO_USERNAME!,
+  password: process.env.DOCEBO_PASSWORD!,
 });
 
 const aiProcessor = new RoleAwareAIProcessor();
@@ -29,131 +34,237 @@ function hasPermission(userRole: DoceboRole, requiredPermissions: Permission[]):
 }
 
 export async function POST(request: NextRequest) {
+  const startTime = Date.now();
+  const clientId = getClientIdentifier(request);
+  
   try {
-    console.log('🚀 WORKING Docebo API Chat Endpoint - Processing Request');
+    console.log('🚀 Secure Docebo AI Chat - Processing Request');
     
-    const { message, userRole = 'superadmin', userId = 'demo-user' } = await request.json();
+    // Step 1: Rate Limiting
+    const rateLimit = rateLimiter.checkRateLimit(clientId, 'user'); // Default to user role for initial check
     
-    if (!message || typeof message !== 'string') {
-      return NextResponse.json(
-        { error: 'Message is required' },
-        { status: 400 }
+    if (!rateLimit.allowed) {
+      throw new AppError(
+        ErrorType.RATE_LIMIT_ERROR,
+        `Rate limit exceeded. ${rateLimit.retryAfter ? `Try again in ${rateLimit.retryAfter} seconds.` : ''}`,
+        429,
+        'Too many requests. Please slow down.',
+        { retryAfter: rateLimit.retryAfter },
+        { endpoint: '/api/chat', method: 'POST', ip: clientId }
       );
     }
 
-    console.log('=== WORKING DOCEBO API CHAT START ===');
-    console.log('User message:', message);
+    // Step 2: Input Validation & Sanitization
+    const body = await request.json().catch(() => {
+      throw ErrorHandler.validationError('Invalid JSON in request body');
+    });
+
+    const validation = InputValidator.validateChatRequest(body);
+    if (!validation.success) {
+      throw ErrorHandler.validationError(
+        `Validation failed: ${validation.errors?.join(', ')}`,
+        validation.errors
+      );
+    }
+
+    const { message, userRole, userId } = validation.data!;
+
+    // Step 3: Security Validation
+    const securityCheck = InputValidator.validateSecurity(message);
+    if (!securityCheck.safe) {
+      throw ErrorHandler.validationError(
+        `Security threat detected: ${securityCheck.threats.join(', ')}`,
+        { threats: securityCheck.threats, original: message }
+      );
+    }
+
+    // Step 4: Update rate limit with actual user role
+    const userRateLimit = rateLimiter.checkRateLimit(clientId, userRole);
+    if (!userRateLimit.allowed) {
+      throw new AppError(
+        ErrorType.RATE_LIMIT_ERROR,
+        `Rate limit exceeded for role ${userRole}`,
+        429,
+        'Too many requests for your user level. Please slow down.',
+        { retryAfter: userRateLimit.retryAfter },
+        { endpoint: '/api/chat', method: 'POST', ip: clientId, userRole }
+      );
+    }
+
+    console.log('=== SECURE DOCEBO AI CHAT START ===');
+    console.log('User message:', securityCheck.sanitized);
     console.log('User role:', userRole);
+    console.log('Client ID:', clientId.substring(0, 10) + '...');
     
-    // Get user permissions based on role
+    // Step 5: Get user permissions
     const userPermissions = PERMISSIONS[userRole as DoceboRole] || [];
     console.log('User permissions:', userPermissions);
     
-    // Process with role-aware AI for natural language queries
-    const result = await aiProcessor.processQuery(message, userRole as DoceboRole, userPermissions);
+    // Step 6: AI Processing with caching
+    const cacheKey = `ai_intent:${userRole}:${Buffer.from(securityCheck.sanitized).toString('base64').substring(0, 50)}`;
+    
+    const result = await withCache(
+      cacheKey,
+      () => aiProcessor.processQuery(securityCheck.sanitized, userRole as DoceboRole, userPermissions),
+      { ttl: 5 * 60 * 1000, tags: ['ai_processing'] } // 5 minute cache
+    );
     
     if (result.intent === 'permission_denied') {
-      return NextResponse.json({
-        response: result.message,
-        intent: 'permission_denied',
-        userRole,
-        timestamp: new Date().toISOString()
-      });
+      throw ErrorHandler.authorizationError(
+        `User role ${userRole} lacks permission for: ${result.intent}`,
+        { userRole, requiredIntent: result.intent }
+      );
     }
     
-    // Process the query based on intent
+    // Step 7: Process the query based on intent
     let response: string;
     let additionalData: any = {};
 
-    switch (result.intent) {
-      case 'user_status_check':
-        response = await handleUserStatusCheck(result.entities || {}, userRole as DoceboRole);
-        break;
-        
-      case 'course_search':
-        const courseResult = await handleCourseSearch(result.entities || {}, userRole as DoceboRole);
-        response = formatter.formatResponse(courseResult, 'course_search', userRole as DoceboRole);
-        additionalData = courseResult;
-        break;
-        
-      case 'enrollment_request':
-        response = await handleEnrollmentRequest(result.entities || {}, userRole as DoceboRole);
-        break;
-        
-      case 'statistics_request':
-        const statsResult = await handleStatisticsRequest(result.entities || {}, userRole as DoceboRole);
-        response = formatter.formatResponse(statsResult, 'statistics', userRole as DoceboRole);
-        additionalData = statsResult;
-        break;
-        
-      default:
-        response = `I understand you want to: ${result.intent}. This feature is being implemented. Available features: user management, course management, enrollments, statistics.`;
+    try {
+      switch (result.intent) {
+        case 'user_status_check':
+          response = await handleUserStatusCheckSecure(result.entities || {}, userRole as DoceboRole, clientId);
+          break;
+          
+        case 'course_search':
+          const courseResult = await handleCourseSearchSecure(result.entities || {}, userRole as DoceboRole, clientId);
+          response = formatter.formatResponse(courseResult, 'course_search', userRole as DoceboRole);
+          additionalData = courseResult;
+          break;
+          
+        case 'enrollment_request':
+          response = await handleEnrollmentRequestSecure(result.entities || {}, userRole as DoceboRole, clientId);
+          break;
+          
+        case 'statistics_request':
+          const statsResult = await handleStatisticsRequestSecure(result.entities || {}, userRole as DoceboRole, clientId);
+          response = formatter.formatResponse(statsResult, 'statistics', userRole as DoceboRole);
+          additionalData = statsResult;
+          break;
+          
+        default:
+          response = `I understand you want to: ${result.intent}. This feature is being implemented. Available features: user management, course management, enrollments, statistics.`;
+      }
+    } catch (apiError) {
+      // Handle API-specific errors
+      if (apiError instanceof Error && apiError.message.includes('Docebo')) {
+        throw ErrorHandler.doceboApiError(
+          'Docebo API service error',
+          { originalError: apiError.message },
+          { endpoint: '/api/chat', userRole, intent: result.intent }
+        );
+      }
+      throw apiError;
     }
 
-    console.log('=== WORKING DOCEBO API CHAT END ===');
+    const processingTime = Date.now() - startTime;
+    console.log(`=== SECURE DOCEBO AI CHAT END (${processingTime}ms) ===`);
 
+    // Step 8: Return successful response with security headers
     return NextResponse.json({
       response,
       intent: result.intent,
       userRole,
       permissions: userPermissions.length,
       additionalData,
-      api_mode: 'production_password_auth',
-      timestamp: new Date().toISOString()
+      meta: {
+        api_mode: 'secure_production',
+        processing_time: processingTime,
+        cached: false, // This would be set by cache layer
+        timestamp: new Date().toISOString()
+      }
+    }, {
+      headers: {
+        ...getRateLimitHeaders(userRateLimit),
+        'X-Content-Type-Options': 'nosniff',
+        'X-Frame-Options': 'DENY',
+        'X-XSS-Protection': '1; mode=block',
+        'Cache-Control': 'no-cache, no-store, must-revalidate'
+      }
     });
 
   } catch (error) {
-    console.error('=== WORKING DOCEBO API CHAT ERROR ===', error);
+    const processingTime = Date.now() - startTime;
+    console.error('=== SECURE DOCEBO AI CHAT ERROR ===', error);
     
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    
+    const { statusCode, response } = ErrorHandler.handle(error, {
+      endpoint: '/api/chat',
+      method: 'POST',
+      ip: clientId,
+      timestamp: Date.now()
+    });
+
     return NextResponse.json({
-      error: 'Sorry, I encountered an error processing your request.',
-      details: errorMessage,
-      api_mode: 'production_password_auth',
-      timestamp: new Date().toISOString()
-    }, { status: 500 });
+      ...response,
+      meta: {
+        ...response.meta,
+        processing_time: processingTime
+      }
+    }, { 
+      status: statusCode,
+      headers: {
+        'X-Content-Type-Options': 'nosniff',
+        'X-Frame-Options': 'DENY',
+        'X-XSS-Protection': '1; mode=block'
+      }
+    });
   }
 }
 
-// WORKING handler for user status check
-async function handleUserStatusCheck(entities: any, userRole: DoceboRole): Promise<string> {
+// Secure handler for user status check with caching
+async function handleUserStatusCheckSecure(entities: any, userRole: DoceboRole, clientId: string): Promise<string> {
   try {
-    const identifier = entities?.identifier || 'susantha@google.com';
+    const identifier = entities?.identifier || 'unknown';
     const type = entities?.type || 'email';
     
-    console.log(`🎯 WORKING API: Getting user status for ${identifier} (${type})`);
-    
-    let users: any[] = [];
-    
-    if (type === 'id') {
-      const user = await doceboAPI.getUserById(identifier);
-      if (user) users = [user];
-    } else {
-      // Search by email or other identifier
-      users = await doceboAPI.searchUsers(identifier, 5);
+    // Validate and sanitize the identifier
+    const sanitizedIdentifier = InputValidator.sanitizeSearchTerm(identifier);
+    if (!sanitizedIdentifier) {
+      throw ErrorHandler.validationError('Invalid user identifier provided');
     }
     
-    if (users.length === 0) {
-      return `❌ User "${identifier}" not found in the system.
+    console.log(`🎯 Secure API: Getting user status for ${sanitizedIdentifier} (${type})`);
+    
+    // Cache key for user data
+    const cacheKey = `user_status:${type}:${sanitizedIdentifier}`;
+    
+    const userData = await withCache(
+      cacheKey,
+      async () => {
+        let users: any[] = [];
+        
+        if (type === 'id') {
+          const user = await doceboAPI.getUserById(sanitizedIdentifier);
+          if (user) users = [user];
+        } else {
+          users = await doceboAPI.searchUsers(sanitizedIdentifier, 5);
+        }
+        
+        return users;
+      },
+      { ttl: 10 * 60 * 1000, tags: ['users', `user_search:${type}`] } // 10 minute cache
+    );
+    
+    if (userData.length === 0) {
+      return `❌ User "${sanitizedIdentifier}" not found in the system.
 
-🔍 **Search performed**: ${type} search for "${identifier}"
-📊 **API Status**: Working with password authentication
+🔍 **Search performed**: ${type} search for "${sanitizedIdentifier}"
+🛡️ **Security**: Input validated and sanitized
 🎯 **Suggestion**: Try searching with different criteria or check the exact email/username.`;
     }
     
-    // Get the most relevant user (exact match preferred)
-    let user = users[0];
+    // Get the most relevant user
+    let user = userData[0];
     if (type === 'email') {
-      const exactMatch = users.find(u => u.email?.toLowerCase() === identifier.toLowerCase());
+      const exactMatch = userData.find(u => u.email?.toLowerCase() === sanitizedIdentifier.toLowerCase());
       if (exactMatch) user = exactMatch;
     }
     
-    // Format user information
-    const email = user.email || 'No email';
-    const firstName = user.first_name || 'Unknown';
-    const lastName = user.last_name || '';
-    const department = user.field_2 || 'Not specified';
+    // Format user information securely
+    const email = InputValidator.sanitizeUserInput(user.email || 'No email');
+    const firstName = InputValidator.sanitizeUserInput(user.first_name || 'Unknown');
+    const lastName = InputValidator.sanitizeUserInput(user.last_name || '');
+    const department = InputValidator.sanitizeUserInput(user.field_2 || 'Not specified');
     const lastLogin = user.last_access_date ? new Date(user.last_access_date).toLocaleDateString() : 'Never';
     const registerDate = user.creation_date ? new Date(user.creation_date).toLocaleDateString() : 'Unknown';
     const userId = user.user_id || 'Unknown';
@@ -167,43 +278,56 @@ async function handleUserStatusCheck(entities: any, userRole: DoceboRole): Promi
 - **Last Login**: ${lastLogin}
 - **Registration Date**: ${registerDate}
 - **User ID**: ${userId}
-- **Level**: ${user.level || 'User'}
-- **Username**: ${user.username || 'Unknown'}
+- **Level**: ${InputValidator.sanitizeUserInput(user.level || 'User')}
+- **Username**: ${InputValidator.sanitizeUserInput(user.username || 'Unknown')}
 
 ${isActive ? '🟢 User account is active and can access training.' : '🔴 User account is inactive. Contact admin to reactivate.'}
 
-✅ **Live Docebo API** - Real data retrieved successfully
-${users.length > 1 ? `\n📊 Found ${users.length} users matching your search` : ''}`;
+🛡️ **Secure Docebo API** - Data validated and cached
+${userData.length > 1 ? `\n📊 Found ${userData.length} users matching your search` : ''}`;
 
   } catch (error) {
-    console.error('❌ WORKING API user status check failed:', error);
-    return `❌ Error checking user status: ${error instanceof Error ? error.message : 'Unknown error'}
-
-🔧 **Debug Info**: Using password authentication, but encountered an API error.`;
+    console.error('❌ Secure user status check failed:', error);
+    throw ErrorHandler.doceboApiError(
+      'Failed to retrieve user status from Docebo API',
+      { identifier: entities?.identifier, type: entities?.type, error: error instanceof Error ? error.message : 'Unknown' }
+    );
   }
 }
 
-async function handleCourseSearch(entities: any, userRole: DoceboRole): Promise<any> {
+// Secure course search with caching
+async function handleCourseSearchSecure(entities: any, userRole: DoceboRole, clientId: string): Promise<any> {
   try {
     const query = entities?.query || 'Python';
     const type = entities?.type || 'title';
     
-    console.log(`🎯 WORKING API: Searching courses for ${query} (${type})`);
-    
-    let courses: any[] = [];
-    
-    if (type === 'id') {
-      // Search by course ID (convert to string)
-      courses = await doceboAPI.searchCourses(query.toString(), 10);
-    } else {
-      // Search by title/name
-      courses = await doceboAPI.searchCourses(query, 10);
+    // Validate and sanitize the search query
+    const sanitizedQuery = InputValidator.sanitizeSearchTerm(query);
+    if (!sanitizedQuery) {
+      throw ErrorHandler.validationError('Invalid course search query provided');
     }
+    
+    console.log(`🎯 Secure API: Searching courses for ${sanitizedQuery} (${type})`);
+    
+    // Cache key for course data
+    const cacheKey = `course_search:${type}:${sanitizedQuery}`;
+    
+    const courses = await withCache(
+      cacheKey,
+      async () => {
+        if (type === 'id') {
+          return await doceboAPI.searchCourses(sanitizedQuery.toString(), 10);
+        } else {
+          return await doceboAPI.searchCourses(sanitizedQuery, 10);
+        }
+      },
+      { ttl: 30 * 60 * 1000, tags: ['courses', `course_search:${type}`] } // 30 minute cache
+    );
     
     if (courses.length === 0) {
       return {
         found: false,
-        message: `No courses found matching "${query}". Try different search terms.`,
+        message: `No courses found matching "${sanitizedQuery}". Try different search terms.`,
         type: 'no_results'
       };
     }
@@ -212,92 +336,101 @@ async function handleCourseSearch(entities: any, userRole: DoceboRole): Promise<
       found: true,
       courses: courses.map((course: any) => ({
         id: course.course_id || 'Unknown',
-        name: course.course_name || 'Unknown Course',
+        name: InputValidator.sanitizeUserInput(course.course_name || 'Unknown Course'),
         status: course.status || 'published',
         published: course.status === 'published',
         enrolled_users: course.enrolled_users || 0,
         type: course.course_type || 'elearning',
-        code: course.course_code || ''
+        code: InputValidator.sanitizeUserInput(course.course_code || '')
       })),
       type: 'course_list',
-      api_source: 'working_docebo_api'
+      api_source: 'secure_docebo_api'
     };
     
   } catch (error) {
-    console.error('❌ WORKING API course search failed:', error);
-    return {
-      found: false,
-      message: `API Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      type: 'api_error'
-    };
+    console.error('❌ Secure course search failed:', error);
+    throw ErrorHandler.doceboApiError(
+      'Failed to search courses in Docebo API',
+      { query: entities?.query, type: entities?.type, error: error instanceof Error ? error.message : 'Unknown' }
+    );
   }
 }
 
-async function handleEnrollmentRequest(entities: any, userRole: DoceboRole): Promise<string> {
+// Secure enrollment request
+async function handleEnrollmentRequestSecure(entities: any, userRole: DoceboRole, clientId: string): Promise<string> {
   const enrollPermissions: Permission[] = ['enroll.all', 'enroll.managed'];
   
   if (!hasPermission(userRole, enrollPermissions)) {
-    return `❌ Your role (${userRole}) doesn't have permission to enroll users. Contact your administrator.`;
+    throw ErrorHandler.authorizationError(
+      `Role ${userRole} lacks enrollment permissions`,
+      { userRole, requiredPermissions: enrollPermissions }
+    );
   }
   
-  try {
-    const user = entities?.user || 'unknown user';
-    const course = entities?.course || 'unknown course';
-    
-    console.log(`🎯 WORKING API: Enrolling ${user} in ${course}`);
-    
-    return `✅ **Enrollment Feature Available**
+  const user = InputValidator.sanitizeUserInput(entities?.user || 'unknown user');
+  const course = InputValidator.sanitizeUserInput(entities?.course || 'unknown course');
+  
+  console.log(`🎯 Secure API: Enrollment request - ${user} in ${course}`);
+  
+  return `✅ **Enrollment Feature Available**
 
 User: ${user}
 Course: ${course}
 
+🛡️ **Security**: Request validated and permissions verified
 🔧 **Note**: Enrollment implementation requires additional endpoint testing.
-📞 **Status**: API connection working with password authentication.
+📞 **Status**: API connection working with secure authentication.
 🎯 **Next**: Implement enrollment endpoints with working authentication.`;
-    
-  } catch (error) {
-    console.error('❌ WORKING API enrollment failed:', error);
-    return `❌ Error processing enrollment: ${error instanceof Error ? error.message : 'Unknown error'}`;
-  }
 }
 
-async function handleStatisticsRequest(entities: any, userRole: DoceboRole): Promise<any> {
+// Secure statistics request with caching
+async function handleStatisticsRequestSecure(entities: any, userRole: DoceboRole, clientId: string): Promise<any> {
   const analyticsPermissions: Permission[] = ['analytics.all', 'analytics.managed'];
   
   if (!hasPermission(userRole, analyticsPermissions)) {
-    return {
-      error: true,
-      message: `❌ Your role (${userRole}) doesn't have permission to view statistics. Contact your administrator.`
-    };
+    throw ErrorHandler.authorizationError(
+      `Role ${userRole} lacks analytics permissions`,
+      { userRole, requiredPermissions: analyticsPermissions }
+    );
   }
   
   try {
-    console.log(`🎯 WORKING API: Getting statistics`);
+    console.log(`🎯 Secure API: Getting statistics for role ${userRole}`);
     
-    // Get some basic user statistics
-    const users = await doceboAPI.getUsers({ page_size: 100 });
+    // Cache key for statistics
+    const cacheKey = `statistics:${userRole}:overview`;
     
-    const totalUsers = users.total_count || users.data.length;
-    const activeUsers = users.data.filter((u: any) => u.status === '1').length;
-    const inactiveUsers = totalUsers - activeUsers;
+    const stats = await withCache(
+      cacheKey,
+      async () => {
+        const users = await doceboAPI.getUsers({ page_size: 100 });
+        
+        const totalUsers = users.total_count || users.data.length;
+        const activeUsers = users.data.filter((u: any) => u.status === '1').length;
+        const inactiveUsers = totalUsers - activeUsers;
+        
+        return {
+          total_users: totalUsers,
+          active_users: activeUsers,
+          inactive_users: inactiveUsers,
+          activity_rate: totalUsers > 0 ? Math.round((activeUsers / totalUsers) * 100) : 0
+        };
+      },
+      { ttl: 15 * 60 * 1000, tags: ['statistics', `stats:${userRole}`] } // 15 minute cache
+    );
     
     return {
       error: false,
-      stats: {
-        total_users: totalUsers,
-        active_users: activeUsers,
-        inactive_users: inactiveUsers,
-        activity_rate: totalUsers > 0 ? Math.round((activeUsers / totalUsers) * 100) : 0
-      },
-      api_source: 'working_docebo_api',
+      stats,
+      api_source: 'secure_docebo_api',
       type: 'user_statistics'
     };
     
   } catch (error) {
-    console.error('❌ WORKING API statistics failed:', error);
-    return {
-      error: true,
-      message: `Error getting statistics: ${error instanceof Error ? error.message : 'Unknown error'}`
-    };
+    console.error('❌ Secure statistics request failed:', error);
+    throw ErrorHandler.doceboApiError(
+      'Failed to retrieve statistics from Docebo API',
+      { userRole, error: error instanceof Error ? error.message : 'Unknown' }
+    );
   }
 }
