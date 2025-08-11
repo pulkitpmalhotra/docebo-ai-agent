@@ -43,7 +43,7 @@ export interface HealthStatus {
 export class HealthChecker {
   private static startTime = Date.now();
   private static lastHealthCheck: HealthStatus | null = null;
-  private static checkCache = new Map<string, { result: HealthCheck; expiry: number }>();
+  private static healthCheckCache = new Map<string, { result: HealthCheck; expiry: number }>();
 
   static async checkHealth(useCache: boolean = true): Promise<HealthStatus> {
     const startTime = Date.now();
@@ -55,7 +55,7 @@ export class HealthChecker {
       this.checkEnvironment(useCache),
       this.checkDoceboAPI(useCache),
       this.checkGeminiAPI(useCache),
-      this.checkCache(useCache),
+      this.checkCacheSystem(useCache),
       this.checkRateLimiter(useCache),
       this.checkMemory(useCache)
     ]);
@@ -228,7 +228,7 @@ export class HealthChecker {
     });
   }
 
-  private static async checkCache(useCache: boolean): Promise<HealthCheck> {
+  private static async checkCacheSystem(useCache: boolean): Promise<HealthCheck> {
     return this.runCheck('cache', useCache, async () => {
       try {
         // Test cache operations
@@ -366,7 +366,7 @@ export class HealthChecker {
     
     // Check cache first
     if (useCache) {
-      const cached = this.checkCache.get(name);
+      const cached = this.healthCheckCache.get(name);
       if (cached && cached.expiry > Date.now()) {
         return cached.result;
       }
@@ -386,7 +386,7 @@ export class HealthChecker {
       };
       
       // Cache the result for 30 seconds
-      this.checkCache.set(name, {
+      this.healthCheckCache.set(name, {
         result: healthCheck,
         expiry: Date.now() + 30000
       });
@@ -445,7 +445,7 @@ export class HealthChecker {
 
   // Reset health check cache
   static resetCache(): void {
-    this.checkCache.clear();
+    this.healthCheckCache.clear();
     this.lastHealthCheck = null;
   }
 }
