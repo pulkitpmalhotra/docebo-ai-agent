@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Docebo Enrollment Debug Center</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="max-w-7xl mx-auto p-6">
+        <div class="bg-white rounded-lg shadow-lg p-8 mb-8">
+            <h1 class="text-3xl font-bold text-gray-800 mb-4">🔬 Docebo Enrollment Debug Center</h1>
+            <p class="text-gray-600 mb-6">
+                This tool will discover ALL enrollment-related endpoints in your Docebo instance and test the new intelligent chat system.
+            </p>
+            
+            <!-- Test Configuration -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">User ID</label>
+                    <input id="userId" type="text" value="51158" 
+                           class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                    <p class="text-xs text-gray-500 mt-1">Use a real user ID from your system</p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Course ID</label>
+                    <input id="courseId" type="text" value="1" 
+                           class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                    <p class="text-xs text-gray-500 mt-1">Use a real course ID from your system</p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Learning Plan ID</label>
+                    <input id="learningPlanId" type="text" value="1" 
+                           class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                    <p class="text-xs text-gray-500 mt-1">Use a real learning plan ID</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Enrollment Endpoint Discovery -->
+        <div class="bg-white rounded-lg shadow-lg p-8 mb-8">
+            <h2 class="text-2xl font-bold text-gray-800 mb-6">🚀 Enrollment Endpoint Discovery</h2>
+            
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <button onclick="runTest('comprehensive')" 
+                        class="bg-purple-500 text-white px-4 py-3 rounded-lg hover:bg-purple-600 transition-colors">
+                    🔍 Full Discovery
+                </button>
+                <button onclick="runTest('get')" 
+                        class="bg-blue-500 text-white px-4 py-3 rounded-lg hover:bg-blue-600 transition-colors">
+                    📖 GET Endpoints
+                </button>
+                <button onclick="runTest('post')" 
+                        class="bg-green-500 text-white px-4 py-3 rounded-lg hover:bg-green-600 transition-colors">
+                    ✏️ POST Endpoints
+                </button>
+                <button onclick="runTest('reports')" 
+                        class="bg-orange-500 text-white px-4 py-3 rounded-lg hover:bg-orange-600 transition-colors">
+                    📊 Report Endpoints
+                </button>
+            </div>
+
+            <div id="discoveryResults" class="hidden">
+                <h3 class="text-lg font-semibold mb-4">Discovery Results</h3>
+                <div id="discoveryContent" class="bg-gray-100 p-4 rounded-lg overflow-auto max-h-96">
+                    <!-- Results will be displayed here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Intelligent Chat Testing -->
+        <div class="bg-white rounded-lg shadow-lg p-8 mb-8">
+            <h2 class="text-2xl font-bold text-gray-800 mb-6">🤖 Intelligent Chat Testing</h2>
+            
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-2">User Role</label>
+                <select id="chatRole" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                    <option value="superadmin">Super Administrator</option>
+                    <option value="power_user">Power User</option>
+                    <option value="user_manager">User Manager</option>
+                    <option value="user">User</option>
+                </select>
+            </div>
+
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-2">Test Message</label>
+                <textarea id="chatMessage" rows="3" 
+                          class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          placeholder="Type your test message here...">Is john.doe@company.com enrolled in the Python Programming course?</textarea>
+            </div>
+
+            <!-- Quick Test Buttons -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-6">
+                <button onclick="testQuickMessage('Who is enrolled in Python Programming?')" 
+                        class="bg-blue-100 text-blue-800 px-3 py-2 rounded text-sm hover:bg-blue-200">
+                    Course Enrollments
+                </button>
+                <button onclick="testQuickMessage('Enroll sarah@company.com in Leadership Training')" 
+                        class="bg-green-100 text-green-800 px-3 py-2 rounded text-sm hover:bg-green-200">
+                    Enroll User
+                </button>
+                <button onclick="testQuickMessage('Show me completion rates for all courses')" 
+                        class="bg-purple-100 text-purple-800 px-3 py-2 rounded text-sm hover:bg-purple-200">
+                    Completion Reports
+                </button>
+                <button onclick="testQuickMessage('Find users in the sales department')" 
+                        class="bg-orange-100 text-orange-800 px-3 py-2 rounded text-sm hover:bg-orange-200">
+                    Search Users
+                </button>
+            </div>
+
+            <button onclick="testIntelligentChat()" 
+                    class="bg-indigo-500 text-white px-6 py-3 rounded-lg hover:bg-indigo-600 transition-colors">
+                🧠 Test Intelligent Chat
+            </button>
+
+            <div id="chatResults" class="hidden mt-6">
+                <h3 class="text-lg font-semibold mb-4">Chat Response</h3>
+                <div id="chatContent" class="bg-gray-100 p-4 rounded-lg">
+                    <!-- Chat results will be displayed here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Loading Indicator -->
+        <div id="loading" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div class="bg-white p-6 rounded-lg flex items-center space-x-3">
+                <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
+                <span class="text-gray-700">Processing request...</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function showLoading() {
+            document.getElementById('loading').classList.remove('hidden');
+        }
+
+        function hideLoading() {
+            document.getElementById('loading').classList.add('hidden');
+        }
+
+        async function runTest(testType) {
+            showLoading();
+            
+            const userId = document.getElementById('userId').value;
+            const courseId = document.getElementById('courseId').value;
+            const learningPlanId = document.getElementById('learningPlanId').value;
+            
+            try {
+                const url = `/api/debug-enrollment-comprehensive?test=${testType}&userId=${userId}&courseId=${courseId}&learningPlanId=${learningPlanId}`;
+                console.log('Testing URL:', url);
+                
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                document.getElementById('discoveryResults').classList.remove('hidden');
+                document.getElementById('discoveryContent').innerHTML = 
+                    `<pre class="text-sm overflow-auto">${JSON.stringify(data, null, 2)}</pre>`;
+                
+                // Scroll to results
+                document.getElementById('discoveryResults').scrollIntoView({ behavior: 'smooth' });
+                
+            } catch (error) {
+                console.error('Discovery test error:', error);
+                document.getElementById('discoveryContent').innerHTML = 
+                    `<div class="text-red-600">Error: ${error.message}</div>`;
+            } finally {
+                hideLoading();
+            }
+        }
+
+        function testQuickMessage(message) {
+            document.getElementById('chatMessage').value = message;
+        }
+
+        async function testIntelligentChat() {
+            showLoading();
+            
+            const message = document.getElementById('chatMessage').value;
+            const role = document.getElementById('chatRole').value;
+            
+            if (!message.trim()) {
+                alert('Please enter a test message');
+                hideLoading();
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/chat-intelligent', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        message: message,
+                        userRole: role,
+                        userId: 'debug-user'
+                    })
+                });
+                
+                const data = await response.json();
+                
+                document.getElementById('chatResults').classList.remove('hidden');
+                
+                // Format the response nicely
+                let formattedResponse = `
+                    <div class="space-y-4">
+                        <div class="bg-blue-50 p-4 rounded">
+                            <h4 class="font-semibold text-blue-800">User Message:</h4>
+                            <p class="text-blue-700">"${message}"</p>
+                        </div>
+                        
+                        <div class="bg-green-50 p-4 rounded">
+                            <h4 class="font-semibold text-green-800">AI Response:</h4>
+                            <div class="text-green-700 whitespace-pre-wrap">${data.response}</div>
+                        </div>
+                        
+                        <div class="bg-gray-50 p-4 rounded">
+                            <h4 class="font-semibold text-gray-800">Analysis:</h4>
+                            <p><strong>Intent:</strong> ${data.intent}</p>
+                            <p><strong>Functions Called:</strong> ${data.functions_called?.join(', ') || 'None'}</p>
+                            <p><strong>User Role:</strong> ${data.user_role}</p>
+                        </div>
+                        
+                        <details class="bg-yellow-50 p-4 rounded">
+                            <summary class="font-semibold text-yellow-800 cursor-pointer">Raw API Response</summary>
+                            <pre class="text-sm mt-2 text-yellow-700 overflow-auto">${JSON.stringify(data, null, 2)}</pre>
+                        </details>
+                    </div>
+                `;
+                
+                document.getElementById('chatContent').innerHTML = formattedResponse;
+                
+                // Scroll to results
+                document.getElementById('chatResults').scrollIntoView({ behavior: 'smooth' });
+                
+            } catch (error) {
+                console.error('Chat test error:', error);
+                document.getElementById('chatContent').innerHTML = 
+                    `<div class="text-red-600">Error: ${error.message}</div>`;
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // Test the intelligent chat on page load with a sample message
+        window.addEventListener('load', () => {
+            console.log('🔬 Enrollment Debug Center loaded');
+            console.log('Ready to test comprehensive enrollment discovery and intelligent chat');
+        });
+    </script>
+</body>
+</html>
