@@ -237,7 +237,7 @@ export class HealthChecker {
         
         // Test set/get operations
         cache.set(testKey, testValue, { ttl: 1000 });
-        const retrieved = cache.get(testKey);
+        const retrieved = cache.get<{ test: boolean; timestamp: number }>(testKey);
         cache.delete(testKey);
         
         if (retrieved && retrieved.test === true) {
