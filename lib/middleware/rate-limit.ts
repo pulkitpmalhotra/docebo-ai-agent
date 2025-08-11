@@ -88,8 +88,13 @@ export class RateLimiter {
   }
 
   // Update rate limits dynamically
-  updateLimits(newLimits: Partial<Record<string, RateLimitConfig>>): void {
-    this.limits = { ...this.limits, ...newLimits };
+  updateLimits(newLimits: Record<string, RateLimitConfig>): void {
+    // Filter out undefined values and merge with existing limits
+    const validLimits = Object.fromEntries(
+      Object.entries(newLimits).filter(([_, config]) => config !== undefined)
+    ) as Record<string, RateLimitConfig>;
+    
+    this.limits = { ...this.limits, ...validLimits };
   }
 
   // Cleanup old entries
