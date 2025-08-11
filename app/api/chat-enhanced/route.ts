@@ -1,9 +1,9 @@
 // app/api/chat-enhanced/route.ts - Complete Enrollment Management Chat API
 import { NextRequest, NextResponse } from 'next/server';
-import { EnhancedChatProcessor, ChatContext } from '@/lib/ai/enhanced-chat-processor';
-import { InputValidator } from '@/lib/validation/input-validator';
-import { ErrorHandler } from '@/lib/errors/error-handler';
-import { rateLimiter, getClientIdentifier, getRateLimitHeaders } from '@/lib/middleware/rate-limit';
+import { EnhancedChatProcessor, ChatContext } from '../../../lib/ai/enhanced-chat-processor';
+import { InputValidator } from '../../../lib/validation/input-validator';
+import { ErrorHandler } from '../../../lib/errors/error-handler';
+import { rateLimiter, getClientIdentifier, getRateLimitHeaders } from '../../../lib/middleware/rate-limit';
 
 // Role-based permissions
 const ROLE_PERMISSIONS = {
