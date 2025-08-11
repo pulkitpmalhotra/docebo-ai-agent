@@ -117,7 +117,7 @@ class IntelligentChatProcessor {
       return {
         response: finalResponse,
         intent: intentAnalysis.intent,
-        functions_called: intentAnalysis.functions.map(f => f.name),
+        functions_called: intentAnalysis.functions?.map((f: any) => f.name) || [],
         user_role: userRole,
         data: functionResults,
         meta: {
@@ -683,14 +683,15 @@ Response:`;
   private generateFallbackResponse(originalMessage: string, functionResults: any): string {
     let response = "Here's what I found:\n\n";
     
-    for (const [funcName, result] of Object.entries(functionResults as any)) {
-      if (result.success) {
+    // Function results should be safe to access
+    for (const [funcName, result] of Object.entries(functionResults as Record<string, any>)) {
+      if ((result as any).success) {
         response += `✅ **${funcName}**: Operation completed successfully\n`;
-        if (result.data?.data?.items) {
-          response += `   Found ${result.data.data.items.length} items\n`;
+        if ((result as any).data?.data?.items) {
+          response += `   Found ${(result as any).data.data.items.length} items\n`;
         }
       } else {
-        response += `❌ **${funcName}**: ${result.error}\n`;
+        response += `❌ **${funcName}**: ${(result as any).error}\n`;
       }
     }
     
