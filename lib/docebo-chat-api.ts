@@ -1,5 +1,5 @@
 // lib/docebo-chat-api.ts - Chat-integrated Docebo API with natural language processing
-import { DoceboAPI, DoceboConfig } from './docebo-api';
+import { DoceboAPI, DoceboConfig } from './docebo-api-fixed-password';
 
 interface ChatApiRequest {
   operation: 'get' | 'post' | 'put' | 'delete';
