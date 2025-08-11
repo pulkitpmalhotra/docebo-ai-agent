@@ -608,13 +608,16 @@ async function handleEnrollUser(message: string): Promise<string> {
     const course = courses.find(c => c.name.toLowerCase().includes(courseName.toLowerCase()));
     
     if (!course) {
-      return `❌ **Course Not Found**: Course matching "${courseName}" not found in your Docebo instance.`;
+      return `❌ **Course Not Found**: Course matching "${courseName}" not found in your Docebo instance.
+      
+Available courses: ${courses.slice(0, 3).map(c => c.name).join(', ')}`;
     }
     
     // Attempt enrollment
-    const enrollmentResult = await doceboAPI.enrollUser(user.user_id, course.idCourse);
-    
-    return `✅ **Enrollment Successful**
+    try {
+      const enrollmentResult = await doceboAPI.enrollUser(user.user_id, course.idCourse);
+      
+      return `✅ **Enrollment Successful**
 
 **User**: ${user.fullname} (${user.email})
 **Course**: ${course.name}
@@ -627,9 +630,29 @@ async function handleEnrollUser(message: string): Promise<string> {
 • Progress tracking has begun
 
 🔗 **Data Source**: Live enrollment via Docebo API`;
+      
+    } catch (enrollError) {
+      // If enrollment fails, provide helpful debugging info
+      return `❌ **Enrollment Failed**: Unable to enroll ${user.fullname} in "${course.name}".
+
+**Possible reasons**:
+• User may already be enrolled in this course
+• Course may not allow new enrollments
+• Insufficient permissions for enrollment
+• API endpoint configuration issue
+
+**Error details**: ${enrollError instanceof Error ? enrollError.message : 'Unknown error'}
+
+**User ID**: ${user.user_id}
+**Course ID**: ${course.idCourse}
+
+💡 **Suggestion**: Try checking if the user is already enrolled, or contact your Docebo administrator to verify enrollment permissions.`;
+    }
     
   } catch (error) {
-    return `❌ **Enrollment Failed**: Unable to enroll user. Error: ${error instanceof Error ? error.message : 'Unknown error'}`;
+    return `❌ **Enrollment Process Failed**: Unable to process enrollment request. Error: ${error instanceof Error ? error.message : 'Unknown error'}
+
+💡 **Suggestion**: Use the debug enrollment endpoint to discover the correct API structure for your Docebo instance.`;
   }
 }
 
