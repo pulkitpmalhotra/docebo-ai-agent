@@ -111,12 +111,12 @@ export async function POST(request: NextRequest) {
 
     // Add role-specific guidance to the response
     if (result.success && result.data) {
-      result.response = this.enhanceResponseForRole(result.response, result.intent, userRole, result.data);
+      result.response = enhanceResponseForRole(result.response, result.intent, userRole, result.data);
     }
 
     // Add suggested actions based on role and result
     if (!result.actions) {
-      result.actions = this.generateRoleBasedActions(result.intent, userRole, result.success);
+      result.actions = generateRoleBasedActions(result.intent, userRole, result.success);
     }
 
     console.log(`✅ Enhanced response generated: ${result.intent} (${Date.now() - startTime}ms)`);
