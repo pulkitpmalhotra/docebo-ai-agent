@@ -1,4 +1,6 @@
-                  import React, { useState, useEffect, useRef } from 'react';
+'use client';
+
+import React, { useState, useEffect, useRef } from 'react';
 import { Send, User, Bot, Zap, Users, BookOpen, BarChart3, Settings, ChevronRight, Sparkles, Clock, CheckCircle, AlertCircle, Lightbulb, Search, Filter, Star } from 'lucide-react';
 
 interface Message {
@@ -176,7 +178,7 @@ const roleConfigs = {
   }
 };
 
-export default function EnhancedDoceboAI() {
+export default function DoceboAIChat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -220,7 +222,7 @@ I'm your AI assistant for Docebo LMS management. I can help you with:
 **Quick tip:** Use the scenario builder below for guided workflows, or try one of the suggested prompts!`;
   }
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement> | React.MouseEvent | React.KeyboardEvent) => {
+  const handleSubmit = async (e: React.MouseEvent | React.KeyboardEvent) => {
     e.preventDefault();
     if (!input.trim() || loading) return;
 
@@ -326,6 +328,12 @@ I'm your AI assistant for Docebo LMS management. I can help you with:
     setShowSuggestions(true);
   };
 
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      handleSubmit(e);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
       <div className="max-w-6xl mx-auto p-6">
@@ -359,21 +367,7 @@ I'm your AI assistant for Docebo LMS management. I can help you with:
                   <div className="flex items-center gap-3 mb-2">
                     <div className={`p-2 rounded-lg bg-gradient-to-r ${config.color}`}>
                       <div className="text-white">{config.icon}</div>
-                    
-                {showSuggestions && (
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {roleConfig.quickActions.slice(0, 3).map((action, index) => (
-                      <button
-                        key={index}
-                        onClick={() => handleQuickAction(action)}
-                        className="px-3 py-1 bg-slate-100 text-slate-700 rounded-full text-sm hover:bg-slate-200 transition-colors"
-                      >
-                        {action}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
+                    </div>
                     <span className="font-medium text-slate-800">{config.name}</span>
                   </div>
                   <p className="text-sm text-slate-600">
@@ -634,13 +628,13 @@ I'm your AI assistant for Docebo LMS management. I can help you with:
                     type="text"
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && handleSubmit(e)}
+                    onKeyPress={handleKeyPress}
                     placeholder={`Ask me anything as ${roleConfig.name}...`}
                     className="flex-1 p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     disabled={loading}
                   />
                   <button
-                    onClick={(e) => handleSubmit(e)}
+                    onClick={handleSubmit}
                     disabled={loading || !input.trim()}
                     className="px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
                   >
@@ -654,7 +648,6 @@ I'm your AI assistant for Docebo LMS management. I can help you with:
                     {roleConfig.quickActions.slice(0, 3).map((action, index) => (
                       <button
                         key={index}
-                        type="button"
                         onClick={() => handleQuickAction(action)}
                         className="px-3 py-1 bg-slate-100 text-slate-700 rounded-full text-sm hover:bg-slate-200 transition-colors"
                       >
@@ -663,7 +656,7 @@ I'm your AI assistant for Docebo LMS management. I can help you with:
                     ))}
                   </div>
                 )}
-              </form>
+              </div>
             </div>
           </div>
         </div>
