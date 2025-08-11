@@ -1,3 +1,5 @@
+'use client';
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Send, User, Bot, Zap, Users, BookOpen, BarChart3, Settings, ChevronRight, Sparkles, Lightbulb, Search, Bell, FileText, FolderOpen, UserPlus, AlertCircle, CheckCircle, ExternalLink, Download } from 'lucide-react';
 
