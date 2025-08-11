@@ -1,11 +1,10 @@
-// app/api/chat/route.ts - Working version with actual action handlers
+// app/api/chat/route.ts - Complete working version
 import { NextRequest, NextResponse } from 'next/server';
 
 interface ChatRequest {
   message: string;
   userRole?: string;
   userId?: string;
-  context?: string;
 }
 
 interface ChatResponse {
@@ -31,8 +30,7 @@ const MOCK_USERS = [
   { id: 1, email: 'john@company.com', name: 'John Smith', status: 'active', department: 'Engineering', lastLogin: '2024-01-15', enrollments: 5 },
   { id: 2, email: 'sarah@company.com', name: 'Sarah Johnson', status: 'active', department: 'Marketing', lastLogin: '2024-01-14', enrollments: 3 },
   { id: 3, email: 'mike@company.com', name: 'Mike Brown', status: 'inactive', department: 'Sales', lastLogin: '2024-01-10', enrollments: 2 },
-  { id: 4, email: 'lisa@company.com', name: 'Lisa Davis', status: 'active', department: 'HR', lastLogin: '2024-01-16', enrollments: 7 },
-  { id: 5, email: 'tom@company.com', name: 'Tom Wilson', status: 'active', department: 'Engineering', lastLogin: '2024-01-16', enrollments: 4 }
+  { id: 4, email: 'lisa@company.com', name: 'Lisa Davis', status: 'active', department: 'HR', lastLogin: '2024-01-16', enrollments: 7 }
 ];
 
 const MOCK_COURSES = [
@@ -40,113 +38,21 @@ const MOCK_COURSES = [
   { id: 2, name: 'Excel Advanced Techniques', category: 'Skills', enrollments: 67, completionRate: 85, status: 'published' },
   { id: 3, name: 'Leadership Excellence', category: 'Leadership', enrollments: 32, completionRate: 92, status: 'published' },
   { id: 4, name: 'Safety Training 2024', category: 'Compliance', enrollments: 89, completionRate: 96, status: 'published' },
-  { id: 5, name: 'JavaScript Essentials', category: 'Technical', enrollments: 23, completionRate: 73, status: 'draft' },
-  { id: 6, name: 'Project Management Basics', category: 'Skills', enrollments: 41, completionRate: 88, status: 'published' },
-  { id: 7, name: 'Customer Service Excellence', category: 'Skills', enrollments: 55, completionRate: 81, status: 'published' }
+  { id: 5, name: 'JavaScript Essentials', category: 'Technical', enrollments: 23, completionRate: 73, status: 'draft' }
 ];
 
-// Main categories and their actions
 const DOCEBO_CATEGORIES = {
-  user_management: {
-    name: 'User Management',
-    actions: [
-      'Search for a user',
-      'Check user status',
-      'View user profile',
-      'Manage user enrollments',
-      'Reset user password',
-      'Deactivate/activate user'
-    ]
-  },
-  course_management: {
-    name: 'Course Management',
-    actions: [
-      'Search courses',
-      'View course details',
-      'Check course enrollments',
-      'Manage course settings',
-      'Course completion rates',
-      'Export course data'
-    ]
-  },
-  learning_plan_management: {
-    name: 'Learning Plan Management',
-    actions: [
-      'View learning plans',
-      'Check learning plan progress',
-      'Manage learning plan enrollments',
-      'Create learning plan reports',
-      'Export learning plan data'
-    ]
-  },
-  notifications: {
-    name: 'Notifications',
-    actions: [
-      'Send notifications',
-      'View notification history',
-      'Create notification templates',
-      'Schedule notifications',
-      'Notification delivery reports'
-    ]
-  },
-  enrollments: {
-    name: 'Enrollments',
-    actions: [
-      'Enroll users in courses',
-      'Bulk enrollment',
-      'View enrollment history',
-      'Cancel enrollments',
-      'Enrollment reports'
-    ]
-  },
-  central_repository: {
-    name: 'Central Repository',
-    actions: [
-      'Search repository',
-      'Upload content',
-      'Manage assets',
-      'Content usage reports',
-      'Export repository data'
-    ]
-  },
-  group_management: {
-    name: 'Group Management',
-    actions: [
-      'Create groups',
-      'Manage group members',
-      'Group enrollment',
-      'Group progress reports',
-      'Export group data'
-    ]
-  },
-  reports: {
-    name: 'Reports',
-    actions: [
-      'Generate user reports',
-      'Course completion reports',
-      'Enrollment reports',
-      'Custom reports',
-      'Schedule reports',
-      'Export reports'
-    ]
-  },
-  analytics: {
-    name: 'Analytics',
-    actions: [
-      'User analytics',
-      'Course analytics',
-      'Learning plan analytics',
-      'System usage analytics',
-      'Performance dashboards'
-    ]
-  }
+  user_management: { name: 'User Management' },
+  course_management: { name: 'Course Management' },
+  enrollments: { name: 'Enrollments' },
+  reports: { name: 'Reports' },
+  analytics: { name: 'Analytics' }
 };
 
-// Role-based permissions
 const ROLE_PERMISSIONS = {
-  superadmin: Object.keys(DOCEBO_CATEGORIES),
-  power_user: ['user_management', 'course_management', 'enrollments', 'reports', 'analytics'],
-  user_manager: ['user_management', 'reports', 'analytics'],
+  superadmin: ['user_management', 'course_management', 'enrollments', 'reports', 'analytics'],
+  power_user: ['user_management', 'course_management', 'enrollments', 'reports'],
+  user_manager: ['user_management', 'reports'],
   user: ['reports']
 };
 
@@ -154,22 +60,15 @@ function validateRequest(body: any): { success: boolean; data?: ChatRequest; err
   if (!body || typeof body !== 'object') {
     return { success: false, error: 'Invalid request body' };
   }
-
   if (!body.message || typeof body.message !== 'string') {
     return { success: false, error: 'Message is required' };
   }
-
-  if (body.message.length > 2000) {
-    return { success: false, error: 'Message too long (max 2000 characters)' };
-  }
-
   return {
     success: true,
     data: {
       message: body.message.trim(),
       userRole: body.userRole || 'user',
-      userId: body.userId || 'anonymous',
-      context: body.context
+      userId: body.userId || 'anonymous'
     }
   };
 }
@@ -177,131 +76,89 @@ function validateRequest(body: any): { success: boolean; data?: ChatRequest; err
 function detectIntent(message: string): string {
   const messageLower = message.toLowerCase().trim();
   
-  // Specific action detection
   if (messageLower.includes('search') && messageLower.includes('user')) {
     return 'search_user_action';
   }
-  
   if (messageLower.includes('search') && messageLower.includes('course')) {
     return 'search_course_action';
   }
-  
-  if (messageLower.includes('course') && (messageLower.includes('stats') || messageLower.includes('statistics'))) {
+  if (messageLower.includes('course') && messageLower.includes('stat')) {
     return 'course_stats_action';
   }
-  
   if (messageLower.includes('export') && messageLower.includes('course')) {
     return 'export_courses_action';
   }
-  
-  if (messageLower.includes('enroll') && messageLower.includes('user')) {
+  if (messageLower.includes('enroll')) {
     return 'enroll_user_action';
   }
-  
   if (messageLower.includes('user') && messageLower.includes('report')) {
     return 'user_report_action';
   }
-  
-  if (messageLower.includes('status') && messageLower.includes('user')) {
-    return 'user_status_action';
-  }
-  
-  // Category detection
   if (messageLower.includes('what') && (messageLower.includes('do') || messageLower.includes('can'))) {
     return 'category_selection';
   }
-  
-  if (messageLower.includes('user') && (messageLower.includes('manage') || messageLower.includes('management'))) {
+  if (messageLower.includes('user') && messageLower.includes('manage')) {
     return 'user_management';
   }
-  
-  if (messageLower.includes('course') && (messageLower.includes('manage') || messageLower.includes('management'))) {
+  if (messageLower.includes('course') && messageLower.includes('manage')) {
     return 'course_management';
-  }
-  
-  if (messageLower.includes('enroll')) {
-    return 'enrollments';
-  }
-  
-  if (messageLower.includes('report')) {
-    return 'reports';
   }
   
   return 'category_selection';
 }
 
-// Action handlers
 function handleSearchUser(message: string): string {
   const emailMatch = message.match(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/);
-  const nameMatch = message.match(/by name[:\s]+([^,\n]+)/i) || message.match(/name[:\s]+([^,\n]+)/i);
   
-  let searchTerm = '';
-  let searchType = 'email';
-  
-  if (emailMatch) {
-    searchTerm = emailMatch[0];
-    searchType = 'email';
-  } else if (nameMatch) {
-    searchTerm = nameMatch[1].trim();
-    searchType = 'name';
-  } else {
-    // Extract any term after "search" or "find"
-    const termMatch = message.match(/(?:search|find)[^:]*:?\s*([^\n,]+)/i);
-    if (termMatch) {
-      searchTerm = termMatch[1].trim();
-    }
+  if (!emailMatch) {
+    return 'Please specify a user email. Example: "Search for user john@company.com"';
   }
   
-  if (!searchTerm) {
-    return `❓ **Search User**\n\nPlease specify what you're looking for. Examples:\n• "Search for user john@company.com"\n• "Find user by name: John Smith"\n• "Search user by email: sarah@company.com"`;
+  const searchEmail = emailMatch[0];
+  const user = MOCK_USERS.find(u => u.email.toLowerCase() === searchEmail.toLowerCase());
+  
+  if (!user) {
+    return `User "${searchEmail}" not found. Available users: ${MOCK_USERS.slice(0, 3).map(u => u.email).join(', ')}`;
   }
   
-  const results = MOCK_USERS.filter(user => 
-    user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    user.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  return `**User Found: ${user.name}**
   
-  if (results.length === 0) {
-    return `❌ **No Users Found**\n\nNo users found matching "${searchTerm}"\n\nTry searching for:\n• john@company.com\n• sarah@company.com\n• mike@company.com`;
-  }
-  
-  const userList = results.map(user => 
-    `**${user.name}** (${user.email})\n• Status: ${user.status === 'active' ? '✅ Active' : '❌ Inactive'}\n• Department: ${user.department}\n• Last Login: ${user.lastLogin}\n• Enrollments: ${user.enrollments} courses`
-  ).join('\n\n');
-  
-  return `👥 **User Search Results** (${results.length} found)\n\n${userList}`;
+• Email: ${user.email}
+• Status: ${user.status === 'active' ? '✅ Active' : '❌ Inactive'}
+• Department: ${user.department}
+• Last Login: ${user.lastLogin}
+• Total Enrollments: ${user.enrollments} courses`;
 }
 
 function handleSearchCourses(message: string): string {
-  const courseMatch = message.match(/course[s]?[:\s]+([^,\n]+)/i) || message.match(/search[^:]*:?\s*([^\n,]+)/i);
-  
+  const courseMatch = message.match(/course[s]?[:\s]+([^,\n]+)/i);
   let searchTerm = '';
+  
   if (courseMatch) {
     searchTerm = courseMatch[1].trim().replace(/["']/g, '');
   }
   
-  if (!searchTerm) {
-    searchTerm = 'all';
-  }
-  
-  let results = MOCK_COURSES;
-  
-  if (searchTerm.toLowerCase() !== 'all') {
-    results = MOCK_COURSES.filter(course => 
+  let results = searchTerm ? 
+    MOCK_COURSES.filter(course => 
       course.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       course.category.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-  }
+    ) : MOCK_COURSES;
   
   if (results.length === 0) {
-    return `❌ **No Courses Found**\n\nNo courses found matching "${searchTerm}"\n\nAvailable courses include:\n• Python Programming\n• Excel Advanced\n• Leadership Excellence\n• Safety Training`;
+    return `No courses found matching "${searchTerm}". Available courses: Python Programming, Excel Advanced, Leadership Excellence, Safety Training`;
   }
   
   const courseList = results.map(course => 
-    `📚 **${course.name}**\n• Category: ${course.category}\n• Enrollments: ${course.enrollments} users\n• Completion Rate: ${course.completionRate}%\n• Status: ${course.status === 'published' ? '✅ Published' : '📝 Draft'}`
+    `**${course.name}**
+• Category: ${course.category}
+• Enrollments: ${course.enrollments} users
+• Completion Rate: ${course.completionRate}%
+• Status: ${course.status === 'published' ? '✅ Published' : '📝 Draft'}`
   ).join('\n\n');
   
-  return `📚 **Course Search Results** (${results.length} found)\n\n${courseList}`;
+  return `**Course Search Results (${results.length} found)**
+
+${courseList}`;
 }
 
 function handleCourseStats(): string {
@@ -313,50 +170,35 @@ function handleCourseStats(): string {
   const topCourses = MOCK_COURSES
     .sort((a, b) => b.enrollments - a.enrollments)
     .slice(0, 3)
-    .map((course, index) => 
-      `${index + 1}. **${course.name}** - ${course.enrollments} enrollments (${course.completionRate}% completion)`
-    ).join('\n');
-  
-  const categoryStats = MOCK_COURSES.reduce((acc, course) => {
-    acc[course.category] = (acc[course.category] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
-  
-  const categoryList = Object.entries(categoryStats)
-    .map(([category, count]) => `• ${category}: ${count} courses`)
+    .map((course, index) => `${index + 1}. ${course.name} - ${course.enrollments} enrollments`)
     .join('\n');
   
-  return `📊 **Course Statistics Overview**
+  return `**Course Statistics Overview**
 
 **Overall Metrics:**
 • Total Courses: ${totalCourses}
 • Published: ${publishedCourses} courses
-• Draft: ${totalCourses - publishedCourses} courses
 • Total Enrollments: ${totalEnrollments} users
 • Average Completion Rate: ${avgCompletionRate}%
 
 **Top Performing Courses:**
 ${topCourses}
 
-**Courses by Category:**
-${categoryList}
-
 **Recommendations:**
-• Focus on promoting courses with <80% completion rates
-• Consider converting draft courses to published status
-• Analyze top performers for best practices`;
+• Focus on promoting courses with low completion rates
+• Consider converting draft courses to published status`;
 }
 
 function handleExportCourses(): string {
   const timestamp = new Date().toISOString().split('T')[0];
   const filename = `docebo_courses_export_${timestamp}.csv`;
   
-  return `📁 **Export Courses Data**
+  return `**Export Courses Data**
 
 ✅ **Export Generated Successfully**
 
 **Export Details:**
-• File: \`${filename}\`
+• File: ${filename}
 • Records: ${MOCK_COURSES.length} courses
 • Format: CSV
 • Generated: ${new Date().toLocaleString()}
@@ -366,41 +208,33 @@ function handleExportCourses(): string {
 • Category and Status
 • Enrollment Numbers
 • Completion Rates
-• Creation/Modification Dates
 
 **Download Options:**
 🔗 Download CSV File
 📧 Email to Administrator
-☁️ Save to Central Repository
-
-*Note: In a production environment, this would trigger an actual file download or email delivery.*`;
+☁️ Save to Repository`;
 }
 
 function handleEnrollUser(message: string): string {
   const emailMatch = message.match(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/);
   const courseMatch = message.match(/(?:in|course)[:\s]+["']?([^"'\n,]+)["']?/i);
   
-  if (!emailMatch) {
-    return `❓ **Enroll User - Missing Email**\n\nPlease specify the user's email address.\n\nExample: "Enroll john@company.com in Python course"`;
-  }
-  
-  if (!courseMatch) {
-    return `❓ **Enroll User - Missing Course**\n\nPlease specify the course name.\n\nExample: "Enroll ${emailMatch[0]} in Python Programming"`;
+  if (!emailMatch || !courseMatch) {
+    return 'Please specify user email and course name. Example: "Enroll john@company.com in Python Programming"';
   }
   
   const userEmail = emailMatch[0];
   const courseName = courseMatch[1].trim();
   
-  // Find user
   const user = MOCK_USERS.find(u => u.email.toLowerCase() === userEmail.toLowerCase());
+  const course = MOCK_COURSES.find(c => c.name.toLowerCase().includes(courseName.toLowerCase()));
+  
   if (!user) {
-    return `❌ **User Not Found**\n\nUser "${userEmail}" not found in system.\n\nAvailable users:\n${MOCK_USERS.slice(0, 3).map(u => `• ${u.email}`).join('\n')}`;
+    return `User "${userEmail}" not found. Available users: ${MOCK_USERS.slice(0, 3).map(u => u.email).join(', ')}`;
   }
   
-  // Find course
-  const course = MOCK_COURSES.find(c => c.name.toLowerCase().includes(courseName.toLowerCase()));
   if (!course) {
-    return `❌ **Course Not Found**\n\nCourse matching "${courseName}" not found.\n\nAvailable courses:\n${MOCK_COURSES.slice(0, 3).map(c => `• ${c.name}`).join('\n')}`;
+    return `Course "${courseName}" not found. Available courses: ${MOCK_COURSES.slice(0, 3).map(c => c.name).join(', ')}`;
   }
   
   return `✅ **Enrollment Successful**
@@ -409,91 +243,25 @@ function handleEnrollUser(message: string): string {
 **Course:** ${course.name}
 **Category:** ${course.category}
 **Enrollment Date:** ${new Date().toLocaleDateString()}
-**Status:** Active
 
 **Next Steps:**
 • User will receive enrollment notification
 • Course materials are now accessible
-• Progress tracking has begun
-• Completion deadline: 30 days
-
-**Enrollment Summary:**
-• User's Total Enrollments: ${user.enrollments + 1} courses
-• Course Total Enrollments: ${course.enrollments + 1} users
-• Expected Completion Rate: ${course.completionRate}%`;
+• Progress tracking has begun`;
 }
 
-function handleUserReport(message: string): string {
-  const emailMatch = message.match(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/);
-  const timeframeMatch = message.match(/(?:last|past)\s+(\d+)\s+(day|week|month)s?/i) || message.match(/(quarter|month|week)/i);
-  
-  let timeframe = 'Last 30 days';
-  if (timeframeMatch) {
-    if (timeframeMatch[1] && timeframeMatch[2]) {
-      timeframe = `Last ${timeframeMatch[1]} ${timeframeMatch[2]}s`;
-    } else {
-      timeframe = `Last ${timeframeMatch[1]}`;
-    }
-  }
-  
-  if (emailMatch) {
-    const user = MOCK_USERS.find(u => u.email.toLowerCase() === emailMatch[0].toLowerCase());
-    if (!user) {
-      return `❌ **User Not Found**\n\nUser "${emailMatch[0]}" not found for report generation.`;
-    }
-    
-    return `📊 **User Activity Report: ${user.name}**
-
-**Report Period:** ${timeframe}
-**Generated:** ${new Date().toLocaleString()}
-
-**User Information:**
-• Name: ${user.name}
-• Email: ${user.email}
-• Department: ${user.department}
-• Status: ${user.status}
-• Last Login: ${user.lastLogin}
-
-**Learning Activity:**
-• Total Enrollments: ${user.enrollments} courses
-• Completed Courses: ${Math.floor(user.enrollments * 0.7)} courses
-• In Progress: ${user.enrollments - Math.floor(user.enrollments * 0.7)} courses
-• Average Score: 87%
-• Total Learning Hours: ${user.enrollments * 12} hours
-
-**Recent Activity:**
-• Python Programming - 95% complete
-• Excel Advanced - Completed (Score: 92%)
-• Safety Training - Completed (Score: 100%)
-
-**Recommendations:**
-• User is performing above average
-• Consider advanced courses in ${user.department}
-• Eligible for certification programs`;
-  }
-  
-  // Generate department/overall report
+function handleUserReport(): string {
   const totalUsers = MOCK_USERS.length;
   const activeUsers = MOCK_USERS.filter(u => u.status === 'active').length;
   const totalEnrollments = MOCK_USERS.reduce((sum, u) => sum + u.enrollments, 0);
   
-  return `📊 **User Activity Report - All Users**
-
-**Report Period:** ${timeframe}
-**Generated:** ${new Date().toLocaleString()}
+  return `**User Activity Report**
 
 **Overview:**
 • Total Users: ${totalUsers}
 • Active Users: ${activeUsers}
-• Inactive Users: ${totalUsers - activeUsers}
 • Total Enrollments: ${totalEnrollments}
 • Average Enrollments per User: ${Math.round(totalEnrollments / totalUsers)}
-
-**Department Breakdown:**
-${Object.entries(MOCK_USERS.reduce((acc, user) => {
-  acc[user.department] = (acc[user.department] || 0) + 1;
-  return acc;
-}, {} as Record<string, number>)).map(([dept, count]) => `• ${dept}: ${count} users`).join('\n')}
 
 **Top Performers:**
 ${MOCK_USERS
@@ -512,28 +280,26 @@ function generateResponse(message: string, intent: string, userRole: string): Ch
   let actions: Array<{id: string; label: string; type: 'primary' | 'secondary'; action: string}> = [];
 
   switch (intent) {
-    // Specific Actions
     case 'search_user_action':
       if (!allowedCategories.includes('user_management')) {
-        response = `❌ **Access Denied**\n\nYour role (${userRole}) doesn't have permission to search users.`;
+        response = `❌ Access Denied: Your role (${userRole}) doesn't have permission to search users.`;
       } else {
         response = handleSearchUser(message);
-        suggestions = ['Search for another user', 'Check user status', 'View user reports'];
+        suggestions = ['Search for another user', 'Generate user report'];
         actions = [
-          { id: 'search_another_user', label: 'Search Another User', type: 'primary', action: 'search_user_form' },
-          { id: 'user_reports', label: 'User Reports', type: 'secondary', action: 'user_report_form' }
+          { id: 'search_user', label: 'Search Another User', type: 'primary', action: 'search_user_form' },
+          { id: 'user_report', label: 'User Reports', type: 'secondary', action: 'user_report_form' }
         ];
       }
       break;
       
     case 'search_course_action':
       if (!allowedCategories.includes('course_management')) {
-        response = `❌ **Access Denied**\n\nYour role (${userRole}) doesn't have permission to search courses.`;
+        response = `❌ Access Denied: Your role (${userRole}) doesn't have permission to search courses.`;
       } else {
         response = handleSearchCourses(message);
-        suggestions = ['Search for more courses', 'View course statistics', 'Export course data'];
+        suggestions = ['View course statistics', 'Export course data'];
         actions = [
-          { id: 'search_more_courses', label: 'Search More', type: 'primary', action: 'search_course_form' },
           { id: 'course_stats', label: 'Course Stats', type: 'primary', action: 'course_stats_query' },
           { id: 'export_courses', label: 'Export Data', type: 'secondary', action: 'export_courses_query' }
         ];
@@ -542,23 +308,23 @@ function generateResponse(message: string, intent: string, userRole: string): Ch
       
     case 'course_stats_action':
       if (!allowedCategories.includes('course_management')) {
-        response = `❌ **Access Denied**\n\nYour role (${userRole}) doesn't have permission to view course statistics.`;
+        response = `❌ Access Denied: Your role (${userRole}) doesn't have permission to view course statistics.`;
       } else {
         response = handleCourseStats();
-        suggestions = ['Export this data', 'View specific course details', 'Generate course report'];
+        suggestions = ['Export this data', 'Search specific courses'];
         actions = [
           { id: 'export_stats', label: 'Export Statistics', type: 'primary', action: 'export_courses_query' },
-          { id: 'course_details', label: 'Course Details', type: 'secondary', action: 'search_course_form' }
+          { id: 'search_courses', label: 'Search Courses', type: 'secondary', action: 'search_course_form' }
         ];
       }
       break;
       
     case 'export_courses_action':
       if (!allowedCategories.includes('course_management')) {
-        response = `❌ **Access Denied**\n\nYour role (${userRole}) doesn't have permission to export course data.`;
+        response = `❌ Access Denied: Your role (${userRole}) doesn't have permission to export course data.`;
       } else {
         response = handleExportCourses();
-        suggestions = ['Export user data', 'Generate another report', 'View course statistics'];
+        suggestions = ['Export user data', 'View course statistics'];
         actions = [
           { id: 'export_users', label: 'Export Users', type: 'primary', action: 'user_report_form' },
           { id: 'view_stats', label: 'View Statistics', type: 'secondary', action: 'course_stats_query' }
@@ -568,44 +334,30 @@ function generateResponse(message: string, intent: string, userRole: string): Ch
       
     case 'enroll_user_action':
       if (!allowedCategories.includes('enrollments')) {
-        response = `❌ **Access Denied**\n\nYour role (${userRole}) doesn't have permission to enroll users.`;
+        response = `❌ Access Denied: Your role (${userRole}) doesn't have permission to enroll users.`;
       } else {
         response = handleEnrollUser(message);
-        suggestions = ['Enroll another user', 'View enrollment reports', 'Bulk enrollment'];
+        suggestions = ['Enroll another user', 'View enrollment reports'];
         actions = [
           { id: 'enroll_another', label: 'Enroll Another User', type: 'primary', action: 'enroll_user_form' },
-          { id: 'enrollment_reports', label: 'Enrollment Reports', type: 'secondary', action: 'enrollment_report_query' }
+          { id: 'enrollment_reports', label: 'Enrollment Reports', type: 'secondary', action: 'user_report_form' }
         ];
       }
       break;
       
     case 'user_report_action':
       if (!allowedCategories.includes('reports')) {
-        response = `❌ **Access Denied**\n\nYour role (${userRole}) doesn't have permission to generate reports.`;
+        response = `❌ Access Denied: Your role (${userRole}) doesn't have permission to generate reports.`;
       } else {
-        response = handleUserReport(message);
-        suggestions = ['Generate another report', 'Export this data', 'View analytics'];
+        response = handleUserReport();
+        suggestions = ['Export this data', 'View user details'];
         actions = [
-          { id: 'another_report', label: 'Generate Another Report', type: 'primary', action: 'user_report_form' },
-          { id: 'export_report', label: 'Export Data', type: 'secondary', action: 'export_courses_query' }
-        ];
-      }
-      break;
-      
-    case 'user_status_action':
-      if (!allowedCategories.includes('user_management')) {
-        response = `❌ **Access Denied**\n\nYour role (${userRole}) doesn't have permission to check user status.`;
-      } else {
-        response = handleSearchUser(message);
-        suggestions = ['Check another user status', 'Search users', 'Generate user report'];
-        actions = [
-          { id: 'check_another_status', label: 'Check Another Status', type: 'primary', action: 'user_status_form' },
+          { id: 'export_report', label: 'Export Data', type: 'primary', action: 'export_courses_query' },
           { id: 'search_users', label: 'Search Users', type: 'secondary', action: 'search_user_form' }
         ];
       }
       break;
 
-    // Category selections (existing code)
     case 'category_selection':
       response = `👋 **Welcome to Docebo AI Assistant!**
 
@@ -631,20 +383,26 @@ Please select a category or tell me specifically what you'd like to accomplish.`
 
     case 'user_management':
       if (!allowedCategories.includes('user_management')) {
-        response = `❌ **Access Denied**\n\nYour role (${userRole}) doesn't have permission to access User Management features.`;
+        response = `❌ Access Denied: Your role (${userRole}) doesn't have permission to access User Management features.`;
       } else {
-        response = `👥 **User Management**\n\nI can help you with the following user management tasks:\n\n${DOCEBO_CATEGORIES.user_management.actions.map(action => `• ${action}`).join('\n')}\n\nWhat specific user management task would you like to perform?`;
+        response = `👥 **User Management**
+
+I can help you with user management tasks:
+• Search for users
+• Check user status
+• View user profiles
+• Generate user reports
+
+What specific user management task would you like to perform?`;
         
         suggestions = [
           'Search for user john@company.com',
-          'Check user status for sarah@company.com',
-          'Show all users',
-          'Generate user report'
+          'Generate user report',
+          'Show all users'
         ];
         
         actions = [
           { id: 'search_user', label: 'Search User', type: 'primary', action: 'search_user_form' },
-          { id: 'user_status', label: 'Check Status', type: 'primary', action: 'user_status_form' },
           { id: 'user_report', label: 'User Reports', type: 'secondary', action: 'user_report_form' }
         ];
       }
@@ -652,15 +410,22 @@ Please select a category or tell me specifically what you'd like to accomplish.`
 
     case 'course_management':
       if (!allowedCategories.includes('course_management')) {
-        response = `❌ **Access Denied**\n\nYour role (${userRole}) doesn't have permission to access Course Management features.`;
+        response = `❌ Access Denied: Your role (${userRole}) doesn't have permission to access Course Management features.`;
       } else {
-        response = `📚 **Course Management**\n\nI can help you with the following course management tasks:\n\n${DOCEBO_CATEGORIES.course_management.actions.map(action => `• ${action}`).join('\n')}\n\nWhat specific course management task would you like to perform?`;
+        response = `📚 **Course Management**
+
+I can help you with course management tasks:
+• Search for courses
+• View course statistics
+• Export course data
+• Check course enrollment
+
+What specific course management task would you like to perform?`;
         
         suggestions = [
           'Search for Python courses',
           'Show course statistics',
-          'Export course data',
-          'Find courses with low enrollment'
+          'Export course data'
         ];
         
         actions = [
@@ -671,57 +436,9 @@ Please select a category or tell me specifically what you'd like to accomplish.`
       }
       break;
 
-    case 'enrollments':
-      if (!allowedCategories.includes('enrollments')) {
-        response = `❌ **Access Denied**\n\nYour role (${userRole}) doesn't have permission to access Enrollment features.`;
-      } else {
-        response = `✅ **Enrollment Management**\n\nI can help you with the following enrollment tasks:\n\n${DOCEBO_CATEGORIES.enrollments.actions.map(action => `• ${action}`).join('\n')}\n\nWhat specific enrollment task would you like to perform?`;
-        
-        suggestions = [
-          'Enroll user@company.com in Safety Training',
-          'Bulk enroll Marketing team in Excel course',
-          'Show enrollment history',
-          'Generate enrollment report'
-        ];
-        
-        actions = [
-          { id: 'enroll_user', label: 'Enroll User', type: 'primary', action: 'enroll_user_form' },
-          { id: 'bulk_enroll', label: 'Bulk Enroll', type: 'primary', action: 'bulk_enroll_form' },
-          { id: 'enrollment_report', label: 'View Reports', type: 'secondary', action: 'enrollment_report_query' }
-        ];
-      }
-      break;
-
-    case 'reports':
-      if (!allowedCategories.includes('reports')) {
-        response = `❌ **Access Denied**\n\nYour role (${userRole}) doesn't have permission to access Reporting features.`;
-      } else {
-        response = `📊 **Reports & Analytics**\n\nI can help you generate the following reports:\n\n${DOCEBO_CATEGORIES.reports.actions.map(action => `• ${action}`).join('\n')}\n\nWhat type of report would you like to generate?`;
-        
-        suggestions = [
-          'Generate user completion report',
-          'Course performance report',
-          'Show analytics for all users',
-          'Export enrollment data'
-        ];
-        
-        actions = [
-          { id: 'user_report', label: 'User Report', type: 'primary', action: 'user_report_form' },
-          { id: 'course_report', label: 'Course Report', type: 'primary', action: 'course_stats_query' },
-          { id: 'export_data', label: 'Export Data', type: 'secondary', action: 'export_courses_query' }
-        ];
-      }
-      break;
-
     default:
-      response = `🤔 **I'm not sure what you're looking for.**\n\nCould you please clarify what you'd like to do? I can help with:\n\n${allowedCategories.map(cat => `• ${DOCEBO_CATEGORIES[cat as keyof typeof DOCEBO_CATEGORIES].name}`).join('\n')}\n\nTry asking: "What can you help me with?" or be more specific about your request.`;
-      
-      suggestions = [
-        'What can you help me with?',
-        'Show me user management options',
-        'Help with course management',
-        'I need to generate a report'
-      ];
+      response = `I can help you with: ${allowedCategories.map(cat => DOCEBO_CATEGORIES[cat as keyof typeof DOCEBO_CATEGORIES].name).join(', ')}. What would you like to do?`;
+      suggestions = ['What can you help me with?', 'Show user management', 'Show course management'];
   }
 
   const processingTime = Date.now() - startTime;
@@ -800,4 +517,3 @@ export async function GET() {
     }
   });
 }
-          '
