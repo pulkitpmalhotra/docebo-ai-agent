@@ -95,7 +95,7 @@ class DoceboEnrollmentDebugger {
   }
 
   // Test all possible enrollment GET endpoints
-  async testEnrollmentGetEndpoints(userId = '51158', courseId = '1', learningPlanId = '1', sessionId = '1') {
+  async testEnrollmentGetEndpoints(userId = '51158', courseId = '1', learningPlanId = '1') {
     console.log('\n📚 TESTING ENROLLMENT GET ENDPOINTS...\n');
 
     const endpoints = [
@@ -124,10 +124,10 @@ class DoceboEnrollmentDebugger {
       `/manage/v1/learningplans/${learningPlanId}/enrollments`,
       
       // Session enrollments (ILT)
-      `/learn/v1/enrollments/sessions/${sessionId}`,
-      `/learn/v1/sessions/${sessionId}/enrollments`,
-      `/manage/v1/sessions/${sessionId}/enrollments`,
-      `/learn/v1/ilt/${sessionId}/enrollments`,
+      `/learn/v1/enrollments/sessions/1`,
+      `/learn/v1/sessions/1/enrollments`,
+      `/manage/v1/sessions/1/enrollments`,
+      `/learn/v1/ilt/1/enrollments`,
       
       // General enrollment endpoints
       `/learn/v1/enrollments`,
@@ -300,27 +300,6 @@ class DoceboEnrollmentDebugger {
     return results;
   }
 
-  // Test enrollment deletion/unenrollment endpoints
-  async testUnenrollmentEndpoints(userId = '51158', courseId = '1') {
-    console.log('\n🗑️ TESTING UNENROLLMENT ENDPOINTS...\n');
-    
-    const endpoints = [
-      `/learn/v1/enrollments/users/${userId}/courses/${courseId}`,
-      `/learn/v1/enrollments/${userId}/${courseId}`,
-      `/learn/v1/users/${userId}/enrollments/${courseId}`,
-      `/manage/v1/enrollments/users/${userId}/courses/${courseId}`,
-    ];
-
-    const results = [];
-    for (const endpoint of endpoints) {
-      // Test DELETE method
-      const result = await this.testEndpoint(endpoint, 'DELETE');
-      results.push(result);
-    }
-
-    return results;
-  }
-
   // Test enrollment reports
   async testEnrollmentReports() {
     console.log('\n📈 TESTING ENROLLMENT REPORT ENDPOINTS...\n');
@@ -357,8 +336,6 @@ class DoceboEnrollmentDebugger {
       batch_endpoints: await this.testBatchEnrollmentEndpoints(),
       status_endpoints: await this.testEnrollmentStatusEndpoints(userId, courseId),
       reports: await this.testEnrollmentReports(),
-      // Skip deletion tests to avoid actually removing enrollments
-      // unenroll_endpoints: await this.testUnenrollmentEndpoints(userId, courseId),
     };
 
     // Analyze successful endpoints
@@ -383,7 +360,8 @@ class DoceboEnrollmentDebugger {
   }
 }
 
-const debugger = new DoceboEnrollmentDebugger({
+// Fixed: Use a different variable name to avoid reserved keyword
+const enrollmentTester = new DoceboEnrollmentDebugger({
   domain: process.env.DOCEBO_DOMAIN!,
   clientId: process.env.DOCEBO_CLIENT_ID!,
   clientSecret: process.env.DOCEBO_CLIENT_SECRET!,
@@ -403,23 +381,23 @@ export async function GET(request: NextRequest) {
 
     switch (test) {
       case 'get':
-        results = await debugger.testEnrollmentGetEndpoints(userId, courseId, learningPlanId);
+        results = await enrollmentTester.testEnrollmentGetEndpoints(userId, courseId, learningPlanId);
         break;
       case 'post':
-        results = await debugger.testEnrollmentPostEndpoints(userId, courseId, learningPlanId);
+        results = await enrollmentTester.testEnrollmentPostEndpoints(userId, courseId, learningPlanId);
         break;
       case 'batch':
-        results = await debugger.testBatchEnrollmentEndpoints();
+        results = await enrollmentTester.testBatchEnrollmentEndpoints();
         break;
       case 'status':
-        results = await debugger.testEnrollmentStatusEndpoints(userId, courseId);
+        results = await enrollmentTester.testEnrollmentStatusEndpoints(userId, courseId);
         break;
       case 'reports':
-        results = await debugger.testEnrollmentReports();
+        results = await enrollmentTester.testEnrollmentReports();
         break;
       case 'comprehensive':
       default:
-        results = await debugger.runComprehensiveTest(userId, courseId, learningPlanId);
+        results = await enrollmentTester.runComprehensiveTest(userId, courseId, learningPlanId);
         break;
     }
 
