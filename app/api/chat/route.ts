@@ -1,13 +1,12 @@
-// Get all debug information// app/api/chat/route.ts - Complete file with comprehensive debug mode
+// app/api/chat/route.ts - Clean production version
 import { NextRequest, NextResponse } from 'next/server';
 
-// Enhanced Docebo API client with comprehensive debugging
+// Docebo API client
 class OptimizedDoceboAPI {
   private config: any;
   private accessToken?: string;
   private tokenExpiry?: Date;
   private baseUrl: string;
-  private debugMode: boolean = true; // Enable debug mode for Vercel testing
 
   constructor(config: any) {
     this.config = config;
@@ -61,161 +60,16 @@ class OptimizedDoceboAPI {
     return await response.json();
   }
 
-  // Enhanced course search with debugging
-  async quickCourseSearch(courseName: string): Promise<any> {
-    const debugInfo: {
-      searchTerm: string;
-      attempts: Array<{
-        endpoint: string;
-        status: 'trying' | 'success' | 'failed';
-        searchParams: { search_text: string; page_size: number };
-        foundCount?: number;
-        error?: string;
-      }>;
-      results: Array<{
-        id: string;
-        name: string;
-        status: string;
-        type: string;
-        code?: string;
-      }>;
-      timestamp: string;
-      bestMatch?: {
-        id: string;
-        name: string;
-        matchReason: string;
-      };
-    } = {
-      searchTerm: courseName,
-      attempts: [],
-      results: [],
-      timestamp: new Date().toISOString()
-    };
-
-    const endpoints = ['/learn/v1/courses', '/manage/v1/courses', '/api/v1/courses'];
-    
-    for (const endpoint of endpoints) {
-      try {
-        const attempt: {
-          endpoint: string;
-          status: 'trying' | 'success' | 'failed';
-          searchParams: { search_text: string; page_size: number };
-          foundCount?: number;
-          error?: string;
-        } = { 
-          endpoint, 
-          status: 'trying',
-          searchParams: { search_text: courseName, page_size: 10 }
-        };
-        debugInfo.attempts.push(attempt);
-        
-        const result = await this.apiCall(endpoint, { search_text: courseName, page_size: 10 });
-        const courses = result.data?.items || result.items || [];
-        
-        attempt.status = 'success';
-        attempt.foundCount = courses.length;
-        
-        courses.forEach((course: any) => {
-          debugInfo.results.push({
-            id: course.id_course || course.course_id || course.idCourse || course.id || 'NO_ID',
-            name: course.name || course.course_name || 'NO_NAME',
-            status: course.status || 'NO_STATUS',
-            type: course.course_type || course.type || 'NO_TYPE',
-            code: course.code || course.course_code || 'NO_CODE'
-          });
-        });
-        
-        if (courses.length > 0) {
-          // Store debug info globally
-          (global as any).lastCourseSearchDebug = debugInfo;
-          
-          // Find best match for "Explore the Deal Landscape"
-          const bestMatch = courses.find((course: any) => 
-            (course.course_name || course.name)?.toLowerCase().includes('deal landscape') ||
-            (course.course_name || course.name)?.toLowerCase().includes('explore the deal')
-          ) || courses[0];
-          
-          debugInfo.bestMatch = {
-            id: bestMatch.id_course || bestMatch.course_id || bestMatch.idCourse || bestMatch.id || 'NO_ID',
-            name: bestMatch.name || bestMatch.course_name || 'NO_NAME',
-            matchReason: 'Found by search'
-          };
-          
-          return bestMatch;
-        }
-      } catch (error) {
-        const lastAttempt = debugInfo.attempts[debugInfo.attempts.length - 1];
-        lastAttempt.status = 'failed';
-        lastAttempt.error = error instanceof Error ? error.message : String(error);
-      }
-    }
-    
-    (global as any).lastCourseSearchDebug = debugInfo;
-    return null;
-  }
-
-  // Enhanced user search with debugging
+  // User search
   async quickUserSearch(email: string): Promise<any> {
-    const debugInfo: {
-      searchTerm: string;
-      attempts: Array<{
-        endpoint: string;
-        status: 'trying' | 'success' | 'failed';
-        searchParams: { search_text: string; page_size: number };
-        foundCount?: number;
-        error?: string;
-      }>;
-      results: Array<{
-        id: string;
-        email: string;
-        name: string;
-        status: string;
-        expired: boolean;
-      }>;
-      timestamp: string;
-    } = {
-      searchTerm: email,
-      attempts: [],
-      results: [],
-      timestamp: new Date().toISOString()
-    };
-
     const endpoints = ['/manage/v1/user', '/learn/v1/users', '/api/v1/users'];
     
     for (const endpoint of endpoints) {
       try {
-        const attempt: {
-          endpoint: string;
-          status: 'trying' | 'success' | 'failed';
-          searchParams: { search_text: string; page_size: number };
-          foundCount?: number;
-          error?: string;
-        } = { 
-          endpoint, 
-          status: 'trying',
-          searchParams: { search_text: email, page_size: 5 }
-        };
-        debugInfo.attempts.push(attempt);
-        
         const result = await this.apiCall(endpoint, { search_text: email, page_size: 5 });
         const users = result.data?.items || result.items || [];
         
-        attempt.status = 'success';
-        attempt.foundCount = users.length;
-        
-        users.forEach((user: any) => {
-          debugInfo.results.push({
-            id: user.user_id,
-            email: user.email,
-            name: user.fullname || `${user.first_name} ${user.last_name}`,
-            status: user.status,
-            expired: user.expired
-          });
-        });
-        
         if (users.length > 0) {
-          (global as any).lastUserSearchDebug = debugInfo;
-          
           // Find exact email match
           const exactMatch = users.find((user: any) => 
             user.email?.toLowerCase() === email.toLowerCase()
@@ -224,187 +78,51 @@ class OptimizedDoceboAPI {
           return exactMatch;
         }
       } catch (error) {
-        const lastAttempt = debugInfo.attempts[debugInfo.attempts.length - 1];
-        lastAttempt.status = 'failed';
-        lastAttempt.error = error instanceof Error ? error.message : String(error);
+        continue; // Try next endpoint
       }
     }
     
-    (global as any).lastUserSearchDebug = debugInfo;
     return null;
   }
 
-  // Enhanced enrollment with comprehensive debugging
+  // Course search
+  async quickCourseSearch(courseName: string): Promise<any> {
+    const endpoints = ['/learn/v1/courses', '/manage/v1/courses', '/api/v1/courses'];
+    
+    for (const endpoint of endpoints) {
+      try {
+        const result = await this.apiCall(endpoint, { search_text: courseName, page_size: 10 });
+        const courses = result.data?.items || result.items || [];
+        
+        if (courses.length > 0) {
+          // Find best match for the course name
+          const bestMatch = courses.find((course: any) => 
+            (course.name || course.course_name)?.toLowerCase().includes(courseName.toLowerCase())
+          ) || courses[0];
+          
+          return bestMatch;
+        }
+      } catch (error) {
+        continue; // Try next endpoint
+      }
+    }
+    
+    return null;
+  }
+
+  // Main enrollment method
   async enrollUser(userId: string, courseId: string, options: {
     level?: string;
     dateBeginValidity?: string;
     dateExpireValidity?: string;
     assignmentType?: string;
-  } = {}): Promise<{ success: boolean; message: string; details?: any; debug?: any }> {
+  } = {}): Promise<{ success: boolean; message: string; details?: any }> {
     
-    const debugInfo: any = {
-      timestamp: new Date().toISOString(),
-      steps: [],
-      inputs: { userId, courseId, options },
-      environment: {
-        domain: this.config.domain,
-        baseUrl: this.baseUrl
-      }
-    };
-
     try {
-      // DEBUG STEP 1: Test token
-      debugInfo.steps.push("🔑 Testing API token...");
-      const token = await this.getAccessToken();
-      debugInfo.token = {
-        exists: !!token,
-        preview: token?.substring(0, 20) + '...',
-        length: token?.length
-      };
-
-      // Test token validity with a simple request
-      const tokenTestResponse = await fetch(`${this.baseUrl}/manage/v1/user?page_size=1`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Accept': 'application/json'
-        }
-      });
-      
-      debugInfo.tokenTest = {
-        status: tokenTestResponse.status,
-        statusText: tokenTestResponse.statusText,
-        ok: tokenTestResponse.ok,
-        url: `${this.baseUrl}/manage/v1/user?page_size=1`
-      };
-
-      if (!tokenTestResponse.ok) {
-        const errorText = await tokenTestResponse.text();
-        debugInfo.tokenError = errorText;
-        return { 
-          success: false, 
-          message: `Token validation failed: ${tokenTestResponse.status} - ${errorText}`,
-          debug: debugInfo 
-        };
-      }
-
-      // DEBUG STEP 2: Verify user exists and get details
-      debugInfo.steps.push("👤 Verifying user exists...");
-      try {
-        const userResponse = await fetch(`${this.baseUrl}/manage/v1/user/${userId}`, {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Accept': 'application/json'
-          }
-        });
-        
-        debugInfo.userCheck = {
-          status: userResponse.status,
-          statusText: userResponse.statusText,
-          ok: userResponse.ok,
-          url: `${this.baseUrl}/manage/v1/user/${userId}`
-        };
-
-        if (userResponse.ok) {
-          const userData = await userResponse.json();
-          debugInfo.userInfo = {
-            id: userData.data?.user_id || userData.data?.id_user,
-            email: userData.data?.email,
-            fullname: userData.data?.fullname,
-            status: userData.data?.status,
-            expired: userData.data?.expired,
-            level: userData.data?.level,
-            last_access: userData.data?.last_access_date
-          };
-        } else {
-          const errorText = await userResponse.text();
-          debugInfo.userError = errorText;
-          return { 
-            success: false, 
-            message: `User ${userId} not found or inaccessible: ${userResponse.status}`,
-            debug: debugInfo 
-          };
-        }
-      } catch (userError) {
-        debugInfo.userException = userError instanceof Error ? userError.message : String(userError);
-      }
-
-      // DEBUG STEP 3: Verify course exists and get details
-      debugInfo.steps.push("📚 Verifying course exists...");
-      try {
-        const courseResponse = await fetch(`${this.baseUrl}/learn/v1/courses/${courseId}`, {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Accept': 'application/json'
-          }
-        });
-        
-        debugInfo.courseCheck = {
-          status: courseResponse.status,
-          statusText: courseResponse.statusText,
-          ok: courseResponse.ok,
-          url: `${this.baseUrl}/learn/v1/courses/${courseId}`
-        };
-
-        if (courseResponse.ok) {
-          const courseData = await courseResponse.json();
-          debugInfo.courseInfo = {
-            id: courseData.data?.course_id || courseData.data?.id_course,
-            name: courseData.data?.course_name,
-            status: courseData.data?.status,
-            type: courseData.data?.course_type,
-            code: courseData.data?.course_code,
-            published: courseData.data?.published,
-            can_enroll: courseData.data?.can_enroll
-          };
-        } else {
-          const errorText = await courseResponse.text();
-          debugInfo.courseError = errorText;
-          debugInfo.courseNotFound = true;
-        }
-      } catch (courseError) {
-        debugInfo.courseException = courseError instanceof Error ? courseError.message : String(courseError);
-      }
-
-      // DEBUG STEP 4: Check existing enrollment
-      debugInfo.steps.push("🔍 Checking existing enrollment...");
-      try {
-        const existingEnrollmentResponse = await fetch(`${this.baseUrl}/learn/v1/enrollments/users/${userId}`, {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Accept': 'application/json'
-          }
-        });
-        
-        if (existingEnrollmentResponse.ok) {
-          const enrollmentData = await existingEnrollmentResponse.json();
-          const enrollments = enrollmentData.data?.items || [];
-          const existingEnrollment = enrollments.find((e: any) => 
-            (e.course_id || e.idCourse) === courseId
-          );
-          
-          debugInfo.existingEnrollment = {
-            totalEnrollments: enrollments.length,
-            alreadyEnrolled: !!existingEnrollment,
-            enrollmentDetails: existingEnrollment || null
-          };
-          
-          if (existingEnrollment) {
-            return {
-              success: false,
-              message: `User is already enrolled in this course`,
-              debug: debugInfo
-            };
-          }
-        }
-      } catch (enrollmentCheckError) {
-        debugInfo.enrollmentCheckError = enrollmentCheckError instanceof Error ? enrollmentCheckError.message : String(enrollmentCheckError);
-      }
-
-      // DEBUG STEP 5: Build enrollment request
-      debugInfo.steps.push("📡 Building enrollment request...");
+      // Build enrollment request
       const enrollmentBody = {
-        course_ids: [String(courseId)], // Ensure string format like API browser
-        user_ids: [String(userId)],     // Ensure string format like API browser
+        course_ids: [String(courseId)], // Ensure string format
+        user_ids: [String(userId)],     // Ensure string format
         level: options.level || "3",
         date_begin_validity: options.dateBeginValidity,
         date_expire_validity: options.dateExpireValidity,
@@ -412,36 +130,15 @@ class OptimizedDoceboAPI {
         send_notification: false
       };
 
-      // Remove undefined fields to clean up the request
+      // Remove undefined fields
       Object.keys(enrollmentBody).forEach(key => {
         if (enrollmentBody[key as keyof typeof enrollmentBody] === undefined) {
           delete enrollmentBody[key as keyof typeof enrollmentBody];
         }
       });
 
-      debugInfo.requestBody = enrollmentBody;
-      debugInfo.requestUrl = `${this.baseUrl}/learn/v1/enrollments`;
-      debugInfo.requestMethod = 'POST';
-      debugInfo.requestHeaders = {
-        'Authorization': 'Bearer [TOKEN]',
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      };
-
-      // Log the exact request for comparison
-      console.log('📡 EXACT ENROLLMENT REQUEST:');
-      console.log('URL:', `${this.baseUrl}/learn/v1/enrollments`);
-      console.log('Method: POST');
-      console.log('Headers:', {
-        'Authorization': `Bearer ${token?.substring(0, 20)}...`,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      });
-      console.log('Body:', JSON.stringify(enrollmentBody, null, 2));
-
-      // DEBUG STEP 6: Make enrollment request
-      debugInfo.steps.push("🚀 Making enrollment request...");
-      
+      // Make enrollment request
+      const token = await this.getAccessToken();
       const response = await fetch(`${this.baseUrl}/learn/v1/enrollments`, {
         method: 'POST',
         headers: {
@@ -452,129 +149,61 @@ class OptimizedDoceboAPI {
         body: JSON.stringify(enrollmentBody)
       });
       
-      debugInfo.enrollmentResponse = {
-        status: response.status,
-        statusText: response.statusText,
-        ok: response.ok,
-        headers: Object.fromEntries(response.headers.entries())
-      };
-
       const responseText = await response.text();
-      debugInfo.rawResponse = responseText;
-      
-      // Log the exact response for comparison
-      console.log('📨 EXACT ENROLLMENT RESPONSE:');
-      console.log('Status:', response.status);
-      console.log('Headers:', Object.fromEntries(response.headers.entries()));
-      console.log('Body:', responseText);
       
       if (response.ok) {
         let result;
         try {
           result = JSON.parse(responseText);
-          debugInfo.parsedResponse = result;
-          
-          const enrolledUsers = result.data?.enrolled || [];
-          const errors = result.data?.errors || [];
-          
-          debugInfo.enrollmentResult = {
-            enrolledCount: enrolledUsers.length,
-            errorsCount: errors.length,
-            enrolled: enrolledUsers,
-            errors: errors,
-            version: result.version,
-            links: result._links
+        } catch (parseError) {
+          return { success: false, message: `Invalid JSON response: ${responseText}` };
+        }
+        
+        const enrolledUsers = result.data?.enrolled || [];
+        const errors = result.data?.errors || {};
+        
+        if (enrolledUsers.length > 0) {
+          return { 
+            success: true, 
+            message: `Successfully enrolled user in course`,
+            details: result
           };
+        } else {
+          // Handle specific error types
+          let specificError = "";
           
-          if (enrolledUsers.length > 0) {
-            debugInfo.steps.push("✅ ENROLLMENT SUCCESS!");
-            debugInfo.success = true;
-            
-            // Verify enrollment after 2 seconds
-            setTimeout(async () => {
-              try {
-                const verificationResult = await this.verifyEnrollment(userId, courseId);
-                (global as any).lastEnrollmentVerification = verificationResult;
-              } catch (e) {
-                (global as any).lastEnrollmentVerification = { error: e };
-              }
-            }, 2000);
-            
-            return { 
-              success: true, 
-              message: `✅ Successfully enrolled user ${userId} in course ${courseId}`,
-              details: result,
-              debug: this.debugMode ? debugInfo : undefined
-            };
+          if (errors.existing_enrollments && errors.existing_enrollments.length > 0) {
+            specificError = "User is already enrolled in this course";
+          } else if (errors.invalid_users && errors.invalid_users.length > 0) {
+            specificError = "User ID is invalid or user doesn't exist";
+          } else if (errors.invalid_courses && errors.invalid_courses.length > 0) {
+            specificError = "Course ID is invalid or course doesn't exist";
+          } else if (errors.permission_denied && errors.permission_denied.length > 0) {
+            specificError = "Permission denied - user cannot be enrolled in this course";
           } else {
-            debugInfo.steps.push("❌ ENROLLMENT FAILED - No users enrolled");
-            
-            // Check for specific error types
-            const errors = result.data?.errors || {};
-            let specificError = "";
-            
-            if (errors.existing_enrollments && errors.existing_enrollments.length > 0) {
-              specificError = "User is already enrolled in this course";
-              debugInfo.alreadyEnrolled = true;
-              debugInfo.existingEnrollments = errors.existing_enrollments;
-            } else if (errors.invalid_users && errors.invalid_users.length > 0) {
-              specificError = "User ID is invalid or user doesn't exist";
-            } else if (errors.invalid_courses && errors.invalid_courses.length > 0) {
-              specificError = "Course ID is invalid or course doesn't exist";
-            } else if (errors.permission_denied && errors.permission_denied.length > 0) {
-              specificError = "Permission denied - user cannot be enrolled in this course";
-            } else {
-              specificError = "Unknown enrollment restriction";
-            }
-            
-            debugInfo.specificError = specificError;
-            debugInfo.allErrors = errors;
-            
-            return { 
-              success: false, 
-              message: `⚠️ ${specificError}. ${specificError.includes('already enrolled') ? 'The enrollment already exists in Docebo.' : 'Check course enrollment rules and user permissions.'}`,
-              details: result,
-              debug: this.debugMode ? debugInfo : undefined
-            };
+            specificError = "Unknown enrollment restriction";
           }
           
-        } catch (parseError) {
-          debugInfo.parseError = parseError instanceof Error ? parseError.message : String(parseError);
-          debugInfo.steps.push("❌ JSON PARSE ERROR");
           return { 
             success: false, 
-            message: `Invalid JSON response: ${responseText}`,
-            debug: debugInfo 
+            message: specificError,
+            details: result
           };
         }
       } else {
-        debugInfo.steps.push("❌ HTTP ERROR - Request failed");
-        debugInfo.httpError = {
-          status: response.status,
-          statusText: response.statusText,
-          body: responseText
-        };
-        return { 
-          success: false, 
-          message: `HTTP ${response.status}: ${responseText}`,
-          debug: debugInfo 
-        };
+        return { success: false, message: `HTTP ${response.status}: ${responseText}` };
       }
       
     } catch (error) {
-      debugInfo.fatalError = error instanceof Error ? error.message : String(error);
-      debugInfo.fatalStack = error instanceof Error ? error.stack : undefined;
-      debugInfo.steps.push("💥 FATAL ERROR");
       return { 
         success: false, 
-        message: `Enrollment error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        debug: debugInfo 
+        message: `Enrollment error: ${error instanceof Error ? error.message : 'Unknown error'}`
       };
     }
   }
 
-  // Verification method
-  async verifyEnrollment(userId: string, courseId: string): Promise<{ enrolled: boolean; details?: any }> {
+  // Get user enrollments
+  async getUserEnrollments(userId: string): Promise<any[]> {
     try {
       const token = await this.getAccessToken();
       const response = await fetch(`${this.baseUrl}/learn/v1/enrollments/users/${userId}`, {
@@ -586,54 +215,35 @@ class OptimizedDoceboAPI {
 
       if (response.ok) {
         const data = await response.json();
-        const enrollments = data.data?.items || [];
-        const isEnrolled = enrollments.some((e: any) => 
-          (e.course_id || e.idCourse) === courseId
-        );
-        
-        return {
-          enrolled: isEnrolled,
-          details: {
-            totalEnrollments: enrollments.length,
-            checkedCourseId: courseId,
-            foundEnrollments: enrollments.map((e: any) => ({
-              courseId: e.course_id || e.idCourse,
-              courseName: e.course_name || e.name,
-              status: e.status
-            }))
-          }
-        };
+        return data.data?.items || [];
       }
       
-      return { enrolled: false, details: { error: `HTTP ${response.status}` } };
+      return [];
     } catch (error) {
-      return { enrolled: false, details: { error: error instanceof Error ? error.message : 'Unknown error' } };
+      return [];
     }
   }
 
-  // Public method to get access token for external use
-  async getToken(): Promise<string> {
-    return await this.getAccessToken();
-  }
+  // Get course enrollments
+  async getCourseEnrollments(courseId: string): Promise<any[]> {
+    try {
+      const token = await this.getAccessToken();
+      const response = await fetch(`${this.baseUrl}/learn/v1/enrollments/courses/${courseId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/json'
+        }
+      });
 
-  // Public method to get base URL
-  getBaseUrl(): string {
-    return this.baseUrl;
-  }
-  getDebugInfo(): any {
-    return {
-      courseSearch: (global as any).lastCourseSearchDebug,
-      userSearch: (global as any).lastUserSearchDebug,
-      enrollmentVerification: (global as any).lastEnrollmentVerification,
-      timestamp: new Date().toISOString(),
-      environment: {
-        domain: this.config.domain,
-        hasClientId: !!this.config.clientId,
-        hasClientSecret: !!this.config.clientSecret,
-        hasUsername: !!this.config.username,
-        hasPassword: !!this.config.password
+      if (response.ok) {
+        const data = await response.json();
+        return data.data?.items || [];
       }
-    };
+      
+      return [];
+    } catch (error) {
+      return [];
+    }
   }
 }
 
@@ -647,7 +257,7 @@ interface ActionHandler {
   execute: (api: OptimizedDoceboAPI, params: any) => Promise<string>;
 }
 
-// Action Registry with debugging
+// Action Registry
 const ACTION_REGISTRY: ActionHandler[] = [
   {
     name: 'enroll_user',
@@ -668,68 +278,15 @@ const ACTION_REGISTRY: ActionHandler[] = [
     },
     requiredFields: ['email', 'course'],
     execute: async (api, { email, course, level, dueDate, assignmentType }) => {
-      const debugInfo: any = {
-        action: 'enroll_user',
-        inputs: { email, course, level, dueDate, assignmentType },
-        steps: []
-      };
-
-      debugInfo.steps.push("🔍 Searching for user...");
-      console.log(`🔍 User search starting for: ${email}`);
       const user = await api.quickUserSearch(email);
-      console.log(`🔍 User search result:`, user);
-      
       if (!user) {
-        debugInfo.userSearchFailed = true;
-        debugInfo.userSearchDebug = (global as any).lastUserSearchDebug;
-        return `❌ **User Not Found**: ${email}
-
-**User Search Debug**:
-${debugInfo.userSearchDebug ? `
-📝 Search Term: "${debugInfo.userSearchDebug.searchTerm}"
-🔍 Attempts: ${debugInfo.userSearchDebug.attempts.length}
-📊 Results: ${debugInfo.userSearchDebug.results.length} users found
-${debugInfo.userSearchDebug.results.map((u: any) => `  • ID: ${u.id}, Email: ${u.email}, Name: ${u.name}`).join('\n')}
-${debugInfo.userSearchDebug.attempts.map((a: any) => `  • ${a.endpoint}: ${a.status} (${a.foundCount || 0} results)`).join('\n')}
-` : 'No search debug available'}
-
-🔍 Try: "debug enrollment" for detailed search info`;
+        return `❌ **User Not Found**: ${email}\n\nDouble-check the email address.`;
       }
 
-      debugInfo.foundUser = {
-        id: user.user_id,
-        email: user.email,
-        name: user.fullname
-      };
-
-      debugInfo.steps.push("🔍 Searching for course...");
-      console.log(`🔍 Course search starting for: ${course}`);
       const courseObj = await api.quickCourseSearch(course);
-      console.log(`🔍 Course search result:`, courseObj);
-      
       if (!courseObj) {
-        debugInfo.courseSearchFailed = true;
-        debugInfo.courseSearchDebug = (global as any).lastCourseSearchDebug;
-        return `❌ **Course Not Found**: ${course}
-
-**Course Search Debug**:
-${debugInfo.courseSearchDebug ? `
-📝 Search Term: "${debugInfo.courseSearchDebug.searchTerm}"
-🔍 Attempts: ${debugInfo.courseSearchDebug.attempts.length}
-📊 Results: ${debugInfo.courseSearchDebug.results.length} courses found
-${debugInfo.courseSearchDebug.results.map((c: any) => `  • ID: ${c.id}, Name: "${c.name}", Status: ${c.status}`).join('\n')}
-${debugInfo.courseSearchDebug.attempts.map((a: any) => `  • ${a.endpoint}: ${a.status} (${a.foundCount || 0} results)`).join('\n')}
-` : 'No search debug available'}
-
-**Expected**: Should find Course ID "997" for "Explore the Deal Landscape"
-🔍 Try: "debug enrollment" for detailed search info`;
+        return `❌ **Course Not Found**: ${course}\n\nTry a shorter course name or check spelling.`;
       }
-
-      debugInfo.foundCourse = {
-        id: courseObj.id_course || courseObj.course_id || courseObj.idCourse || courseObj.id || 'NO_ID',
-        name: courseObj.name || courseObj.course_name || 'NO_NAME',
-        rawCourseObj: courseObj // Add the raw object for debugging
-      };
 
       const options = {
         level: level || "3",
@@ -737,61 +294,19 @@ ${debugInfo.courseSearchDebug.attempts.map((a: any) => `  • ${a.endpoint}: ${a
         assignmentType: assignmentType || "mandatory"
       };
 
-      debugInfo.steps.push("🎯 Attempting enrollment...");
-      console.log(`🎯 Enrolling user ${user.user_id} in course ${courseObj.id_course || courseObj.course_id || courseObj.idCourse || courseObj.id}`);
+      // Use the correct property name for course ID (id_course)
+      const courseId = courseObj.id_course || courseObj.course_id || courseObj.idCourse || courseObj.id;
       
-      // Get the actual course ID with all possible fallbacks (id_course is the correct one!)
-      const actualCourseId = courseObj.id_course || courseObj.course_id || courseObj.idCourse || courseObj.id;
-      
-      if (!actualCourseId) {
-        return `❌ **Course ID Missing**: Found course "${courseObj.course_name || courseObj.name}" but no valid ID
-
-**Raw Course Object**: ${JSON.stringify(courseObj, null, 2)}
-
-**Available Properties**: ${Object.keys(courseObj).join(', ')}
-
-🔧 **Fix Needed**: Update course ID extraction logic`;
+      if (!courseId) {
+        return `❌ **Course ID Missing**: Found course "${courseObj.name || courseObj.course_name}" but no valid ID`;
       }
       
-      const result = await api.enrollUser(user.user_id, actualCourseId, options);
-      
-      // Store debug info globally
-      (global as any).lastActionDebug = debugInfo;
+      const result = await api.enrollUser(user.user_id, courseId, options);
       
       if (result.success) {
-        return `✅ **Enrollment Successful**
-
-**User**: ${user.fullname} (${user.email})
-**Course**: ${courseObj.course_name || courseObj.name}
-**IDs Used**: User ID ${user.user_id} → Course ID ${actualCourseId}
-**Level**: ${options.level}
-**Assignment**: ${options.assignmentType}${options.dateExpireValidity ? `\n**Due Date**: ${options.dateExpireValidity}` : ''}
-
-🎯 **Status**: Successfully enrolled in Docebo!
-
-${result.debug ? `\n**Debug Summary**: ${result.debug.steps.join(' → ')}` : ''}`;
+        return `✅ **Enrollment Successful**\n\n**User**: ${user.fullname || user.first_name + ' ' + user.last_name} (${user.email})\n**Course**: ${courseObj.name || courseObj.course_name}\n**Level**: ${options.level}\n**Assignment**: ${options.assignmentType}${options.dateExpireValidity ? `\n**Due Date**: ${options.dateExpireValidity}` : ''}\n\n🎯 Successfully enrolled in Docebo!`;
       } else {
-        const debugSummary = result.debug ? `\n\n**Debug Summary**:\n${result.debug.steps.map((step: string, i: number) => `${i + 1}. ${step}`).join('\n')}` : '';
-        const analysisText = result.debug?.analysis ? `\n\n**Analysis**: ${Array.isArray(result.debug.analysis) ? result.debug.analysis.join('\n') : result.debug.analysis}` : '';
-        
-        return `❌ **Enrollment Failed**
-
-**Issue**: ${result.message}
-**User**: ${user.fullname} (${user.email})
-**Course**: ${courseObj.course_name || courseObj.name}
-**IDs Used**: User ID ${user.user_id} → Course ID ${actualCourseId}
-**Expected IDs**: User ID 13163 → Course ID 997
-
-${debugSummary}${analysisText}
-
-**Search Results**:
-👤 User Search: ${debugInfo.foundUser ? '✅ Found' : '❌ Failed'}
-📚 Course Search: ${debugInfo.foundCourse ? '✅ Found' : '❌ Failed'}
-
-🔍 **Next Steps**:
-• Try: "debug enrollment" for full diagnostic info
-• Compare found IDs with working IDs (13163, 997)
-• Check if search is finding wrong user/course`;
+        return `❌ **Enrollment Failed**\n\n**Issue**: ${result.message}\n\n**User**: ${user.fullname || user.first_name + ' ' + user.last_name} (${user.email})\n**Course**: ${courseObj.name || courseObj.course_name}\n\n💡 ${result.message.includes('already enrolled') ? 'User is already enrolled in this course.' : 'Check course rules and user permissions in Docebo admin panel.'}`;
       }
     }
   },
@@ -810,47 +325,30 @@ ${debugSummary}${analysisText}
       const user = await api.quickUserSearch(email);
       if (!user) return `❌ **User Not Found**: ${email}`;
 
-      try {
-        const token = await api.getToken();
-        const response = await fetch(`${api.getBaseUrl()}/learn/v1/enrollments/users/${user.user_id}`, {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Accept': 'application/json'
-          }
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          const enrollments = data.data?.items || [];
-          
-          if (enrollments.length === 0) {
-            return `📚 **No Enrollments**\n\n${user.fullname} is not enrolled in any courses.`;
-          }
-
-          const courseList = enrollments.slice(0, 10).map((e: any, i: number) => {
-            const courseName = e.course_name || e.name || 'Unknown Course';
-            const status = e.status || '';
-            const progress = e.completion_percentage || '';
-            
-            let statusIcon = '';
-            if (status.toLowerCase().includes('completed') || progress === 100) {
-              statusIcon = '✅';
-            } else if (status.toLowerCase().includes('progress') || progress > 0) {
-              statusIcon = '📚';
-            } else {
-              statusIcon = '⭕';
-            }
-            
-            return `${i + 1}. ${statusIcon} ${courseName}${progress ? ` (${progress}%)` : ''}`;
-          }).join('\n');
-          
-          return `📚 **${user.fullname}'s Courses** (${enrollments.length} total)\n\n${courseList}${enrollments.length > 10 ? `\n\n... and ${enrollments.length - 10} more courses` : ''}`;
-        } else {
-          return `❌ **Error**: Could not fetch enrollments for ${email}`;
-        }
-      } catch (error) {
-        return `❌ **Error**: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      const enrollments = await api.getUserEnrollments(user.user_id);
+      
+      if (enrollments.length === 0) {
+        return `📚 **No Enrollments**\n\n${user.fullname || user.first_name + ' ' + user.last_name} is not enrolled in any courses.`;
       }
+
+      const courseList = enrollments.slice(0, 10).map((e: any, i: number) => {
+        const courseName = e.course_name || e.name || 'Unknown Course';
+        const status = e.status || '';
+        const progress = e.completion_percentage || '';
+        
+        let statusIcon = '';
+        if (status.toLowerCase().includes('completed') || progress === 100) {
+          statusIcon = '✅';
+        } else if (status.toLowerCase().includes('progress') || progress > 0) {
+          statusIcon = '📚';
+        } else {
+          statusIcon = '⭕';
+        }
+        
+        return `${i + 1}. ${statusIcon} ${courseName}${progress ? ` (${progress}%)` : ''}`;
+      }).join('\n');
+      
+      return `📚 **${user.fullname || user.first_name + ' ' + user.last_name}'s Courses** (${enrollments.length} total)\n\n${courseList}${enrollments.length > 10 ? `\n\n... and ${enrollments.length - 10} more courses` : ''}`;
     }
   },
   {
@@ -866,93 +364,43 @@ ${debugSummary}${analysisText}
       const courseObj = await api.quickCourseSearch(course);
       if (!courseObj) return `❌ **Course Not Found**: ${course}`;
 
-      try {
-        const token = await api.getToken();
-        const response = await fetch(`${api.getBaseUrl()}/learn/v1/enrollments/courses/${courseObj.course_id || courseObj.idCourse}`, {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Accept': 'application/json'
-          }
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          const enrollments = data.data?.items || [];
-          
-          if (enrollments.length === 0) {
-            return `👥 **No Enrollments**\n\nNo users enrolled in "${courseObj.course_name || courseObj.name}".`;
-          }
-
-          const userList = enrollments.slice(0, 10).map((e: any, i: number) => {
-            const userName = e.user_name || e.fullname || 'Unknown User';
-            const userEmail = e.email || e.user_email || '';
-            const status = e.status || '';
-            const progress = e.completion_percentage || '';
-            
-            let statusIcon = '';
-            if (status.toLowerCase().includes('completed') || progress === 100) {
-              statusIcon = '✅';
-            } else if (status.toLowerCase().includes('progress') || progress > 0) {
-              statusIcon = '📚';
-            } else {
-              statusIcon = '⭕';
-            }
-            
-            return `${i + 1}. ${statusIcon} ${userName}${userEmail ? ` (${userEmail})` : ''}${progress ? ` - ${progress}%` : ''}`;
-          }).join('\n');
-          
-          return `👥 **"${courseObj.course_name || courseObj.name}" Enrollments** (${enrollments.length} users)\n\n${userList}${enrollments.length > 10 ? `\n\n... and ${enrollments.length - 10} more users` : ''}`;
-        } else {
-          return `❌ **Error**: Could not fetch enrollments for course`;
-        }
-      } catch (error) {
-        return `❌ **Error**: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      const courseId = courseObj.id_course || courseObj.course_id || courseObj.idCourse || courseObj.id;
+      const enrollments = await api.getCourseEnrollments(courseId);
+      
+      if (enrollments.length === 0) {
+        return `👥 **No Enrollments**\n\nNo users enrolled in "${courseObj.name || courseObj.course_name}".`;
       }
+
+      const userList = enrollments.slice(0, 10).map((e: any, i: number) => {
+        const userName = e.user_name || e.fullname || 'Unknown User';
+        const userEmail = e.email || e.user_email || '';
+        const status = e.status || '';
+        const progress = e.completion_percentage || '';
+        
+        let statusIcon = '';
+        if (status.toLowerCase().includes('completed') || progress === 100) {
+          statusIcon = '✅';
+        } else if (status.toLowerCase().includes('progress') || progress > 0) {
+          statusIcon = '📚';
+        } else {
+          statusIcon = '⭕';
+        }
+        
+        return `${i + 1}. ${statusIcon} ${userName}${userEmail ? ` (${userEmail})` : ''}${progress ? ` - ${progress}%` : ''}`;
+      }).join('\n');
+      
+      return `👥 **"${courseObj.name || courseObj.course_name}" Enrollments** (${enrollments.length} users)\n\n${userList}${enrollments.length > 10 ? `\n\n... and ${enrollments.length - 10} more users` : ''}`;
     }
   }
 ];
 
-// Enhanced command parser with debug info
-function parseCommand(message: string): { 
-  action: ActionHandler | null; 
-  params: any; 
-  missing: string[]; 
-  debug?: {
-    originalMessage: string;
-    extractedEmail: string | null;
-    extractedCourse: string | null;
-    matchedAction: string | null;
-    timestamp: string;
-    parsedParams: any;
-    missingFields: string[];
-  };
-} {
-  const debugInfo: {
-    originalMessage: string;
-    extractedEmail: string | null;
-    extractedCourse: string | null;
-    matchedAction: string | null;
-    timestamp: string;
-    parsedParams: any;
-    missingFields: string[];
-  } = {
-    originalMessage: message,
-    extractedEmail: null,
-    extractedCourse: null,
-    matchedAction: null,
-    timestamp: new Date().toISOString(),
-    parsedParams: {},
-    missingFields: []
-  };
-
+// Command parser
+function parseCommand(message: string): { action: ActionHandler | null; params: any; missing: string[] } {
   const email = message.match(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/)?.[0];
-  debugInfo.extractedEmail = email || null;
   
   const action = ACTION_REGISTRY.find(a => a.pattern(message));
-  debugInfo.matchedAction = action?.name || null;
-  
   if (!action) {
-    return { action: null, params: {}, missing: [], debug: debugInfo };
+    return { action: null, params: {}, missing: [] };
   }
 
   const params: any = {};
@@ -967,17 +415,14 @@ function parseCommand(message: string): {
     }
   }
 
-  // Parse course name with enhanced extraction
+  // Parse course name
   if (action.requiredFields.includes('course')) {
     let course = '';
     
     // Try different patterns to extract course name
     const patterns = [
-      // Pattern 1: "in Course Name"
       /(?:in|to)\s+([^(as|due|level|with)]+?)(?:\s+(?:as|due|level|with)|$)/i,
-      // Pattern 2: "Course Name" (quoted)
       /"([^"]+)"/,
-      // Pattern 3: After action words, before options
       /(?:enroll|add).*?(?:in|to)\s+([^(as|due|level|with)]+?)(?:\s+(?:as|due|level|with)|$)/i
     ];
     
@@ -989,17 +434,15 @@ function parseCommand(message: string): {
       }
     }
     
-    // If no pattern matched, try extracting after removing emails and common words
+    // Fallback extraction
     if (!course) {
       course = message
-        .replace(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g, '') // Remove emails
-        .replace(/^(enroll|add|bulk|multiple)/gi, '') // Remove action words
-        .replace(/\s+(as|due|level|with)\s+.*/gi, '') // Remove options
-        .replace(/\s+(in|to)\s+/gi, ' ') // Remove prepositions
+        .replace(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g, '')
+        .replace(/^(enroll|add|bulk|multiple)/gi, '')
+        .replace(/\s+(as|due|level|with)\s+.*/gi, '')
+        .replace(/\s+(in|to)\s+/gi, ' ')
         .trim();
     }
-    
-    debugInfo.extractedCourse = course || null;
     
     if (course && course.length > 2) {
       params.course = course;
@@ -1008,7 +451,7 @@ function parseCommand(message: string): {
     }
   }
 
-  // Parse optional enrollment parameters
+  // Parse optional parameters
   const levelMatch = message.match(/level\s+(\d+)/i);
   if (levelMatch) {
     params.level = levelMatch[1];
@@ -1025,10 +468,7 @@ function parseCommand(message: string): {
     params.assignmentType = assignmentMatch[1].toLowerCase();
   }
 
-  debugInfo.parsedParams = params;
-  debugInfo.missingFields = missing;
-
-  return { action, params, missing, debug: debugInfo };
+  return { action, params, missing };
 }
 
 // Initialize API client
@@ -1047,169 +487,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Message required' }, { status: 400 });
     }
 
-    // Special debug commands
-    if (message.toLowerCase().includes('debug enrollment')) {
-      const debugInfo = api.getDebugInfo();
-      const actionDebug = (global as any).lastActionDebug;
-      
-      return NextResponse.json({
-        response: `🔍 **Complete Debug Information**
-
-**Environment Check**:
-${debugInfo.environment.hasClientId ? '✅' : '❌'} Client ID configured
-${debugInfo.environment.hasClientSecret ? '✅' : '❌'} Client Secret configured  
-${debugInfo.environment.hasUsername ? '✅' : '❌'} Username configured
-${debugInfo.environment.hasPassword ? '✅' : '❌'} Password configured
-🌐 Domain: ${debugInfo.environment.domain}
-
-**Last Course Search**:
-${debugInfo.courseSearch ? `
-📝 Search Term: "${debugInfo.courseSearch.searchTerm}"
-🔍 Results Found: ${debugInfo.courseSearch.results.length}
-📚 Courses Found:
-${debugInfo.courseSearch.results.map((c: any) => `  • ID: ${c.id}, Name: "${c.name}", Status: ${c.status}`).join('\n')}
-${debugInfo.courseSearch.bestMatch ? `\n🎯 Best Match: ID ${debugInfo.courseSearch.bestMatch.id} - "${debugInfo.courseSearch.bestMatch.name}"` : ''}
-` : 'No recent course searches'}
-
-**Last User Search**:
-${debugInfo.userSearch ? `
-📝 Search Term: "${debugInfo.userSearch.searchTerm}"
-👥 Results Found: ${debugInfo.userSearch.results.length}
-${debugInfo.userSearch.results.map((u: any) => `  • ID: ${u.id}, Email: ${u.email}, Name: ${u.name}, Status: ${u.status}`).join('\n')}
-` : 'No recent user searches'}
-
-**Last Action Debug**:
-${actionDebug ? `
-🎬 Action: ${actionDebug.action}
-📥 Inputs: ${JSON.stringify(actionDebug.inputs, null, 2)}
-📋 Steps: ${actionDebug.steps.join(' → ')}
-${actionDebug.foundUser ? `👤 Found User: ${actionDebug.foundUser.name} (${actionDebug.foundUser.email})` : '❌ User search failed'}
-${actionDebug.foundCourse ? `📚 Found Course: ${actionDebug.foundCourse.name} (ID: ${actionDebug.foundCourse.id})` : '❌ Course search failed'}
-` : 'No recent actions'}
-
-**Enrollment Verification**:
-${debugInfo.enrollmentVerification ? `
-${debugInfo.enrollmentVerification.enrolled ? '✅ User is enrolled' : '❌ User not found in enrollments'}
-📊 Details: ${JSON.stringify(debugInfo.enrollmentVerification.details, null, 2)}
-` : 'No recent enrollment verifications'}
-
-🔍 **Debugging Tips**:
-• If course search fails: Try shorter/different course names
-• If user search fails: Verify email exists in Docebo
-• If enrollment fails but API succeeds: Check course enrollment rules
-• For "Deal Landscape" course: Should resolve to ID "997"`,
-        success: true,
-        action: 'debug',
-        debug: { ...debugInfo, actionDebug },
-        timestamp: new Date().toISOString()
-      });
-    }
-
-    // Test enrollment with exact same request as API browser
-    if (message.toLowerCase().includes('test exact api browser request')) {
-      const EXACT_WORKING_BODY = {
-        "course_ids": ["997"],
-        "user_ids": ["13163"],
-        "level": "3",
-        "date_expire_validity": "2025-12-31",
-        "assignment_type": "mandatory",
-        "send_notification": false
-      };
-
-      try {
-        const token = await api.getToken();
-        const response = await fetch(`${api.getBaseUrl()}/learn/v1/enrollments`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-          },
-          body: JSON.stringify(EXACT_WORKING_BODY)
-        });
-
-        const responseText = await response.text();
-        let result;
-        try {
-          result = JSON.parse(responseText);
-        } catch (e) {
-          result = { raw: responseText };
-        }
-
-        return NextResponse.json({
-          response: `🧪 **Exact API Browser Request Test**
-
-**Request**: ${JSON.stringify(EXACT_WORKING_BODY, null, 2)}
-
-**Response Status**: ${response.status}
-**Response Body**: ${responseText}
-
-**Enrolled Count**: ${result.data?.enrolled?.length || 0}
-**Errors Count**: ${result.data?.errors?.length || 0}
-
-**Result**: ${result.data?.enrolled?.length > 0 ? '✅ SUCCESS' : '❌ FAILED'}
-
-**Analysis**: ${result.data?.enrolled?.length > 0 ? 
-  'The exact same request works from your app!' : 
-  'Even the exact API browser request fails from your app - this suggests a token/permission difference'}`,
-          success: result.data?.enrolled?.length > 0,
-          details: result,
-          timestamp: new Date().toISOString()
-        });
-      } catch (error) {
-        return NextResponse.json({
-          response: `❌ **Test Failed**: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          success: false,
-          error: error instanceof Error ? error.message : 'Unknown error',
-          timestamp: new Date().toISOString()
-        });
-      }
-    }
-    if (message.toLowerCase().includes('test working enrollment')) {
-      const result = await api.enrollUser("13163", "997", {
-        level: "3",
-        dateExpireValidity: "2025-12-31",
-        assignmentType: "mandatory"
-      });
-      
-      return NextResponse.json({
-        response: `🧪 **Test with Working Values**
-
-Using hardcoded values that worked in API browser:
-• User ID: 13163 (pulkitmalhotra@google.com)
-• Course ID: 997 (Explore the Deal Landscape)
-
-**Result**: ${result.success ? '✅ SUCCESS' : '❌ FAILED'}
-**Message**: ${result.message}
-
-${result.debug ? `**Debug Steps**: ${result.debug.steps.join(' → ')}` : ''}`,
-        success: result.success,
-        action: 'test_enrollment',
-        details: result,
-        timestamp: new Date().toISOString()
-      });
-    }
-
-    // Parse the command with debug info
-    const { action, params, missing, debug: parseDebug } = parseCommand(message);
+    const { action, params, missing } = parseCommand(message);
 
     if (!action) {
-      const response = `🎯 **Docebo Assistant with Debug Mode**
+      const response = `🎯 **Docebo Assistant**
 
 **Available Commands**:
 ${ACTION_REGISTRY.map(a => `• **${a.description}**\n  Example: "${a.examples[0]}"`).join('\n\n')}
 
-**Debug Commands**:
-• "debug enrollment" - Show complete debug information
-• "test working enrollment" - Test with known working values
-
-💡 **Tip**: All responses now include debug information when things go wrong!
-
-**Message Analysis**:
-📝 Original: "${message}"
-✉️ Email Found: ${parseDebug?.extractedEmail || 'None'}
-📚 Course Found: ${parseDebug?.extractedCourse || 'None'}
-🎯 Action Matched: ${parseDebug?.matchedAction || 'None'}`;
+💡 **Tip**: Use natural language like the examples above!`;
       
       return NextResponse.json({
         response,
@@ -1220,13 +506,12 @@ ${ACTION_REGISTRY.map(a => `• **${a.description}**\n  Example: "${a.examples[0
           description: a.description,
           examples: a.examples
         })),
-        parseDebug,
         timestamp: new Date().toISOString()
       });
     }
 
     if (missing.length > 0) {
-      const response = `❌ **Missing Information**: I need the following to ${action.description}:\n\n${missing.map(m => `• ${m}`).join('\n')}\n\n**Example**: "${action.examples[0]}"\n\n**What I Found**:\n${parseDebug?.extractedEmail ? `✅ Email: ${parseDebug.extractedEmail}` : '❌ No email found'}\n${parseDebug?.extractedCourse ? `✅ Course: ${parseDebug.extractedCourse}` : '❌ No course found'}`;
+      const response = `❌ **Missing Information**: I need the following to ${action.description}:\n\n${missing.map(m => `• ${m}`).join('\n')}\n\n**Example**: "${action.examples[0]}"`;
       
       return NextResponse.json({
         response,
@@ -1234,12 +519,11 @@ ${ACTION_REGISTRY.map(a => `• **${a.description}**\n  Example: "${a.examples[0
         action: action.name,
         missing_fields: missing,
         examples: action.examples,
-        parseDebug,
         timestamp: new Date().toISOString()
       });
     }
 
-    // Execute the action with full debug context
+    // Execute the action
     try {
       const response = await action.execute(api, params);
       
@@ -1248,34 +532,18 @@ ${ACTION_REGISTRY.map(a => `• **${a.description}**\n  Example: "${a.examples[0
         success: !response.includes('❌'),
         action: action.name,
         params: params,
-        parseDebug,
         timestamp: new Date().toISOString()
       });
     } catch (error) {
       console.error(`Action ${action.name} failed:`, error);
       
-      const errorResponse = `❌ **${action.description} Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
-
-**Debug Information**:
-📝 Message: "${message}"
-🎯 Action: ${action.name}
-📥 Parameters: ${JSON.stringify(params, null, 2)}
-💥 Error: ${error instanceof Error ? error.message : 'Unknown error'}
-
-🔍 **Next Steps**:
-• Try: "debug enrollment" for full diagnostic info
-• Check if your inputs are correct
-• Verify Docebo connectivity
-
-**Support**: Include this debug info when reporting issues.`;
+      const errorResponse = `❌ **${action.description} Failed**: ${error instanceof Error ? error.message : 'Unknown error'}\n\nPlease try again or contact support.`;
       
       return NextResponse.json({
         response: errorResponse,
         success: false,
         action: action.name,
         error: error instanceof Error ? error.message : 'Unknown error',
-        debug: api.getDebugInfo(),
-        parseDebug,
         timestamp: new Date().toISOString()
       });
     }
@@ -1283,16 +551,7 @@ ${ACTION_REGISTRY.map(a => `• **${a.description}**\n  Example: "${a.examples[0
   } catch (error) {
     console.error('Chat error:', error);
     return NextResponse.json({
-      response: `❌ **System Error**: ${error instanceof Error ? error.message : 'Unknown error'}
-
-🔍 **Debug Info**: This is a system-level error, likely related to request parsing or API configuration.
-
-**Next Steps**:
-• Check environment variables are set correctly
-• Verify Docebo domain and credentials
-• Try: "debug enrollment" to check configuration
-
-**Error Details**: ${error instanceof Error ? error.stack : 'No stack trace available'}`,
+      response: `❌ **System Error**: ${error instanceof Error ? error.message : 'Unknown error'}\n\nPlease try again or contact support.`,
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
       timestamp: new Date().toISOString()
@@ -1302,15 +561,13 @@ ${ACTION_REGISTRY.map(a => `• **${a.description}**\n  Example: "${a.examples[0
 
 export async function GET() {
   return NextResponse.json({
-    status: 'Docebo Chat API with Full Debug Mode',
-    version: '3.0.0',
-    debug_features: [
-      'Comprehensive enrollment debugging',
-      'Step-by-step API call tracking',
-      'Course and user search debugging',
-      'Request/response logging',
-      'Environment validation',
-      'Real-time enrollment verification'
+    status: 'Docebo Chat API - Production Ready',
+    version: '1.0.0',
+    features: [
+      'Natural language enrollment management',
+      'User and course search',
+      'Enrollment status checking',
+      'Real-time Docebo integration'
     ],
     available_actions: ACTION_REGISTRY.map(action => ({
       name: action.name,
@@ -1318,10 +575,12 @@ export async function GET() {
       examples: action.examples,
       required_fields: action.requiredFields
     })),
-    debug_commands: [
-      'debug enrollment - Show complete debug information',
-      'test working enrollment - Test with verified working values'
+    examples: [
+      "Enroll john@company.com in Python Programming",
+      "What courses is sarah@test.com enrolled in?",
+      "Who is enrolled in Leadership Training?",
+      "Add mike@company.com to Excel course as mandatory due 2025-12-31"
     ],
-    note: 'All enrollment attempts now include comprehensive debug information in responses!'
+    note: 'Clean production version with working enrollment functionality!'
   });
 }
