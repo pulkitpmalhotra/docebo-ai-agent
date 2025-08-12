@@ -827,10 +827,10 @@ function parseCommand(message: string): {
   };
 
   const email = message.match(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/)?.[0];
-  debugInfo.extractedEmail = email;
+  debugInfo.extractedEmail = email || null;
   
   const action = ACTION_REGISTRY.find(a => a.pattern(message));
-  debugInfo.matchedAction = action?.name;
+  debugInfo.matchedAction = action?.name || null;
   
   if (!action) {
     return { action: null, params: {}, missing: [], debug: debugInfo };
@@ -880,7 +880,7 @@ function parseCommand(message: string): {
         .trim();
     }
     
-    debugInfo.extractedCourse = course;
+    debugInfo.extractedCourse = course || null;
     
     if (course && course.length > 2) {
       params.course = course;
