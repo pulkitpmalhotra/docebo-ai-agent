@@ -126,7 +126,7 @@ class OptimizedDoceboAPI {
         level: options.level || "3",
         date_begin_validity: options.dateBeginValidity,
         date_expire_validity: options.dateExpireValidity,
-        assignment_type: options.assignmentType || "mandatory",
+        assignment_type: options.assignmentType || "none",
         send_notification: false
       };
 
@@ -264,8 +264,9 @@ const ACTION_REGISTRY: ActionHandler[] = [
     description: 'Enroll a single user in a course',
     examples: [
       'Enroll john@company.com in Python Programming',
-      'Add sarah@test.com to Excel Training with level 2',
-      'Enroll mike@company.com in SQL course as mandatory due 2025-12-31'
+      'Add sarah@test.com to Excel Training as mandatory',
+      'Enroll mike@company.com in SQL course as optional due 2025-12-31',
+      'Add user@company.com to Leadership Training as recommended'
     ],
     pattern: (msg) => {
       const lower = msg.toLowerCase();
@@ -291,7 +292,7 @@ const ACTION_REGISTRY: ActionHandler[] = [
       const options = {
         level: level || "3",
         dateExpireValidity: dueDate,
-        assignmentType: assignmentType || "mandatory"
+        assignmentType: assignmentType || "none"
       };
 
       // Use the correct property name for course ID (id_course)
@@ -463,7 +464,7 @@ function parseCommand(message: string): { action: ActionHandler | null; params: 
     params.dueDate = dueDateMatch[1];
   }
 
-  const assignmentMatch = message.match(/\bas\s+(mandatory|optional)/i);
+  const assignmentMatch = message.match(/\bas\s+(mandatory|required|recommended|optional)/i);
   if (assignmentMatch) {
     params.assignmentType = assignmentMatch[1].toLowerCase();
   }
@@ -577,9 +578,11 @@ export async function GET() {
     })),
     examples: [
       "Enroll john@company.com in Python Programming",
-      "What courses is sarah@test.com enrolled in?",
-      "Who is enrolled in Leadership Training?",
-      "Add mike@company.com to Excel course as mandatory due 2025-12-31"
+      "Enroll sarah@test.com in Excel Training as mandatory",
+      "Add mike@company.com to SQL course as optional due 2025-12-31",
+      "Enroll user@company.com in Leadership Training as recommended",
+      "What courses is john@company.com enrolled in?",
+      "Who is enrolled in Leadership Training?"
     ],
     note: 'Clean production version with working enrollment functionality!'
   });
