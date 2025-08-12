@@ -151,48 +151,159 @@ class SimpleDoceboAPI {
     return [];
   }
 
-  async enrollUser(userId: string, courseId: string): Promise<{ success: boolean; message: string }> {
-    const enrollmentBodies = [
-      { users: [userId], courses: [courseId] },
-      { user_id: userId, course_id: courseId },
-      { userId: userId, courseId: courseId },
-      { user: userId, course: courseId }
-    ];
-    
-    const endpoints = [
-      '/learn/v1/enrollments',
-      '/manage/v1/enrollments',
-      '/api/v1/enrollments',
-      `/learn/v1/courses/${courseId}/enrollments`,
-      `/learn/v1/users/${userId}/enrollments`
-    ];
+  async enrollUser(userId: string, courseId: string, options: {
+    level?: string;
+    dateBeginValidity?: string;
+    dateExpireValidity?: string;
+    assignmentType?: string;
+    enrolledAt?: string;
+  } = {}): Promise<{ success: boolean; message: string }> {
+    try {
+      const enrollmentBody = {
+        course_ids: [courseId],
+        user_ids: [userId],
+        level: options.level || "3", // Required field
+        date_begin_validity: options.dateBeginValidity,
+        date_expire_validity: options.dateExpireValidity,
+        assignment_type: options.assignmentType || "mandatory",
+        enrolled_at: options.enrolledAt || new Date().toISOString().split('T')[0]
+      };
+
+      const response = await fetch(`${this.baseUrl}/learn/v1/enrollments`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${await this.getAccessToken()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(enrollmentBody)
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        console.log(`✅ Enrollment successful via /learn/v1/enrollments`);
+        return { success: true, message: `Successfully enrolled user in course` };
+      } else {
+        const errorText = await response.text();
+        console.log(`❌ Enrollment failed (${response.status}): ${errorText}`);
+        return { success: false, message: `Enrollment failed: ${response.status} - ${errorText}` };
+      }
+    } catch (error) {
+      console.log(`❌ Enrollment error:`, error);
+      return { success: false, message: `Enrollment error: ${error instanceof Error ? error.message : 'Unknown error'}` };
+    }
+  }
+
+  async enrollBulkUsers(userIds: string[], courseIds: string[], options: {
+    level?: string;
+    dateBeginValidity?: string;
+    dateExpireValidity?: string;
+    assignmentType?: string;
+    enrolledAt?: string;
+  } = {}): Promise<{ success: boolean; message: string; details?: any }> {
+    try {
+      const enrollmentBody = {
+        course_ids: courseIds,
+        user_ids: userIds,
+        level: options.level || "3",
+        date_begin_validity: options.dateBeginValidity,
+        date_expire_validity: options.dateExpireValidity,
+        assignment_type: options.assignmentType || "mandatory",
+        enrolled_at: options.enrolledAt || new Date().toISOString().split('T')[0]
+      };
+
+      const response = await fetch(`${this.baseUrl}/learn/v1/enrollments`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${await this.getAccessToken()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(enrollmentBody)
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        console.log(`✅ Bulk enrollment successful`);
+        return { 
+          success: true, 
+          message: `Successfully enrolled ${userIds.length} users in ${courseIds.length} courses`,
+          details: result
+        };
+      } else {
+        const errorText = await response.text();
+        console.log(`❌ Bulk enrollment failed (${response.status}): ${errorText}`);
+        return { success: false, message: `Bulk enrollment failed: ${response.status} - ${errorText}` };
+      }
+    } catch (error) {
+      console.log(`❌ Bulk enrollment error:`, error);
+      return { success: false, message: `Bulk enrollment error: ${error instanceof Error ? error.message : 'Unknown error'}` };
+    }
+  }
+
+  async enrollGroup(groupIds: string[], courseIds: string[], options: {
+    level?: string;
+    dateBeginValidity?: string;
+    dateExpireValidity?: string;
+    assignmentType?: string;
+    enrolledAt?: string;
+  } = {}): Promise<{ success: boolean; message: string; details?: any }> {
+    try {
+      const enrollmentBody = {
+        course_ids: courseIds,
+        group_ids: groupIds,
+        level: options.level || "3",
+        date_begin_validity: options.dateBeginValidity,
+        date_expire_validity: options.dateExpireValidity,
+        assignment_type: options.assignmentType || "mandatory",
+        enrolled_at: options.enrolledAt || new Date().toISOString().split('T')[0]
+      };
+
+      const response = await fetch(`${this.baseUrl}/learn/v1/enrollments`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${await this.getAccessToken()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(enrollmentBody)
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        console.log(`✅ Group enrollment successful`);
+        return { 
+          success: true, 
+          message: `Successfully enrolled ${groupIds.length} groups in ${courseIds.length} courses`,
+          details: result
+        };
+      } else {
+        const errorText = await response.text();
+        console.log(`❌ Group enrollment failed (${response.status}): ${errorText}`);
+        return { success: false, message: `Group enrollment failed: ${response.status} - ${errorText}` };
+      }
+    } catch (error) {
+      console.log(`❌ Group enrollment error:`, error);
+      return { success: false, message: `Group enrollment error: ${error instanceof Error ? error.message : 'Unknown error'}` };
+    }
+  }
+
+  async searchGroups(searchText: string): Promise<any[]> {
+    const endpoints = ['/manage/v1/groups', '/learn/v1/groups', '/api/v1/groups'];
     
     for (const endpoint of endpoints) {
-      for (const body of enrollmentBodies) {
-        try {
-          const response = await fetch(`${this.baseUrl}${endpoint}`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${await this.getAccessToken()}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(body)
-          });
-          
-          if (response.ok) {
-            console.log(`✅ Enrollment successful via ${endpoint}`);
-            return { success: true, message: `Enrolled successfully via ${endpoint}` };
-          } else {
-            const errorText = await response.text();
-            console.log(`❌ ${endpoint} failed (${response.status}): ${errorText}`);
-          }
-        } catch (error) {
-          console.log(`❌ ${endpoint} error:`, error);
+      try {
+        const result = await this.apiCall(endpoint, { search_text: searchText, page_size: 5 });
+        const groups = result.data?.items || result.items || [];
+        if (groups.length > 0) {
+          console.log(`✅ Groups found via ${endpoint}`);
+          return groups;
         }
+      } catch (error) {
+        console.log(`❌ ${endpoint} failed:`, error);
+        continue;
       }
     }
     
-    return { success: false, message: 'All enrollment methods failed. User may already be enrolled or permissions may be insufficient.' };
+    console.log(`❌ Groups not found: ${searchText}`);
+    return [];
   }
 }
 
@@ -209,30 +320,250 @@ interface ActionHandler {
 const ACTION_REGISTRY: ActionHandler[] = [
   {
     name: 'enroll_user',
-    description: 'Enroll a user in a course',
-    examples: ['Enroll john@company.com in Python Programming', 'Add sarah@test.com to Excel Training'],
+    description: 'Enroll a single user in a course',
+    examples: [
+      'Enroll john@company.com in Python Programming',
+      'Add sarah@test.com to Excel Training with level 2',
+      'Enroll mike@company.com in SQL course as mandatory due 2025-12-31'
+    ],
     pattern: (msg) => {
       const lower = msg.toLowerCase();
       return (lower.includes('enroll') || lower.includes('add')) && 
+             !lower.includes('bulk') &&
+             !lower.includes('group') &&
+             !lower.includes('multiple') &&
              !lower.includes('who') && 
              !lower.includes('unenroll');
     },
     requiredFields: ['email', 'course'],
-    execute: async (api, { email, course }) => {
+    execute: async (api, { email, course, level, dueDate, assignmentType }) => {
       const user = await api.quickUserSearch(email);
       if (!user) return `❌ **User Not Found**: ${email}\n\nDouble-check the email address.`;
 
       const courseObj = await api.quickCourseSearch(course);
       if (!courseObj) return `❌ **Course Not Found**: ${course}\n\nTry a shorter course name or check spelling.`;
 
-      const result = await api.enrollUser(user.user_id, courseObj.course_id || courseObj.idCourse);
+      const options = {
+        level: level || "3",
+        dateExpireValidity: dueDate,
+        assignmentType: assignmentType || "mandatory",
+        enrolledAt: new Date().toISOString().split('T')[0]
+      };
+
+      const result = await api.enrollUser(user.user_id, courseObj.course_id || courseObj.idCourse, options);
       if (result.success) {
-        return `✅ **Enrollment Successful**\n\n**User**: ${user.fullname} (${user.email})\n**Course**: ${courseObj.course_name || courseObj.name}\n**Method**: ${result.message}\n\n🎯 User will receive notification and can access immediately.`;
+        return `✅ **Enrollment Successful**\n\n**User**: ${user.fullname} (${user.email})\n**Course**: ${courseObj.course_name || courseObj.name}\n**Level**: ${options.level}\n**Assignment**: ${options.assignmentType}\n**Enrolled**: ${options.enrolledAt}${options.dateExpireValidity ? `\n**Due Date**: ${options.dateExpireValidity}` : ''}\n\n🎯 User will receive notification and can access immediately.`;
       } else {
         return `❌ **Enrollment Failed**\n\n**Issue**: ${result.message}\n\n💡 **Possible Solutions**:\n• User may already be enrolled\n• Check course enrollment settings\n• Verify API permissions`;
       }
     }
   },
+  {
+    name: 'enroll_bulk_users',
+    description: 'Enroll multiple users in one or more courses',
+    examples: [
+      'Bulk enroll users: john@company.com,sarah@test.com in Python Programming',
+      'Enroll multiple users john@company.com,mike@company.com,sarah@test.com in Excel Training,SQL Fundamentals',
+      'Add users from CSV to Python course'
+    ],
+    pattern: (msg) => {
+      const lower = msg.toLowerCase();
+      return (lower.includes('bulk') || lower.includes('multiple')) && 
+             lower.includes('enroll') && 
+             !lower.includes('group');
+    },
+    requiredFields: ['users', 'courses'],
+    execute: async (api, { users, courses, level, dueDate, assignmentType }) => {
+      // Parse comma-separated emails
+      const emails = Array.isArray(users) ? users : users.split(',').map((u: string) => u.trim());
+      const courseNames = Array.isArray(courses) ? courses : courses.split(',').map((c: string) => c.trim());
+
+      if (emails.length > 20) {
+        return `❌ **Too Many Users**: For bulk operations with ${emails.length} users, please use a CSV file.\n\n💡 **Try**: "Upload CSV for bulk enrollment"`;
+      }
+
+      // Resolve all user IDs
+      const userIds = [];
+      const failedUsers = [];
+      for (const email of emails) {
+        const user = await api.quickUserSearch(email);
+        if (user) {
+          userIds.push(user.user_id);
+        } else {
+          failedUsers.push(email);
+        }
+      }
+
+      // Resolve all course IDs  
+      const courseIds = [];
+      const failedCourses = [];
+      for (const courseName of courseNames) {
+        const course = await api.quickCourseSearch(courseName);
+        if (course) {
+          courseIds.push(course.course_id || course.idCourse);
+        } else {
+          failedCourses.push(courseName);
+        }
+      }
+
+      if (userIds.length === 0) {
+        return `❌ **No Valid Users Found**: ${failedUsers.join(', ')}\n\nPlease check email addresses.`;
+      }
+
+      if (courseIds.length === 0) {
+        return `❌ **No Valid Courses Found**: ${failedCourses.join(', ')}\n\nPlease check course names.`;
+      }
+
+      const options = {
+        level: level || "3",
+        dateExpireValidity: dueDate,
+        assignmentType: assignmentType || "mandatory",
+        enrolledAt: new Date().toISOString().split('T')[0]
+      };
+
+      const result = await api.enrollBulkUsers(userIds, courseIds, options);
+      
+      if (result.success) {
+        let response = `✅ **Bulk Enrollment Successful**\n\n`;
+        response += `**Users Enrolled**: ${userIds.length} users\n`;
+        response += `**Courses**: ${courseIds.length} courses\n`;
+        response += `**Total Enrollments**: ${userIds.length * courseIds.length}\n`;
+        response += `**Level**: ${options.level}\n`;
+        response += `**Assignment**: ${options.assignmentType}`;
+        
+        if (failedUsers.length > 0) {
+          response += `\n\n⚠️ **Failed Users**: ${failedUsers.join(', ')}`;
+        }
+        if (failedCourses.length > 0) {
+          response += `\n\n⚠️ **Failed Courses**: ${failedCourses.join(', ')}`;
+        }
+        
+        response += `\n\n🎯 All users will receive notifications immediately.`;
+        return response;
+      } else {
+        return `❌ **Bulk Enrollment Failed**\n\n**Issue**: ${result.message}`;
+      }
+    }
+  },
+  {
+    name: 'enroll_group',
+    description: 'Enroll entire groups in courses',
+    examples: [
+      'Enroll group Sales Team in Customer Service Training',
+      'Add Marketing group to Excel Training,PowerPoint Basics',
+      'Enroll groups Sales Team,Marketing Team in Leadership course'
+    ],
+    pattern: (msg) => {
+      const lower = msg.toLowerCase();
+      return lower.includes('group') && lower.includes('enroll');
+    },
+    requiredFields: ['groups', 'courses'],
+    execute: async (api, { groups, courses, level, dueDate, assignmentType }) => {
+      const groupNames = Array.isArray(groups) ? groups : groups.split(',').map((g: string) => g.trim());
+      const courseNames = Array.isArray(courses) ? courses : courses.split(',').map((c: string) => c.trim());
+
+      // Resolve group IDs
+      const groupIds = [];
+      const failedGroups = [];
+      for (const groupName of groupNames) {
+        const groupResults = await api.searchGroups(groupName);
+        const group = groupResults.find(g => g.name.toLowerCase().includes(groupName.toLowerCase()));
+        if (group) {
+          groupIds.push(group.group_id || group.id);
+        } else {
+          failedGroups.push(groupName);
+        }
+      }
+
+      // Resolve course IDs
+      const courseIds = [];
+      const failedCourses = [];
+      for (const courseName of courseNames) {
+        const course = await api.quickCourseSearch(courseName);
+        if (course) {
+          courseIds.push(course.course_id || course.idCourse);
+        } else {
+          failedCourses.push(courseName);
+        }
+      }
+
+      if (groupIds.length === 0) {
+        return `❌ **No Valid Groups Found**: ${failedGroups.join(', ')}\n\nPlease check group names.`;
+      }
+
+      if (courseIds.length === 0) {
+        return `❌ **No Valid Courses Found**: ${failedCourses.join(', ')}\n\nPlease check course names.`;
+      }
+
+      const options = {
+        level: level || "3",
+        dateExpireValidity: dueDate,
+        assignmentType: assignmentType || "mandatory",
+        enrolledAt: new Date().toISOString().split('T')[0]
+      };
+
+      const result = await api.enrollGroup(groupIds, courseIds, options);
+      
+      if (result.success) {
+        let response = `✅ **Group Enrollment Successful**\n\n`;
+        response += `**Groups Enrolled**: ${groupIds.length} groups\n`;
+        response += `**Courses**: ${courseIds.length} courses\n`;
+        response += `**Level**: ${options.level}\n`;
+        response += `**Assignment**: ${options.assignmentType}`;
+        
+        if (failedGroups.length > 0) {
+          response += `\n\n⚠️ **Failed Groups**: ${failedGroups.join(', ')}`;
+        }
+        if (failedCourses.length > 0) {
+          response += `\n\n⚠️ **Failed Courses**: ${failedCourses.join(', ')}`;
+        }
+        
+        response += `\n\n🎯 All group members will receive notifications immediately.`;
+        return response;
+      } else {
+        return `❌ **Group Enrollment Failed**\n\n**Issue**: ${result.message}`;
+      }
+    }
+  },
+  {
+    name: 'csv_bulk_enroll',
+    description: 'Upload CSV file for bulk enrollment',
+    examples: [
+      'Upload CSV for bulk enrollment',
+      'Bulk enroll from CSV file',
+      'Import users from CSV to courses'
+    ],
+    pattern: (msg) => {
+      const lower = msg.toLowerCase();
+      return lower.includes('csv') && lower.includes('enroll');
+    },
+    requiredFields: [],
+    execute: async (api, params) => {
+      return `📄 **CSV Bulk Enrollment**
+
+**CSV Format Required:**
+\`\`\`
+email,course_name,level,due_date,assignment_type
+john@company.com,Python Programming,3,2025-12-31,mandatory
+sarah@test.com,Excel Training,2,2025-11-30,optional
+mike@company.com,SQL Fundamentals,3,,mandatory
+\`\`\`
+
+**Instructions:**
+1. **Prepare CSV** with columns: email, course_name, level, due_date, assignment_type
+2. **Required fields**: email, course_name, level
+3. **Optional fields**: due_date (YYYY-MM-DD), assignment_type (mandatory/optional)
+4. **Save as CSV** and upload through file input
+
+🔗 **Next Steps:**
+• Create your CSV file with the above format
+• Use the file upload feature (coming soon)
+• Or use the bulk enroll command with comma-separated values
+
+💡 **For now, try**: "Bulk enroll users: email1,email2,email3 in Course Name"`;
+    }
+  },
+  // ... keep existing actions (get_user_courses, get_course_users, find_user, find_course)
   {
     name: 'get_user_courses',
     description: 'Get all courses a user is enrolled in',
@@ -344,9 +675,61 @@ const ACTION_REGISTRY: ActionHandler[] = [
       return `📚 **Course Found**\n\n**Name**: ${courseObj.course_name || courseObj.name}\n**Type**: ${courseObj.course_type || courseObj.type}\n**Status**: ${courseObj.status}\n**Course ID**: ${courseObj.course_id || courseObj.idCourse}`;
     }
   }
+];';
+        const userEmail = e.email || e.user_email || '';
+        const status = e.status || e.enrollment_status || '';
+        const progress = e.completion_percentage || e.progress || '';
+        
+        let statusIcon = '';
+        if (status.toLowerCase().includes('completed') || progress === 100) {
+          statusIcon = '✅';
+        } else if (status.toLowerCase().includes('progress') || progress > 0) {
+          statusIcon = '📚';
+        } else {
+          statusIcon = '⭕';
+        }
+        
+        return `${i + 1}. ${statusIcon} ${userName}${userEmail ? ` (${userEmail})` : ''}${progress ? ` - ${progress}%` : ''}`;
+      }).join('\n');
+      
+      return `👥 **"${courseObj.course_name || courseObj.name}" Enrollments** (${enrollments.length} users)\n\n${userList}${enrollments.length > 10 ? `\n\n... and ${enrollments.length - 10} more users` : ''}`;
+    }
+  },
+  {
+    name: 'find_user',
+    description: 'Find and display user details',
+    examples: ['Find user john@company.com', 'Show user details for sarah@test.com'],
+    pattern: (msg) => {
+      const lower = msg.toLowerCase();
+      return (lower.includes('find') || lower.includes('show')) && lower.includes('user');
+    },
+    requiredFields: ['email'],
+    execute: async (api, { email }) => {
+      const user = await api.quickUserSearch(email);
+      if (!user) return `❌ **User Not Found**: ${email}`;
+
+      return `👤 **User Found**\n\n**Name**: ${user.fullname}\n**Email**: ${user.email}\n**Status**: ${user.status === '1' ? 'Active' : 'Inactive'}\n**Last Login**: ${user.last_access_date ? new Date(user.last_access_date).toLocaleDateString() : 'Never'}\n**User ID**: ${user.user_id}`;
+    }
+  },
+  {
+    name: 'find_course',
+    description: 'Find and display course details',
+    examples: ['Find course Python', 'Show course details for Excel'],
+    pattern: (msg) => {
+      const lower = msg.toLowerCase();
+      return (lower.includes('find') || lower.includes('show')) && lower.includes('course');
+    },
+    requiredFields: ['course'],
+    execute: async (api, { course }) => {
+      const courseObj = await api.quickCourseSearch(course);
+      if (!courseObj) return `❌ **Course Not Found**: ${course}`;
+
+      return `📚 **Course Found**\n\n**Name**: ${courseObj.course_name || courseObj.name}\n**Type**: ${courseObj.course_type || courseObj.type}\n**Status**: ${courseObj.status}\n**Course ID**: ${courseObj.course_id || courseObj.idCourse}`;
+    }
+  }
 ];
 
-// Enhanced command parser
+// Enhanced command parser with support for advanced enrollment options
 function parseCommand(message: string): { action: ActionHandler | null; params: any; missing: string[] } {
   const email = message.match(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/)?.[0];
   
@@ -358,6 +741,7 @@ function parseCommand(message: string): { action: ActionHandler | null; params: 
   const params: any = {};
   const missing: string[] = [];
 
+  // Parse email(s)
   if (action.requiredFields.includes('email')) {
     if (email) {
       params.email = email;
@@ -366,16 +750,78 @@ function parseCommand(message: string): { action: ActionHandler | null; params: 
     }
   }
 
-  if (action.requiredFields.includes('course')) {
-    const course = message.match(/(?:in|to|course)\s+([^.!?]+)/i)?.[1]?.trim() ||
-                  message.match(/"([^"]+)"/)?.[1] ||
-                  message.replace(email || '', '').replace(/enroll|in|to|find|course|who|is|enrolled|show/gi, '').trim();
+  // Parse multiple users for bulk operations
+  if (action.requiredFields.includes('users')) {
+    const emails = message.match(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g);
+    if (emails && emails.length > 1) {
+      params.users = emails;
+    } else if (email) {
+      params.users = [email];
+    } else {
+      missing.push('user email addresses (comma-separated)');
+    }
+  }
+
+  // Parse course(s)
+  if (action.requiredFields.includes('course') || action.requiredFields.includes('courses')) {
+    const coursePattern = /(?:in|to|course[s]?)\s+([^.!?]+)/i;
+    const quotedPattern = /"([^"]+)"/;
+    
+    let course = message.match(quotedPattern)?.[1] || 
+                message.match(coursePattern)?.[1]?.trim();
+    
+    if (!course) {
+      // Try to extract after removing emails and common words
+      course = message
+        .replace(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g, '')
+        .replace(/enroll|in|to|find|course|who|is|enrolled|show|add|bulk|multiple/gi, '')
+        .trim();
+    }
     
     if (course && course.length > 2) {
-      params.course = course;
+      // Check if multiple courses (comma-separated)
+      if (course.includes(',')) {
+        params.courses = course.split(',').map(c => c.trim());
+      } else {
+        params.course = course;
+        params.courses = [course];
+      }
     } else {
-      missing.push('course name');
+      missing.push(action.requiredFields.includes('courses') ? 'course names' : 'course name');
     }
+  }
+
+  // Parse group(s)
+  if (action.requiredFields.includes('groups')) {
+    const groupPattern = /group[s]?\s+([^.!?]+)/i;
+    const groups = message.match(groupPattern)?.[1]?.trim();
+    
+    if (groups) {
+      if (groups.includes(',')) {
+        params.groups = groups.split(',').map(g => g.trim());
+      } else {
+        params.groups = [groups];
+      }
+    } else {
+      missing.push('group names');
+    }
+  }
+
+  // Parse optional enrollment parameters
+  const levelMatch = message.match(/level\s+(\d+)/i);
+  if (levelMatch) {
+    params.level = levelMatch[1];
+  }
+
+  const dueDateMatch = message.match(/due\s+(\d{4}-\d{2}-\d{2})/i) || 
+                      message.match(/by\s+(\d{4}-\d{2}-\d{2})/i);
+  if (dueDateMatch) {
+    params.dueDate = dueDateMatch[1];
+  }
+
+  const assignmentMatch = message.match(/(mandatory|optional)/i);
+  if (assignmentMatch) {
+    params.assignmentType = assignmentMatch[1].toLowerCase();
   }
 
   return { action, params, missing };
