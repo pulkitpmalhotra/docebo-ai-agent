@@ -173,7 +173,7 @@ class FixedDoceboAPI {
       
       // Filter to ensure we only get enrollments for the specific course
       const allEnrollments = result.data?.items || [];
-      const filteredEnrollments = allEnrollments.filter(enrollment => 
+      const filteredEnrollments = allEnrollments.filter((enrollment: any) => 
         enrollment.course_id === Number(courseId) || 
         enrollment.course_id === courseId ||
         enrollment.id_course === Number(courseId) ||
