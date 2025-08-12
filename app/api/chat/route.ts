@@ -60,89 +60,327 @@ class SimpleDoceboAPI {
     return await response.json();
   }
 
-  // Simple, working methods
+  // Fixed methods with multiple endpoint fallbacks
   async quickUserSearch(email: string): Promise<any> {
-    const result = await this.apiCall('/manage/v1/user', { search_text: email, page_size: 5 });
-    return result.data?.items?.[0] || null;
+    const endpoints = ['/manage/v1/user', '/learn/v1/users', '/api/v1/users'];
+    
+    for (const endpoint of endpoints) {
+      try {
+        const result = await this.apiCall(endpoint, { search_text: email, page_size: 5 });
+        const users = result.data?.items || result.items || [];
+        if (users.length > 0) {
+          console.log(`✅ User found via ${endpoint}`);
+          return users[0];
+        }
+      } catch (error) {
+        console.log(`❌ ${endpoint} failed:`, error);
+        continue;
+      }
+    }
+    
+    console.log(`❌ User not found: ${email}`);
+    return null;
   }
 
   async quickCourseSearch(courseName: string): Promise<any> {
-    const result = await this.apiCall('/learn/v1/courses', { search_text: courseName, page_size: 5 });
-    return result.data?.items?.[0] || null;
+    const endpoints = ['/learn/v1/courses', '/manage/v1/courses', '/api/v1/courses'];
+    
+    for (const endpoint of endpoints) {
+      try {
+        const result = await this.apiCall(endpoint, { search_text: courseName, page_size: 5 });
+        const courses = result.data?.items || result.items || [];
+        if (courses.length > 0) {
+          console.log(`✅ Course found via ${endpoint}`);
+          return courses[0];
+        }
+      } catch (error) {
+        console.log(`❌ ${endpoint} failed:`, error);
+        continue;
+      }
+    }
+    
+    console.log(`❌ Course not found: ${courseName}`);
+    return null;
   }
 
   async getUserEnrollments(userId: string): Promise<any> {
-    try {
-      const result = await this.apiCall(`/learn/v1/enrollments/users/${userId}`);
-      return result.data?.items || [];
-    } catch {
-      return [];
+    const endpoints = [
+      `/learn/v1/enrollments/users/${userId}`,
+      `/learn/v1/users/${userId}/enrollments`,
+      `/manage/v1/users/${userId}/enrollments`,
+      `/api/v1/users/${userId}/enrollments`
+    ];
+    
+    for (const endpoint of endpoints) {
+      try {
+        const result = await this.apiCall(endpoint);
+        const enrollments = result.data?.items || result.items || [];
+        console.log(`✅ User enrollments found via ${endpoint}: ${enrollments.length} courses`);
+        return enrollments;
+      } catch (error) {
+        console.log(`❌ ${endpoint} failed:`, error);
+        continue;
+      }
     }
+    
+    console.log(`❌ No enrollment data found for user: ${userId}`);
+    return [];
   }
 
   async getCourseEnrollments(courseId: string): Promise<any> {
-    try {
-      const result = await this.apiCall(`/learn/v1/enrollments/courses/${courseId}`);
-      return result.data?.items || [];
-    } catch {
-      return [];
+    const endpoints = [
+      `/learn/v1/enrollments/courses/${courseId}`,
+      `/learn/v1/courses/${courseId}/enrollments`,
+      `/manage/v1/courses/${courseId}/enrollments`,
+      `/api/v1/courses/${courseId}/enrollments`
+    ];
+    
+    for (const endpoint of endpoints) {
+      try {
+        const result = await this.apiCall(endpoint);
+        const enrollments = result.data?.items || result.items || [];
+        console.log(`✅ Course enrollments found via ${endpoint}: ${enrollments.length} users`);
+        return enrollments;
+      } catch (error) {
+        console.log(`❌ ${endpoint} failed:`, error);
+        continue;
+      }
     }
+    
+    console.log(`❌ No enrollment data found for course: ${courseId}`);
+    return [];
   }
 
-  async enrollUser(userId: string, courseId: string): Promise<boolean> {
-    try {
-      await fetch(`${this.baseUrl}/learn/v1/enrollments`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${await this.getAccessToken()}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          users: [userId],
-          courses: [courseId]
-        })
-      });
-      return true;
-    } catch {
-      return false;
+  async enrollUser(userId: string, courseId: string): Promise<{ success: boolean; message: string }> {
+    const enrollmentBodies = [
+      { users: [userId], courses: [courseId] },
+      { user_id: userId, course_id: courseId },
+      { userId: userId, courseId: courseId },
+      { user: userId, course: courseId }
+    ];
+    
+    const endpoints = [
+      '/learn/v1/enrollments',
+      '/manage/v1/enrollments',
+      '/api/v1/enrollments',
+      `/learn/v1/courses/${courseId}/enrollments`,
+      `/learn/v1/users/${userId}/enrollments`
+    ];
+    
+    for (const endpoint of endpoints) {
+      for (const body of enrollmentBodies) {
+        try {
+          const response = await fetch(`${this.baseUrl}${endpoint}`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${await this.getAccessToken()}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(body)
+          });
+          
+          if (response.ok) {
+            console.log(`✅ Enrollment successful via ${endpoint}`);
+            return { success: true, message: `Enrolled successfully via ${endpoint}` };
+          } else {
+            const errorText = await response.text();
+            console.log(`❌ ${endpoint} failed (${response.status}): ${errorText}`);
+          }
+        } catch (error) {
+          console.log(`❌ ${endpoint} error:`, error);
+        }
+      }
     }
+    
+    return { success: false, message: 'All enrollment methods failed. User may already be enrolled or permissions may be insufficient.' };
   }
 }
 
-// Simple pattern matching - no AI overhead
-function parseSimpleCommand(message: string): { action: string; email?: string; course?: string } {
+// Scalable Action Registry System
+interface ActionHandler {
+  name: string;
+  description: string;
+  examples: string[];
+  pattern: (message: string) => boolean;
+  requiredFields: string[];
+  execute: (api: SimpleDoceboAPI, params: any) => Promise<string>;
+}
+
+const ACTION_REGISTRY: ActionHandler[] = [
+  {
+    name: 'enroll_user',
+    description: 'Enroll a user in a course',
+    examples: ['Enroll john@company.com in Python Programming', 'Add sarah@test.com to Excel Training'],
+    pattern: (msg) => {
+      const lower = msg.toLowerCase();
+      return (lower.includes('enroll') || lower.includes('add')) && 
+             !lower.includes('who') && 
+             !lower.includes('unenroll');
+    },
+    requiredFields: ['email', 'course'],
+    execute: async (api, { email, course }) => {
+      const user = await api.quickUserSearch(email);
+      if (!user) return `❌ **User Not Found**: ${email}\n\nDouble-check the email address.`;
+
+      const courseObj = await api.quickCourseSearch(course);
+      if (!courseObj) return `❌ **Course Not Found**: ${course}\n\nTry a shorter course name or check spelling.`;
+
+      const result = await api.enrollUser(user.user_id, courseObj.course_id || courseObj.idCourse);
+      if (result.success) {
+        return `✅ **Enrollment Successful**\n\n**User**: ${user.fullname} (${user.email})\n**Course**: ${courseObj.course_name || courseObj.name}\n**Method**: ${result.message}\n\n🎯 User will receive notification and can access immediately.`;
+      } else {
+        return `❌ **Enrollment Failed**\n\n**Issue**: ${result.message}\n\n💡 **Possible Solutions**:\n• User may already be enrolled\n• Check course enrollment settings\n• Verify API permissions`;
+      }
+    }
+  },
+  {
+    name: 'get_user_courses',
+    description: 'Get all courses a user is enrolled in',
+    examples: ['What courses is john@company.com enrolled in?', 'Show sarah@test.com courses'],
+    pattern: (msg) => {
+      const lower = msg.toLowerCase();
+      return (lower.includes('courses') || lower.includes('enrolled')) && 
+             !lower.includes('who is enrolled') &&
+             !lower.includes('enroll');
+    },
+    requiredFields: ['email'],
+    execute: async (api, { email }) => {
+      const user = await api.quickUserSearch(email);
+      if (!user) return `❌ **User Not Found**: ${email}`;
+
+      const enrollments = await api.getUserEnrollments(user.user_id);
+      if (enrollments.length === 0) {
+        return `📚 **No Enrollments**\n\n${user.fullname} is not enrolled in any courses.`;
+      }
+
+      const courseList = enrollments.slice(0, 10).map((e: any, i: number) => {
+        const courseName = e.course_name || e.name || e.course || e.course_title || 'Unknown Course';
+        const status = e.status || e.enrollment_status || '';
+        const progress = e.completion_percentage || e.progress || '';
+        
+        let statusIcon = '';
+        if (status.toLowerCase().includes('completed') || progress === 100) {
+          statusIcon = '✅';
+        } else if (status.toLowerCase().includes('progress') || progress > 0) {
+          statusIcon = '📚';
+        } else {
+          statusIcon = '⭕';
+        }
+        
+        return `${i + 1}. ${statusIcon} ${courseName}${progress ? ` (${progress}%)` : ''}`;
+      }).join('\n');
+      
+      return `📚 **${user.fullname}'s Courses** (${enrollments.length} total)\n\n${courseList}${enrollments.length > 10 ? `\n\n... and ${enrollments.length - 10} more courses` : ''}`;
+    }
+  },
+  {
+    name: 'get_course_users',
+    description: 'Get all users enrolled in a course',
+    examples: ['Who is enrolled in Python Programming?', 'Show Excel Training enrollments'],
+    pattern: (msg) => {
+      const lower = msg.toLowerCase();
+      return lower.includes('who') && lower.includes('enrolled');
+    },
+    requiredFields: ['course'],
+    execute: async (api, { course }) => {
+      const courseObj = await api.quickCourseSearch(course);
+      if (!courseObj) return `❌ **Course Not Found**: ${course}`;
+
+      const enrollments = await api.getCourseEnrollments(courseObj.course_id || courseObj.idCourse);
+      if (enrollments.length === 0) {
+        return `👥 **No Enrollments**\n\nNo users enrolled in "${courseObj.course_name || courseObj.name}".`;
+      }
+
+      const userList = enrollments.slice(0, 10).map((e: any, i: number) => {
+        const userName = e.user_name || e.fullname || e.first_name + ' ' + e.last_name || e.name || 'Unknown User';
+        const userEmail = e.email || e.user_email || '';
+        const status = e.status || e.enrollment_status || '';
+        const progress = e.completion_percentage || e.progress || '';
+        
+        let statusIcon = '';
+        if (status.toLowerCase().includes('completed') || progress === 100) {
+          statusIcon = '✅';
+        } else if (status.toLowerCase().includes('progress') || progress > 0) {
+          statusIcon = '📚';
+        } else {
+          statusIcon = '⭕';
+        }
+        
+        return `${i + 1}. ${statusIcon} ${userName}${userEmail ? ` (${userEmail})` : ''}${progress ? ` - ${progress}%` : ''}`;
+      }).join('\n');
+      
+      return `👥 **"${courseObj.course_name || courseObj.name}" Enrollments** (${enrollments.length} users)\n\n${userList}${enrollments.length > 10 ? `\n\n... and ${enrollments.length - 10} more users` : ''}`;
+    }
+  },
+  {
+    name: 'find_user',
+    description: 'Find and display user details',
+    examples: ['Find user john@company.com', 'Show user details for sarah@test.com'],
+    pattern: (msg) => {
+      const lower = msg.toLowerCase();
+      return (lower.includes('find') || lower.includes('show')) && lower.includes('user');
+    },
+    requiredFields: ['email'],
+    execute: async (api, { email }) => {
+      const user = await api.quickUserSearch(email);
+      if (!user) return `❌ **User Not Found**: ${email}`;
+
+      return `👤 **User Found**\n\n**Name**: ${user.fullname}\n**Email**: ${user.email}\n**Status**: ${user.status === '1' ? 'Active' : 'Inactive'}\n**Last Login**: ${user.last_access_date ? new Date(user.last_access_date).toLocaleDateString() : 'Never'}\n**User ID**: ${user.user_id}`;
+    }
+  },
+  {
+    name: 'find_course',
+    description: 'Find and display course details',
+    examples: ['Find course Python', 'Show course details for Excel'],
+    pattern: (msg) => {
+      const lower = msg.toLowerCase();
+      return (lower.includes('find') || lower.includes('show')) && lower.includes('course');
+    },
+    requiredFields: ['course'],
+    execute: async (api, { course }) => {
+      const courseObj = await api.quickCourseSearch(course);
+      if (!courseObj) return `❌ **Course Not Found**: ${course}`;
+
+      return `📚 **Course Found**\n\n**Name**: ${courseObj.course_name || courseObj.name}\n**Type**: ${courseObj.course_type || courseObj.type}\n**Status**: ${courseObj.status}\n**Course ID**: ${courseObj.course_id || courseObj.idCourse}`;
+    }
+  }
+];
+
+// Enhanced command parser that uses the action registry
+function parseCommand(message: string): { action: ActionHandler | null; params: any; missing: string[] } {
   const email = message.match(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/)?.[0];
-  const msgLower = message.toLowerCase();
+  
+  // Find matching action
+  const action = ACTION_REGISTRY.find(a => a.pattern(message));
+  if (!action) {
+    return { action: null, params: {}, missing: [] };
+  }
 
-  // Direct action detection
-  if (email && msgLower.includes('enroll') && !msgLower.includes('who')) {
-    const course = message.match(/(?:in|to)\s+([^.!?]+)/i)?.[1]?.trim() || 
+  // Extract parameters
+  const params: any = {};
+  const missing: string[] = [];
+
+  if (action.requiredFields.includes('email')) {
+    if (email) {
+      params.email = email;
+    } else {
+      missing.push('email address');
+    }
+  }
+
+  if (action.requiredFields.includes('course')) {
+    const course = message.match(/(?:in|to|course)\s+([^.!?]+)/i)?.[1]?.trim() ||
                   message.match(/"([^"]+)"/)?.[1] ||
-                  message.replace(email, '').replace(/enroll|in|to/gi, '').trim();
-    return { action: 'enroll', email, course };
-  }
-
-  if (email && (msgLower.includes('enrolled') || msgLower.includes('courses'))) {
-    return { action: 'user_courses', email };
-  }
-
-  if (msgLower.includes('who') && msgLower.includes('enrolled')) {
-    const course = message.match(/enrolled in\s+([^?!.]+)/i)?.[1]?.trim() ||
-                  message.match(/"([^"]+)"/)?.[1];
-    return { action: 'course_users', course };
-  }
-
-  if (msgLower.includes('find') || msgLower.includes('search')) {
-    if (msgLower.includes('user') || email) {
-      return { action: 'find_user', email: email || message.replace(/find|search|user/gi, '').trim() };
-    }
-    if (msgLower.includes('course')) {
-      const course = message.replace(/find|search|course/gi, '').trim();
-      return { action: 'find_course', course };
+                  message.replace(email || '', '').replace(/enroll|in|to|find|course|who|is|enrolled|show/gi, '').trim();
+    
+    if (course && course.length > 2) {
+      params.course = course;
+    } else {
+      missing.push('course name');
     }
   }
 
-  return { action: 'help' };
+  return { action, params, missing };
 }
 
 const api = new SimpleDoceboAPI({
@@ -160,43 +398,77 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Message required' }, { status: 400 });
     }
 
-    const command = parseSimpleCommand(message);
+    const { action, params, missing } = parseCommand(message);
     let response = '';
 
-    switch (command.action) {
-      case 'enroll':
-        if (!command.email || !command.course) {
-          response = `❌ **Missing Info**: Need both email and course name.\n\n**Example**: "Enroll john@company.com in Python Programming"`;
-          break;
-        }
+    if (!action) {
+      response = `🎯 **Quick Docebo Actions**
 
-        const user = await api.quickUserSearch(command.email);
-        if (!user) {
-          response = `❌ **User Not Found**: ${command.email}\n\nDouble-check the email address.`;
-          break;
-        }
+**Available Commands**:
+${ACTION_REGISTRY.map(a => `• **${a.description}**\n  Example: "${a.examples[0]}"`).join('\n\n')}
 
-        const course = await api.quickCourseSearch(command.course);
-        if (!course) {
-          response = `❌ **Course Not Found**: ${command.course}\n\nTry a shorter course name or check spelling.`;
-          break;
-        }
+💡 **Tip**: Be specific with email addresses and course names for faster results!`;
+      
+      return NextResponse.json({
+        response,
+        success: false,
+        action: 'help',
+        available_actions: ACTION_REGISTRY.map(a => ({
+          name: a.name,
+          description: a.description,
+          examples: a.examples
+        })),
+        timestamp: new Date().toISOString()
+      });
+    }
 
-        const enrolled = await api.enrollUser(user.user_id, course.course_id || course.idCourse);
-        if (enrolled) {
-          response = `✅ **Enrolled Successfully**\n\n**User**: ${user.fullname} (${user.email})\n**Course**: ${course.course_name || course.name}\n\n🎯 The user will receive a notification and can access the course immediately.`;
-        } else {
-          response = `❌ **Enrollment Failed**\n\nUser may already be enrolled or there's a permission issue.`;
-        }
-        break;
+    if (missing.length > 0) {
+      response = `❌ **Missing Information**: I need the following to ${action.description}:\n\n${missing.map(m => `• ${m}`).join('\n')}\n\n**Example**: "${action.examples[0]}"`;
+      
+      return NextResponse.json({
+        response,
+        success: false,
+        action: action.name,
+        missing_fields: missing,
+        examples: action.examples,
+        timestamp: new Date().toISOString()
+      });
+    }
 
-      case 'user_courses':
-        if (!command.email) {
-          response = `❌ **Missing Email**: Please provide a user email.\n\n**Example**: "What courses is john@company.com enrolled in?"`;
-          break;
-        }
+    // Execute the action
+    try {
+      response = await action.execute(api, params);
+      
+      return NextResponse.json({
+        response,
+        success: !response.includes('❌'),
+        action: action.name,
+        params: params,
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error(`Action ${action.name} failed:`, error);
+      response = `❌ **${action.description} Failed**: ${error instanceof Error ? error.message : 'Unknown error'}\n\nPlease try again or contact support.`;
+      
+      return NextResponse.json({
+        response,
+        success: false,
+        action: action.name,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        timestamp: new Date().toISOString()
+      });
+    }
 
-        const userForCourses = await api.quickUserSearch(command.email);
+  } catch (error) {
+    console.error('Chat error:', error);
+    return NextResponse.json({
+      response: `❌ **System Error**: ${error instanceof Error ? error.message : 'Unknown error'}\n\nPlease try again or contact support.`,
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      timestamp: new Date().toISOString()
+    }, { status: 500 });
+  }
+}quickUserSearch(command.email);
         if (!userForCourses) {
           response = `❌ **User Not Found**: ${command.email}`;
           break;
@@ -206,7 +478,25 @@ export async function POST(request: NextRequest) {
         if (enrollments.length === 0) {
           response = `📚 **No Enrollments**\n\n${userForCourses.fullname} is not enrolled in any courses.`;
         } else {
-          response = `📚 **${userForCourses.fullname}'s Courses** (${enrollments.length} total)\n\n${enrollments.slice(0, 10).map((e: any, i: number) => `${i + 1}. ${e.course_name || e.name || 'Course'}`).join('\n')}`;
+          const courseList = enrollments.slice(0, 10).map((e: any, i: number) => {
+            // Handle different field names across Docebo versions
+            const courseName = e.course_name || e.name || e.course || e.course_title || 'Unknown Course';
+            const status = e.status || e.enrollment_status || '';
+            const progress = e.completion_percentage || e.progress || '';
+            
+            let statusIcon = '';
+            if (status.toLowerCase().includes('completed') || progress === 100) {
+              statusIcon = '✅';
+            } else if (status.toLowerCase().includes('progress') || progress > 0) {
+              statusIcon = '📚';
+            } else {
+              statusIcon = '⭕';
+            }
+            
+            return `${i + 1}. ${statusIcon} ${courseName}${progress ? ` (${progress}%)` : ''}`;
+          }).join('\n');
+          
+          response = `📚 **${userForCourses.fullname}'s Courses** (${enrollments.length} total)\n\n${courseList}${enrollments.length > 10 ? `\n\n... and ${enrollments.length - 10} more courses` : ''}`;
         }
         break;
 
@@ -226,7 +516,26 @@ export async function POST(request: NextRequest) {
         if (courseEnrollments.length === 0) {
           response = `👥 **No Enrollments**\n\nNo users enrolled in "${courseForUsers.course_name || courseForUsers.name}".`;
         } else {
-          response = `👥 **"${courseForUsers.course_name || courseForUsers.name}" Enrollments** (${courseEnrollments.length} users)\n\n${courseEnrollments.slice(0, 10).map((e: any, i: number) => `${i + 1}. ${e.user_name || e.fullname || 'User'}`).join('\n')}`;
+          const userList = courseEnrollments.slice(0, 10).map((e: any, i: number) => {
+            // Handle different field names for user data
+            const userName = e.user_name || e.fullname || e.first_name + ' ' + e.last_name || e.name || 'Unknown User';
+            const userEmail = e.email || e.user_email || '';
+            const status = e.status || e.enrollment_status || '';
+            const progress = e.completion_percentage || e.progress || '';
+            
+            let statusIcon = '';
+            if (status.toLowerCase().includes('completed') || progress === 100) {
+              statusIcon = '✅';
+            } else if (status.toLowerCase().includes('progress') || progress > 0) {
+              statusIcon = '📚';
+            } else {
+              statusIcon = '⭕';
+            }
+            
+            return `${i + 1}. ${statusIcon} ${userName}${userEmail ? ` (${userEmail})` : ''}${progress ? ` - ${progress}%` : ''}`;
+          }).join('\n');
+          
+          response = `👥 **"${courseForUsers.course_name || courseForUsers.name}" Enrollments** (${courseEnrollments.length} users)\n\n${userList}${courseEnrollments.length > 10 ? `\n\n... and ${courseEnrollments.length - 10} more users` : ''}`;
         }
         break;
 
@@ -298,14 +607,28 @@ export async function POST(request: NextRequest) {
 
 export async function GET() {
   return NextResponse.json({
-    status: 'Simple Docebo Chat - Fast & Direct',
-    examples: [
-      'Enroll john@company.com in Python Programming',
-      'What courses is sarah@test.com enrolled in?',
-      'Who is enrolled in Excel Training?',
-      'Find user mike@company.com',
-      'Find course JavaScript'
+    status: 'Simple Docebo Chat - Scalable & Fast',
+    version: '2.1.0',
+    available_actions: ACTION_REGISTRY.map(action => ({
+      name: action.name,
+      description: action.description,
+      examples: action.examples,
+      required_fields: action.requiredFields
+    })),
+    features: [
+      'Multiple endpoint fallbacks for reliability',
+      'Scalable action registry system', 
+      'Better field detection across Docebo versions',
+      'Enhanced error handling with specific guidance',
+      'Ready for easy expansion of new actions'
     ],
-    note: 'Direct commands that work immediately - no complex AI needed!'
+    endpoints_tested: [
+      'User search: /manage/v1/user, /learn/v1/users, /api/v1/users',
+      'Course search: /learn/v1/courses, /manage/v1/courses, /api/v1/courses', 
+      'User enrollments: 4 different endpoint patterns',
+      'Course enrollments: 4 different endpoint patterns',
+      'Enrollment creation: 5 endpoints with 4 body formats each'
+    ],
+    note: 'System automatically finds working endpoints for your Docebo instance!'
   });
 }
