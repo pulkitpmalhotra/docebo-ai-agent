@@ -1,21 +1,7 @@
-// app/api/chat/route.ts - Fixed imports for Vercel deployment
+// app/api/chat/route.ts - Self-contained version for Vercel deployment
 import { NextRequest, NextResponse } from 'next/server';
 
-// Import from relative paths to avoid module resolution issues
-import { DoceboAPI } from '../../../lib/docebo-api-fixed';
-import type { DoceboUser, DoceboCourse } from '../../../lib/docebo-api-fixed';
-
-// Environment configuration - inline for deployment reliability
-interface EnvironmentConfig {
-  docebo: {
-    domain: string;
-    clientId: string;
-    clientSecret: string;
-    username: string;
-    password: string;
-  };
-}
-
+// Environment configuration - inline to avoid import issues
 function validateEnvironmentVariable(name: string, value: string | undefined): string {
   if (!value || value.trim() === '') {
     throw new Error(`Missing required environment variable: ${name}`);
@@ -23,491 +9,241 @@ function validateEnvironmentVariable(name: string, value: string | undefined): s
   return value.trim();
 }
 
-function getConfig(): EnvironmentConfig {
+function getConfig() {
   return {
-    docebo: {
-      domain: validateEnvironmentVariable('DOCEBO_DOMAIN', process.env.DOCEBO_DOMAIN),
-      clientId: validateEnvironmentVariable('DOCEBO_CLIENT_ID', process.env.DOCEBO_CLIENT_ID),
-      clientSecret: validateEnvironmentVariable('DOCEBO_CLIENT_SECRET', process.env.DOCEBO_CLIENT_SECRET),
-      username: validateEnvironmentVariable('DOCEBO_USERNAME', process.env.DOCEBO_USERNAME),
-      password: validateEnvironmentVariable('DOCEBO_PASSWORD', process.env.DOCEBO_PASSWORD),
-    }
+    domain: validateEnvironmentVariable('DOCEBO_DOMAIN', process.env.DOCEBO_DOMAIN),
+    clientId: validateEnvironmentVariable('DOCEBO_CLIENT_ID', process.env.DOCEBO_CLIENT_ID),
+    clientSecret: validateEnvironmentVariable('DOCEBO_CLIENT_SECRET', process.env.DOCEBO_CLIENT_SECRET),
+    username: validateEnvironmentVariable('DOCEBO_USERNAME', process.env.DOCEBO_USERNAME),
+    password: validateEnvironmentVariable('DOCEBO_PASSWORD', process.env.DOCEBO_PASSWORD),
   };
 }
 
-// Standardized API response interface
-interface APIResponse {
-  response: string;
-  success: boolean;
-  action?: string;
-  params?: Record<string, any>;
-  timestamp: string;
-  error?: string;
-  missing_fields?: string[];
-  examples?: string[];
-  available_actions?: Array<{
-    name: string;
-    description: string;
-    examples: string[];
-    required_fields: string[];
-  }>;
-}
+// Inline Docebo API client
+class SimpleDoceboAPI {
+  private config: any;
+  private accessToken?: string;
+  private tokenExpiry?: Date;
+  private baseUrl: string;
 
-// Action Handler Interface
-interface ActionHandler {
-  name: string;
-  description: string;
-  examples: string[];
-  pattern: (message: string) => boolean;
-  requiredFields: string[];
-  execute: (api: DoceboAPI, params: ParsedParams) => Promise<string>;
-}
+  constructor(config: any) {
+    this.config = config;
+    this.baseUrl = `https://${config.domain}`;
+  }
 
-// Parsed parameters interface
-interface ParsedParams {
-  email?: string;
-  course?: string;
-  level?: string;
-  dueDate?: string;
-  assignmentType?: string;
-}
+  private async getAccessToken(): Promise<string> {
+    if (this.accessToken && this.tokenExpiry && this.tokenExpiry > new Date()) {
+      return this.accessToken;
+    }
 
-// Action Registry - Core Phase 1 functionality
-const ACTION_REGISTRY: ActionHandler[] = [
-  {
-    name: 'enroll_user',
-    description: 'Enroll a single user in a course',
-    examples: [
-      'Enroll john@company.com in Python Programming',
-      'Add sarah@test.com to Excel Training as mandatory',
-      'Enroll mike@company.com in SQL course as optional due 2025-12-31'
-    ],
-    pattern: (msg) => {
-      const lower = msg.toLowerCase();
-      return ((lower.includes('enroll ') || lower.includes('add ')) && 
-              !lower.includes('what courses') &&
-              !lower.includes('show courses') &&
-              !lower.includes('who is enrolled') &&
-              !lower.includes('who enrolled')) && 
-             !lower.includes('bulk') &&
-             !lower.includes('group') &&
-             !lower.includes('multiple') &&
-             !lower.includes('unenroll');
-    },
-    requiredFields: ['email', 'course'],
-    execute: async (api, { email, course, level, dueDate, assignmentType }) => {
-      if (!email || !course) {
-        throw new Error('Both email and course are required for enrollment');
+    const response = await fetch(`${this.baseUrl}/oauth2/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'password',
+        client_id: this.config.clientId,
+        client_secret: this.config.clientSecret,
+        scope: 'api',
+        username: this.config.username,
+        password: this.config.password,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`OAuth failed: ${response.status} - ${errorText}`);
+    }
+
+    const tokenData = await response.json();
+    this.accessToken = tokenData.access_token;
+    this.tokenExpiry = new Date(Date.now() + (tokenData.expires_in || 3600) * 1000);
+    return this.accessToken!;
+  }
+
+  private async apiRequest(endpoint: string, method: 'GET' | 'POST' = 'GET', body?: any, params?: any): Promise<any> {
+    const token = await this.getAccessToken();
+    
+    let url = `${this.baseUrl}${endpoint}`;
+    if (params) {
+      const queryParams = new URLSearchParams();
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          queryParams.append(key, value.toString());
+        }
+      });
+      if (queryParams.toString()) {
+        url += `?${queryParams}`;
       }
+    }
 
-      // Find user
-      const users = await api.searchUsers(email, 5);
-      const user = users.find((u: DoceboUser) => 
-        u.email.toLowerCase() === email.toLowerCase() ||
-        u.fullname.toLowerCase().includes(email.toLowerCase())
-      );
+    const headers: Record<string, string> = {
+      'Authorization': `Bearer ${token}`,
+      'Accept': 'application/json',
+    };
 
-      if (!user) {
-        return `❌ **User Not Found**: ${email}\n\nDouble-check the email address or try searching by name.`;
-      }
+    if (method !== 'GET' && body) {
+      headers['Content-Type'] = 'application/json';
+    }
 
-      // Find course
-      const courses = await api.searchCourses(course, 10);
-      const courseObj = courses.find((c: DoceboCourse) => 
-        (c.course_name || c.name || '').toLowerCase().includes(course.toLowerCase()) ||
-        (c.course_code || '').toLowerCase() === course.toLowerCase()
-      );
+    const response = await fetch(url, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+    });
 
-      if (!courseObj) {
-        return `❌ **Course Not Found**: ${course}\n\nTry a shorter course name or check spelling.`;
-      }
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Docebo API error: ${response.status} - ${errorText}`);
+    }
 
-      // Get course ID using utility method
-      const courseId = api.getCourseId(courseObj);
-      
-      if (!courseId) {
-        return `❌ **Course ID Missing**: Found course "${courseObj.course_name || courseObj.name}" but no valid ID`;
-      }
+    return await response.json();
+  }
 
-      // Prepare enrollment options
-      const options = {
-        level: level || "3",
-        dateExpireValidity: dueDate,
-        assignmentType: assignmentType || "none"
+  async searchUsers(searchText: string, limit: number = 25): Promise<any[]> {
+    try {
+      const result = await this.apiRequest('/manage/v1/user', 'GET', null, {
+        search_text: searchText,
+        page_size: limit
+      });
+      return result.data?.items || [];
+    } catch (error) {
+      console.error('Search users failed:', error);
+      return [];
+    }
+  }
+
+  async searchCourses(searchText: string, limit: number = 25): Promise<any[]> {
+    try {
+      const result = await this.apiRequest('/learn/v1/courses', 'GET', null, {
+        search_text: searchText,
+        page_size: limit
+      });
+      return result.data?.items || [];
+    } catch (error) {
+      console.error('Search courses failed:', error);
+      return [];
+    }
+  }
+
+  async getUserEnrollments(userId: string): Promise<any[]> {
+    try {
+      const result = await this.apiRequest(`/learn/v1/enrollments/users/${userId}`);
+      return result.data?.items || [];
+    } catch (error) {
+      console.error('Get user enrollments failed:', error);
+      return [];
+    }
+  }
+
+  async getCourseEnrollments(courseId: string): Promise<any[]> {
+    try {
+      const result = await this.apiRequest(`/learn/v1/enrollments/courses/${courseId}`);
+      return result.data?.items || [];
+    } catch (error) {
+      console.error('Get course enrollments failed:', error);
+      return [];
+    }
+  }
+
+  async enrollUser(userId: string, courseId: string, options: any = {}): Promise<any> {
+    try {
+      const enrollmentBody = {
+        course_ids: [String(courseId)],
+        user_ids: [String(userId)],
+        level: options.level || "3",
+        date_expire_validity: options.dueDate,
+        send_notification: false
       };
 
-      // Attempt enrollment
-      const result = await api.enrollUser(user.user_id, courseId, options);
+      if (options.assignmentType && options.assignmentType !== "none") {
+        enrollmentBody.assignment_type = options.assignmentType;
+      }
+
+      const result = await this.apiRequest('/learn/v1/enrollments', 'POST', enrollmentBody);
       
-      if (result.success) {
-        const assignmentText = options.assignmentType && options.assignmentType !== "none" 
-          ? options.assignmentType 
-          : "standard";
-        
-        return `✅ **Enrollment Successful**\n\n**User**: ${user.fullname} (${user.email})\n**Course**: ${courseObj.course_name || courseObj.name}\n**Level**: ${options.level}\n**Assignment**: ${assignmentText}${options.dateExpireValidity ? `\n**Due Date**: ${options.dateExpireValidity}` : ''}\n\n🎯 Successfully enrolled in Docebo!`;
+      const enrolledUsers = result.data?.enrolled || [];
+      const errors = result.data?.errors || {};
+      
+      if (enrolledUsers.length > 0) {
+        return { success: true, message: 'Successfully enrolled user in course' };
       } else {
-        return `❌ **Enrollment Failed**\n\n**Issue**: ${result.message}\n\n**User**: ${user.fullname} (${user.email})\n**Course**: ${courseObj.course_name || courseObj.name}\n\n💡 ${result.message.includes('already enrolled') ? 'User is already enrolled in this course.' : 'Check course rules and user permissions in Docebo admin panel.'}`;
-      }
-    }
-  },
-  {
-    name: 'get_user_courses',
-    description: 'Get all courses a user is enrolled in',
-    examples: [
-      'What courses is john@company.com enrolled in?',
-      'Show sarah@test.com courses',
-      'List enrollments for mike@company.com'
-    ],
-    pattern: (msg) => {
-      const lower = msg.toLowerCase();
-      return (lower.includes('what courses') || 
-              lower.includes('show courses') ||
-              lower.includes('list courses') ||
-              lower.includes('list enrollments') ||
-              (lower.includes('courses') && lower.includes('enrolled')) ||
-              (lower.includes('enrolled') && lower.includes('in'))) && 
-             !lower.includes('who is enrolled') &&
-             !lower.includes('enroll ');
-    },
-    requiredFields: ['email'],
-    execute: async (api, { email }) => {
-      if (!email) {
-        throw new Error('Email address is required');
-      }
-
-      // Find user
-      const users = await api.searchUsers(email, 5);
-      const user = users.find((u: DoceboUser) => 
-        u.email.toLowerCase() === email.toLowerCase() ||
-        u.fullname.toLowerCase().includes(email.toLowerCase())
-      );
-
-      if (!user) {
-        return `❌ **User Not Found**: ${email}`;
-      }
-
-      // Get enrollments
-      const enrollments = await api.getUserEnrollments(user.user_id);
-      
-      if (enrollments.length === 0) {
-        return `📚 **No Enrollments**\n\n${user.fullname} is not enrolled in any courses.`;
-      }
-
-      const courseList = enrollments.slice(0, 10).map((e: any, i: number) => {
-        const courseName = e.course_name || e.name || 'Unknown Course';
-        const status = e.status || e.enrollment_status || '';
-        const progress = e.completion_percentage || e.progress_percentage || '';
+        let specificError = "Unknown enrollment restriction";
         
-        let statusIcon = '';
-        if (status.toLowerCase().includes('completed') || progress === 100) {
-          statusIcon = '✅';
-        } else if (status.toLowerCase().includes('progress') || progress > 0) {
-          statusIcon = '📚';
-        } else {
-          statusIcon = '⭕';
+        if (errors.existing_enrollments && errors.existing_enrollments.length > 0) {
+          specificError = "User is already enrolled in this course";
+        } else if (errors.invalid_users && errors.invalid_users.length > 0) {
+          specificError = "User ID is invalid or user doesn't exist";
+        } else if (errors.invalid_courses && errors.invalid_courses.length > 0) {
+          specificError = "Course ID is invalid or course doesn't exist";
         }
         
-        return `${i + 1}. ${statusIcon} ${courseName}${progress ? ` (${progress}%)` : ''}`;
-      }).join('\n');
-      
-      return `📚 **${user.fullname}'s Courses** (${enrollments.length} total)\n\n${courseList}${enrollments.length > 10 ? `\n\n... and ${enrollments.length - 10} more courses` : ''}`;
-    }
-  },
-  {
-    name: 'get_course_users',
-    description: 'Get all users enrolled in a course',
-    examples: [
-      'Who is enrolled in Python Programming?',
-      'Show Excel Training enrollments',
-      'List users in SQL course'
-    ],
-    pattern: (msg) => {
-      const lower = msg.toLowerCase();
-      return (lower.includes('who is enrolled in') || 
-              lower.includes('who enrolled in') ||
-              lower.includes('who is enrolled') ||
-              (lower.includes('show') && lower.includes('enrollments')) ||
-              (lower.includes('list') && lower.includes('enrolled')) ||
-              (lower.includes('list users') && lower.includes('in'))) &&
-             !lower.includes('enroll ') &&
-             !lower.includes('what courses');
-    },
-    requiredFields: ['course'],
-    execute: async (api, { course }) => {
-      if (!course) {
-        throw new Error('Course name is required');
+        return { success: false, message: specificError };
       }
-
-      // Find course
-      const courses = await api.searchCourses(course, 10);
-      const courseObj = courses.find((c: DoceboCourse) => 
-        (c.course_name || c.name || '').toLowerCase().includes(course.toLowerCase()) ||
-        (c.course_code || '').toLowerCase() === course.toLowerCase()
-      );
-
-      if (!courseObj) {
-        return `❌ **Course Not Found**: ${course}`;
-      }
-
-      const courseId = api.getCourseId(courseObj);
-      if (!courseId) {
-        return `❌ **Course ID Missing**: Found course but no valid ID`;
-      }
-
-      // Get enrollments
-      const enrollments = await api.getCourseEnrollments(courseId);
-      
-      if (enrollments.length === 0) {
-        return `👥 **No Enrollments**\n\nNo users enrolled in "${courseObj.course_name || courseObj.name}".`;
-      }
-
-      const userList = enrollments.slice(0, 10).map((e: any, i: number) => {
-        const userName = e.user_name || e.fullname || 'Unknown User';
-        const userEmail = e.email || e.user_email || '';
-        const status = e.status || e.enrollment_status || '';
-        const progress = e.completion_percentage || e.progress_percentage || '';
-        
-        let statusIcon = '';
-        if (status.toLowerCase().includes('completed') || progress === 100) {
-          statusIcon = '✅';
-        } else if (status.toLowerCase().includes('progress') || progress > 0) {
-          statusIcon = '📚';
-        } else {
-          statusIcon = '⭕';
-        }
-        
-        return `${i + 1}. ${statusIcon} ${userName}${userEmail ? ` (${userEmail})` : ''}${progress ? ` - ${progress}%` : ''}`;
-      }).join('\n');
-      
-      return `👥 **"${courseObj.course_name || courseObj.name}" Enrollments** (${enrollments.length} users)\n\n${userList}${enrollments.length > 10 ? `\n\n... and ${enrollments.length - 10} more users` : ''}`;
-    }
-  },
-  {
-    name: 'search_users',
-    description: 'Search for users',
-    examples: [
-      'Find user john@company.com',
-      'Search for users named Smith',
-      'Look up sarah@test.com'
-    ],
-    pattern: (msg) => {
-      const lower = msg.toLowerCase();
-      return (lower.includes('find user') || 
-              lower.includes('search user') ||
-              lower.includes('look up') ||
-              lower.includes('search for users')) &&
-             !lower.includes('courses');
-    },
-    requiredFields: ['email'],
-    execute: async (api, { email }) => {
-      if (!email) {
-        throw new Error('Search term is required');
-      }
-
-      const users = await api.searchUsers(email, 10);
-      
-      if (users.length === 0) {
-        return `👥 **No Users Found**: No users match "${email}"`;
-      }
-
-      const userList = users.slice(0, 5).map((user: DoceboUser, i: number) => {
-        const statusIcon = user.status === 'active' ? '✅' : '❌';
-        return `${i + 1}. ${statusIcon} ${user.fullname} (${user.email}) - ${user.status}`;
-      }).join('\n');
-      
-      return `👥 **User Search Results**: Found ${users.length} users\n\n${userList}${users.length > 5 ? `\n\n... and ${users.length - 5} more users` : ''}`;
-    }
-  },
-  {
-    name: 'search_courses',
-    description: 'Search for courses',
-    examples: [
-      'Find Python courses',
-      'Search for Excel training',
-      'Look up SQL courses'
-    ],
-    pattern: (msg) => {
-      const lower = msg.toLowerCase();
-      return (lower.includes('find') && lower.includes('course')) ||
-             (lower.includes('search') && lower.includes('course')) ||
-             (lower.includes('look up') && lower.includes('course')) ||
-             lower.includes('python') ||
-             lower.includes('javascript') ||
-             lower.includes('excel') ||
-             lower.includes('sql');
-    },
-    requiredFields: ['course'],
-    execute: async (api, { course }) => {
-      if (!course) {
-        throw new Error('Course search term is required');
-      }
-
-      const courses = await api.searchCourses(course, 10);
-      
-      if (courses.length === 0) {
-        return `📚 **No Courses Found**: No courses match "${course}"`;
-      }
-
-      const courseList = courses.slice(0, 5).map((courseItem: DoceboCourse, i: number) => {
-        const courseName = courseItem.course_name || courseItem.name || 'Unknown Course';
-        const courseType = courseItem.course_type || 'Unknown';
-        const statusIcon = courseItem.status === 'active' ? '✅' : '❌';
-        return `${i + 1}. ${statusIcon} ${courseName} (${courseType})`;
-      }).join('\n');
-      
-      return `📚 **Course Search Results**: Found ${courses.length} courses\n\n${courseList}${courses.length > 5 ? `\n\n... and ${courses.length - 5} more courses` : ''}`;
-    }
-  }
-];
-
-// Command parser with improved extraction
-function parseCommand(message: string): { action: ActionHandler | null; params: ParsedParams; missing: string[] } {
-  // Extract email
-  const emailMatch = message.match(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/);
-  
-  // Find matching action
-  const action = ACTION_REGISTRY.find(a => a.pattern(message));
-  
-  if (!action) {
-    return { action: null, params: {}, missing: [] };
-  }
-
-  const params: ParsedParams = {};
-  const missing: string[] = [];
-
-  // Parse email
-  if (action.requiredFields.includes('email')) {
-    if (emailMatch) {
-      params.email = emailMatch[0];
-    } else {
-      // Try to extract name-like patterns
-      const namePatterns = [
-        /(?:user|find|search)\s+([A-Za-z\s]+?)(?:\s|$)/i,
-        /for\s+([A-Za-z\s]+?)(?:\s|$)/i
-      ];
-      
-      for (const pattern of namePatterns) {
-        const match = message.match(pattern);
-        if (match && match[1] && match[1].trim().length > 2) {
-          params.email = match[1].trim();
-          break;
-        }
-      }
-      
-      if (!params.email) {
-        missing.push('email address or user name');
-      }
+    } catch (error) {
+      return { success: false, message: `Enrollment error: ${error instanceof Error ? error.message : 'Unknown error'}` };
     }
   }
 
-  // Parse course name
-  if (action.requiredFields.includes('course')) {
-    let course = '';
-    
-    // Different extraction patterns for different action types
-    if (message.toLowerCase().includes('show') || message.toLowerCase().includes('list')) {
-      const showPatterns = [
-        /show\s+(.+?)\s+enrollments/i,
-        /list\s+enrolled\s+users?\s+in\s+(.+)/i,
-        /list\s+users\s+in\s+(.+)/i,
-        /show\s+(.+)/i,
-        /list\s+(.+)/i
-      ];
-      
-      for (const pattern of showPatterns) {
-        const match = message.match(pattern);
-        if (match && match[1]) {
-          course = match[1].trim();
-          course = course.replace(/\b(courses?|for|enrollments?|enrolled|users?|training)\b/gi, '').trim();
-          break;
-        }
-      }
-    } else if (message.toLowerCase().includes('find') || message.toLowerCase().includes('search')) {
-      const searchPatterns = [
-        /find\s+(.+?)\s+courses?/i,
-        /search\s+for\s+(.+?)\s+courses?/i,
-        /look\s+up\s+(.+?)\s+courses?/i,
-        /find\s+(.+)/i,
-        /search\s+(.+)/i
-      ];
-      
-      for (const pattern of searchPatterns) {
-        const match = message.match(pattern);
-        if (match && match[1]) {
-          course = match[1].trim();
-          course = course.replace(/\b(courses?|training|class|program)\b/gi, '').trim();
-          break;
-        }
-      }
-    } else {
-      // Enrollment patterns
-      const enrollPatterns = [
-        /(?:in|to)\s+([^(as|due|level|with)]+?)(?:\s+(?:as|due|level|with)|$)/i,
-        /"([^"]+)"/,
-        /(?:enroll|add).*?(?:in|to)\s+([^(as|due|level|with)]+?)(?:\s+(?:as|due|level|with)|$)/i
-      ];
-      
-      for (const pattern of enrollPatterns) {
-        const match = message.match(pattern);
-        if (match && match[1]) {
-          course = match[1].trim();
-          break;
-        }
-      }
-    }
-    
-    if (course && course.length > 2) {
-      params.course = course;
-    } else {
-      missing.push('course name');
-    }
+  getCourseId(course: any): string | null {
+    return course.id_course || course.course_id || course.idCourse || course.id || null;
   }
-
-  // Parse optional parameters
-  const levelMatch = message.match(/level\s+(\d+)/i);
-  if (levelMatch) {
-    params.level = levelMatch[1];
-  }
-
-  const dueDateMatch = message.match(/due\s+(\d{4}-\d{2}-\d{2})/i) || 
-                      message.match(/by\s+(\d{4}-\d{2}-\d{2})/i);
-  if (dueDateMatch) {
-    params.dueDate = dueDateMatch[1];
-  }
-
-  const assignmentMatch = message.match(/\bas\s+(mandatory|required|recommended|optional)/i);
-  if (assignmentMatch) {
-    params.assignmentType = assignmentMatch[1].toLowerCase();
-  }
-
-  return { action, params, missing };
 }
 
-// Initialize API client with error handling
-let api: DoceboAPI;
-try {
-  const config = getConfig();
-  api = new DoceboAPI(config.docebo);
-} catch (error) {
-  console.error('❌ Failed to initialize Docebo API:', error);
-  // Don't throw here, let individual requests handle the error
+// Command patterns
+const PATTERNS = {
+  enroll: (msg: string) => {
+    const lower = msg.toLowerCase();
+    return (lower.includes('enroll ') || lower.includes('add ')) && !lower.includes('unenroll');
+  },
+  userCourses: (msg: string) => {
+    const lower = msg.toLowerCase();
+    return lower.includes('what courses') || (lower.includes('courses') && lower.includes('enrolled'));
+  },
+  courseUsers: (msg: string) => {
+    const lower = msg.toLowerCase();
+    return lower.includes('who is enrolled');
+  },
+  searchUsers: (msg: string) => {
+    const lower = msg.toLowerCase();
+    return lower.includes('find user') || lower.includes('search user');
+  },
+  searchCourses: (msg: string) => {
+    const lower = msg.toLowerCase();
+    return lower.includes('find') && lower.includes('course');
+  }
+};
+
+// Simple parsers
+function extractEmail(message: string): string | null {
+  const match = message.match(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/);
+  return match ? match[0] : null;
 }
 
-export async function POST(request: NextRequest): Promise<NextResponse<APIResponse>> {
+function extractCourse(message: string): string | null {
+  // Try quoted strings first
+  const quotedMatch = message.match(/"([^"]+)"/);
+  if (quotedMatch) return quotedMatch[1];
+  
+  // Try "in [course]" pattern
+  const inMatch = message.match(/\bin\s+([^(as|due|level)]+?)(?:\s+(?:as|due|level)|$)/i);
+  if (inMatch) return inMatch[1].trim();
+  
+  // Try "enrolled in [course]" pattern
+  const enrolledMatch = message.match(/enrolled\s+in\s+(.+?)(?:\?|$)/i);
+  if (enrolledMatch) return enrolledMatch[1].trim();
+  
+  return null;
+}
+
+// Initialize API
+let api: SimpleDoceboAPI;
+
+export async function POST(request: NextRequest) {
   try {
-    // Initialize API if not already done
+    // Initialize API if needed
     if (!api) {
-      try {
-        const config = getConfig();
-        api = new DoceboAPI(config.docebo);
-      } catch (error) {
-        return NextResponse.json({
-          response: '❌ **Configuration Error**: Missing or invalid environment variables. Please check your Docebo configuration.',
-          success: false,
-          error: 'Configuration error',
-          timestamp: new Date().toISOString()
-        }, { status: 500 });
-      }
+      const config = getConfig();
+      api = new SimpleDoceboAPI(config);
     }
 
     const body = await request.json();
@@ -515,147 +251,182 @@ export async function POST(request: NextRequest): Promise<NextResponse<APIRespon
     
     if (!message || typeof message !== 'string') {
       return NextResponse.json({
-        response: '❌ **Invalid Request**: Message is required and must be a string',
+        response: 'Please provide a valid message',
         success: false,
-        error: 'Message is required',
         timestamp: new Date().toISOString()
       }, { status: 400 });
     }
 
-    // Basic security validation
-    if (message.includes('<script>') || message.includes('javascript:')) {
-      return NextResponse.json({
-        response: '❌ **Security Error**: Message contains potentially harmful content',
-        success: false,
-        error: 'Potentially harmful content detected',
-        timestamp: new Date().toISOString()
-      }, { status: 400 });
-    }
-
-    console.log(`🤖 Processing: "${message}"`);
+    console.log(`Processing: "${message}"`);
     
-    const { action, params, missing } = parseCommand(message);
-
-    // No action found - show help
-    if (!action) {
-      const response = `🎯 **Docebo Assistant - Phase 1 MVP**
-
-**Available Commands**:
-${ACTION_REGISTRY.map(a => `• **${a.description}**\n  Example: "${a.examples[0]}"`).join('\n\n')}
-
-💡 **Tip**: Use natural language like the examples above!`;
+    // Parse message
+    const email = extractEmail(message);
+    const course = extractCourse(message);
+    
+    // Route to appropriate handler
+    if (PATTERNS.enroll(message)) {
+      if (!email || !course) {
+        return NextResponse.json({
+          response: 'For enrollment, I need both an email address and course name.\n\nExample: "Enroll john@company.com in Python Programming"',
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      // Find user and course
+      const users = await api.searchUsers(email, 5);
+      const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+      
+      if (!user) {
+        return NextResponse.json({
+          response: `User not found: ${email}`,
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      const courses = await api.searchCourses(course, 10);
+      const courseObj = courses.find(c => 
+        (c.course_name || c.name || '').toLowerCase().includes(course.toLowerCase())
+      );
+      
+      if (!courseObj) {
+        return NextResponse.json({
+          response: `Course not found: ${course}`,
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      const courseId = api.getCourseId(courseObj);
+      if (!courseId) {
+        return NextResponse.json({
+          response: 'Course found but missing ID',
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      const result = await api.enrollUser(user.user_id, courseId);
       
       return NextResponse.json({
-        response,
-        success: false,
-        action: 'help',
-        available_actions: ACTION_REGISTRY.map(a => ({
-          name: a.name,
-          description: a.description,
-          examples: a.examples,
-          required_fields: a.requiredFields
-        })),
+        response: result.success 
+          ? `✅ Successfully enrolled ${user.fullname} in ${courseObj.course_name || courseObj.name}`
+          : `❌ Enrollment failed: ${result.message}`,
+        success: result.success,
         timestamp: new Date().toISOString()
       });
-    }
-
-    // Missing required fields
-    if (missing.length > 0) {
-      const response = `❌ **Missing Information**: I need the following to ${action.description}:\n\n${missing.map(m => `• ${m}`).join('\n')}\n\n**Example**: "${action.examples[0]}"`;
+      
+    } else if (PATTERNS.userCourses(message)) {
+      if (!email) {
+        return NextResponse.json({
+          response: 'I need an email address to check enrollments.\n\nExample: "What courses is john@company.com enrolled in?"',
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      const users = await api.searchUsers(email, 5);
+      const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+      
+      if (!user) {
+        return NextResponse.json({
+          response: `User not found: ${email}`,
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      const enrollments = await api.getUserEnrollments(user.user_id);
+      
+      if (enrollments.length === 0) {
+        return NextResponse.json({
+          response: `${user.fullname} is not enrolled in any courses.`,
+          success: true,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      const courseList = enrollments.slice(0, 10).map((e, i) => 
+        `${i + 1}. ${e.course_name || e.name || 'Unknown Course'}`
+      ).join('\n');
       
       return NextResponse.json({
-        response,
-        success: false,
-        action: action.name,
-        missing_fields: missing,
-        examples: action.examples,
+        response: `${user.fullname}'s Courses (${enrollments.length} total):\n\n${courseList}`,
+        success: true,
         timestamp: new Date().toISOString()
       });
-    }
-
-    // Execute the action
-    try {
-      const response = await action.execute(api, params);
+      
+    } else if (PATTERNS.courseUsers(message)) {
+      if (!course) {
+        return NextResponse.json({
+          response: 'I need a course name to check enrollments.\n\nExample: "Who is enrolled in Python Programming?"',
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      const courses = await api.searchCourses(course, 10);
+      const courseObj = courses.find(c => 
+        (c.course_name || c.name || '').toLowerCase().includes(course.toLowerCase())
+      );
+      
+      if (!courseObj) {
+        return NextResponse.json({
+          response: `Course not found: ${course}`,
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      const courseId = api.getCourseId(courseObj);
+      if (!courseId) {
+        return NextResponse.json({
+          response: 'Course found but missing ID',
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      const enrollments = await api.getCourseEnrollments(courseId);
       
       return NextResponse.json({
-        response,
-        success: !response.includes('❌'),
-        action: action.name,
-        params: params,
+        response: `"${courseObj.course_name || courseObj.name}" has ${enrollments.length} enrolled users`,
+        success: true,
         timestamp: new Date().toISOString()
       });
       
-    } catch (error) {
-      console.error(`❌ Action ${action.name} failed:`, error);
-      
-      const errorResponse = `❌ **${action.description} Failed**: ${error instanceof Error ? error.message : 'Unknown error'}\n\nPlease try again or contact support.`;
-      
+    } else {
       return NextResponse.json({
-        response: errorResponse,
+        response: `I can help you with:
+
+• Enroll users: "Enroll john@company.com in Python Programming"
+• Check user courses: "What courses is sarah@test.com enrolled in?"
+• Check course enrollments: "Who is enrolled in Excel Training?"
+• Find users: "Find user mike@company.com"
+• Find courses: "Find Python courses"
+
+What would you like to do?`,
         success: false,
-        action: action.name,
-        error: error instanceof Error ? error.message : 'Unknown error',
         timestamp: new Date().toISOString()
       });
     }
 
   } catch (error) {
-    console.error('❌ Chat API error:', error);
+    console.error('Chat error:', error);
     
     return NextResponse.json({
-      response: `❌ **System Error**: ${error instanceof Error ? error.message : 'Unknown error'}\n\nPlease try again or contact support.`,
+      response: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
       timestamp: new Date().toISOString()
     }, { status: 500 });
   }
 }
 
-export async function GET(): Promise<NextResponse> {
-  try {
-    // Test API connectivity if possible
-    let healthStatus = { status: 'unknown', timestamp: new Date() };
-    
-    if (api) {
-      try {
-        healthStatus = await api.healthCheck();
-      } catch (error) {
-        console.warn('Health check failed:', error);
-      }
-    }
-    
-    return NextResponse.json({
-      status: 'Docebo Chat API - Phase 1 MVP Ready',
-      version: '1.0.0',
-      health: healthStatus,
-      features: [
-        'Natural language enrollment management',
-        'User and course search',
-        'Enrollment status checking',
-        'Real-time Docebo integration'
-      ],
-      available_actions: ACTION_REGISTRY.map(action => ({
-        name: action.name,
-        description: action.description,
-        examples: action.examples,
-        required_fields: action.requiredFields
-      })),
-      examples: [
-        "Enroll john@company.com in Python Programming",
-        "Enroll sarah@test.com in Excel Training as mandatory", 
-        "Add mike@company.com to SQL course as optional due 2025-12-31",
-        "What courses is john@company.com enrolled in?",
-        "Who is enrolled in Leadership Training?",
-        "Find user sarah@test.com",
-        "Search for Python courses"
-      ],
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    return NextResponse.json({
-      status: 'Docebo Chat API - Configuration Error',
-      error: error instanceof Error ? error.message : 'Unknown error',
-      timestamp: new Date().toISOString()
-    }, { status: 500 });
-  }
+export async function GET() {
+  return NextResponse.json({
+    status: 'Docebo Chat API - Ready',
+    version: '1.0.0',
+    timestamp: new Date().toISOString()
+  });
 }
