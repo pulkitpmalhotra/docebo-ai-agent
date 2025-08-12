@@ -203,13 +203,12 @@ class OptimizedDoceboAPI {
     return [];
   }
 
-  // Optimized enrollment methods
+  // Fixed enrollment methods - remove enrolled_at field
   async enrollUser(userId: string, courseId: string, options: {
     level?: string;
     dateBeginValidity?: string;
     dateExpireValidity?: string;
     assignmentType?: string;
-    enrolledAt?: string;
   } = {}): Promise<{ success: boolean; message: string }> {
     try {
       const enrollmentBody = {
@@ -218,9 +217,11 @@ class OptimizedDoceboAPI {
         level: options.level || "3",
         date_begin_validity: options.dateBeginValidity,
         date_expire_validity: options.dateExpireValidity,
-        assignment_type: options.assignmentType || "mandatory",
-        enrolled_at: options.enrolledAt || new Date().toISOString().split('T')[0]
+        assignment_type: options.assignmentType || "mandatory"
+        // REMOVED: enrolled_at field that was causing 400 error
       };
+
+      console.log('📡 Enrollment request body:', JSON.stringify(enrollmentBody, null, 2));
 
       const response = await fetch(`${this.baseUrl}/learn/v1/enrollments`, {
         method: 'POST',
@@ -232,12 +233,16 @@ class OptimizedDoceboAPI {
       });
       
       if (response.ok) {
+        const result = await response.json();
+        console.log('✅ Enrollment successful:', result);
         return { success: true, message: `Successfully enrolled user in course` };
       } else {
         const errorText = await response.text();
+        console.log('❌ Enrollment failed:', errorText);
         return { success: false, message: `Enrollment failed: ${response.status} - ${errorText}` };
       }
     } catch (error) {
+      console.log('❌ Enrollment error:', error);
       return { success: false, message: `Enrollment error: ${error instanceof Error ? error.message : 'Unknown error'}` };
     }
   }
@@ -247,7 +252,6 @@ class OptimizedDoceboAPI {
     dateBeginValidity?: string;
     dateExpireValidity?: string;
     assignmentType?: string;
-    enrolledAt?: string;
   } = {}): Promise<{ success: boolean; message: string; details?: any }> {
     try {
       const enrollmentBody = {
@@ -256,11 +260,12 @@ class OptimizedDoceboAPI {
         level: options.level || "3",
         date_begin_validity: options.dateBeginValidity,
         date_expire_validity: options.dateExpireValidity,
-        assignment_type: options.assignmentType || "mandatory",
-        enrolled_at: options.enrolledAt || new Date().toISOString().split('T')[0]
+        assignment_type: options.assignmentType || "mandatory"
+        // REMOVED: enrolled_at field
       };
 
       console.log(`📡 Bulk enrolling ${userIds.length} users in ${courseIds.length} courses...`);
+      console.log('📡 Request body:', JSON.stringify(enrollmentBody, null, 2));
 
       const response = await fetch(`${this.baseUrl}/learn/v1/enrollments`, {
         method: 'POST',
@@ -292,7 +297,6 @@ class OptimizedDoceboAPI {
     dateBeginValidity?: string;
     dateExpireValidity?: string;
     assignmentType?: string;
-    enrolledAt?: string;
   } = {}): Promise<{ success: boolean; message: string; details?: any }> {
     try {
       const enrollmentBody = {
@@ -301,8 +305,8 @@ class OptimizedDoceboAPI {
         level: options.level || "3",
         date_begin_validity: options.dateBeginValidity,
         date_expire_validity: options.dateExpireValidity,
-        assignment_type: options.assignmentType || "mandatory",
-        enrolled_at: options.enrolledAt || new Date().toISOString().split('T')[0]
+        assignment_type: options.assignmentType || "mandatory"
+        // REMOVED: enrolled_at field
       };
 
       const response = await fetch(`${this.baseUrl}/learn/v1/enrollments`, {
@@ -389,13 +393,13 @@ const ACTION_REGISTRY: ActionHandler[] = [
       const options = {
         level: level || "3",
         dateExpireValidity: dueDate,
-        assignmentType: assignmentType || "mandatory",
-        enrolledAt: new Date().toISOString().split('T')[0]
+        assignmentType: assignmentType || "mandatory"
+        // REMOVED: enrolledAt field
       };
 
       const result = await api.enrollUser(user.user_id, courseObj.course_id || courseObj.idCourse, options);
       if (result.success) {
-        return `✅ **Enrollment Successful**\n\n**User**: ${user.fullname} (${user.email})\n**Course**: ${courseObj.course_name || courseObj.name}\n**Level**: ${options.level}\n**Assignment**: ${options.assignmentType}\n**Enrolled**: ${options.enrolledAt}${options.dateExpireValidity ? `\n**Due Date**: ${options.dateExpireValidity}` : ''}\n\n🎯 User will receive notification and can access immediately.`;
+        return `✅ **Enrollment Successful**\n\n**User**: ${user.fullname} (${user.email})\n**Course**: ${courseObj.course_name || courseObj.name}\n**Level**: ${options.level}\n**Assignment**: ${options.assignmentType}${options.dateExpireValidity ? `\n**Due Date**: ${options.dateExpireValidity}` : ''}\n\n🎯 User will receive notification and can access immediately.`;
       } else {
         return `❌ **Enrollment Failed**\n\n**Issue**: ${result.message}`;
       }
@@ -445,8 +449,8 @@ const ACTION_REGISTRY: ActionHandler[] = [
       const options = {
         level: level || "3",
         dateExpireValidity: dueDate,
-        assignmentType: assignmentType || "mandatory",
-        enrolledAt: new Date().toISOString().split('T')[0]
+        assignmentType: assignmentType || "mandatory"
+        // REMOVED: enrolledAt field
       };
 
       const result = await api.enrollBulkUsers(userIds, courseIds, options);
@@ -555,7 +559,7 @@ const ACTION_REGISTRY: ActionHandler[] = [
   }
 ];
 
-// Enhanced command parser
+// Enhanced command parser with better course name extraction
 function parseCommand(message: string): { action: ActionHandler | null; params: any; missing: string[] } {
   const email = message.match(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/)?.[0];
   
@@ -586,20 +590,39 @@ function parseCommand(message: string): { action: ActionHandler | null; params: 
     }
   }
 
-  // Parse course(s)
+  // IMPROVED: Better course name parsing
   if (action.requiredFields.includes('course') || action.requiredFields.includes('courses')) {
-    const coursePattern = /(?:in|to|course[s]?)\s+([^.!?]+)/i;
-    const quotedPattern = /"([^"]+)"/;
+    let course = '';
     
-    let course = message.match(quotedPattern)?.[1] || 
-                message.match(coursePattern)?.[1]?.trim();
+    // Try different patterns to extract course name
+    const patterns = [
+      // Pattern 1: "in Course Name"
+      /(?:in|to)\s+([^(as|due|level|with)]+?)(?:\s+(?:as|due|level|with)|$)/i,
+      // Pattern 2: "Course Name" (quoted)
+      /"([^"]+)"/,
+      // Pattern 3: After action words, before options
+      /(?:enroll|add).*?(?:in|to)\s+([^(as|due|level|with)]+?)(?:\s+(?:as|due|level|with)|$)/i
+    ];
     
+    for (const pattern of patterns) {
+      const match = message.match(pattern);
+      if (match && match[1]) {
+        course = match[1].trim();
+        break;
+      }
+    }
+    
+    // If no pattern matched, try extracting after removing emails and common words
     if (!course) {
       course = message
-        .replace(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g, '')
-        .replace(/enroll|in|to|find|course|who|is|enrolled|show|add|bulk|multiple/gi, '')
+        .replace(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g, '') // Remove emails
+        .replace(/^(enroll|add|bulk|multiple)/gi, '') // Remove action words
+        .replace(/\s+(as|due|level|with)\s+.*/gi, '') // Remove options
+        .replace(/\s+(in|to)\s+/gi, ' ') // Remove prepositions
         .trim();
     }
+    
+    console.log(`🔍 Extracted course name: "${course}" from message: "${message}"`);
     
     if (course && course.length > 2) {
       if (course.includes(',')) {
@@ -625,7 +648,7 @@ function parseCommand(message: string): { action: ActionHandler | null; params: 
     params.dueDate = dueDateMatch[1];
   }
 
-  const assignmentMatch = message.match(/(mandatory|optional)/i);
+  const assignmentMatch = message.match(/\bas\s+(mandatory|optional)/i);
   if (assignmentMatch) {
     params.assignmentType = assignmentMatch[1].toLowerCase();
   }
