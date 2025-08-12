@@ -72,9 +72,31 @@ export default function DoceboChat() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  
+  // Add a ref to track if component is mounted
+  const isMountedRef = useRef(true);
+  
+  // Add AbortController ref for canceling requests
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    // Set mounted flag to true on mount
+    isMountedRef.current = true;
+    
+    // Cleanup function to set mounted flag to false on unmount
+    return () => {
+      isMountedRef.current = false;
+      // Cancel any ongoing requests
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isMountedRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [messages]);
 
   // Safe text formatting function
@@ -106,7 +128,7 @@ export default function DoceboChat() {
   };
 
   const sendMessage = async (messageText: string) => {
-    if (!messageText.trim() || loading) return;
+    if (!messageText.trim() || loading || !isMountedRef.current) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -115,22 +137,39 @@ export default function DoceboChat() {
       timestamp: new Date(),
     };
 
-    setMessages(prev => [...prev, userMessage]);
-    setLoading(true);
-    setInput('');
+    // Only update state if component is still mounted
+    if (isMountedRef.current) {
+      setMessages(prev => [...prev, userMessage]);
+      setLoading(true);
+      setInput('');
+    }
+
+    // Create new AbortController for this request
+    abortControllerRef.current = new AbortController();
 
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: messageText }),
+        signal: abortControllerRef.current.signal, // Add abort signal
       });
+
+      // Check if component is still mounted before processing response
+      if (!isMountedRef.current) {
+        return; // Exit early if component unmounted
+      }
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
       const data = await response.json();
+      
+      // Double-check mounted status before updating state
+      if (!isMountedRef.current) {
+        return;
+      }
       
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
@@ -145,6 +184,17 @@ export default function DoceboChat() {
       setMessages(prev => [...prev, assistantMessage]);
 
     } catch (error) {
+      // Check if the error is due to abort (user navigated away)
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.log('Request was aborted');
+        return; // Don't show error message for aborted requests
+      }
+
+      // Only update state if component is still mounted
+      if (!isMountedRef.current) {
+        return;
+      }
+
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         content: `Connection Error: ${error instanceof Error ? error.message : 'Network error'}. Check your internet connection and try again.`,
@@ -156,12 +206,18 @@ export default function DoceboChat() {
       
       setMessages(prev => [...prev, errorMessage]);
     } finally {
-      setLoading(false);
+      // Only update loading state if component is still mounted
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
+      abortControllerRef.current = null;
     }
   };
 
   const handleQuickAction = (example: string) => {
-    setInput(example);
+    if (isMountedRef.current) {
+      setInput(example);
+    }
   };
 
   const handleSubmit = (e?: React.FormEvent) => {
@@ -287,7 +343,11 @@ export default function DoceboChat() {
             React.createElement('input', {
               type: 'text',
               value: input,
-              onChange: (e) => setInput(e.target.value),
+              onChange: (e) => {
+                if (isMountedRef.current) {
+                  setInput(e.target.value);
+                }
+              },
               onKeyPress: handleKeyPress,
               placeholder: 'Type your command... (e.g., \'Enroll john@company.com in Python\')',
               className: 'flex-1 p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed',
