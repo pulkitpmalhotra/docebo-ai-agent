@@ -1,5 +1,4 @@
-// lib/docebo-api-fixed.ts - Production-ready Docebo API Client
-import { config } from './config/environment';
+// lib/docebo-api-fixed.ts - Simplified Docebo API Client for Vercel deployment
 
 export interface DoceboConfig {
   domain: string;
@@ -87,13 +86,12 @@ export class DoceboAPI {
   private readonly maxRetries = 3;
   private readonly retryDelay = 1000;
 
-  constructor(doceboConfig?: DoceboConfig) {
-    this.config = doceboConfig || config.docebo;
+  constructor(doceboConfig: DoceboConfig) {
+    this.config = doceboConfig;
     this.baseUrl = `https://${this.config.domain}`;
     
     console.log('🔗 Docebo API Client initialized');
     console.log('🌐 Domain:', this.config.domain);
-    console.log('👤 Username:', this.config.username);
   }
 
   private async getAccessToken(): Promise<string> {
@@ -144,7 +142,6 @@ export class DoceboAPI {
           throw new Error(`Failed to obtain access token after ${this.maxRetries} attempts: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
         
-        // Wait before retry
         await new Promise(resolve => setTimeout(resolve, this.retryDelay * attempt));
       }
     }
@@ -161,7 +158,6 @@ export class DoceboAPI {
     
     const token = await this.getAccessToken();
     
-    // Build URL with query parameters
     let url = `${this.baseUrl}${endpoint}`;
     if (params && Object.keys(params).length > 0) {
       const queryParams = new URLSearchParams();
@@ -180,7 +176,6 @@ export class DoceboAPI {
       'Accept': 'application/json',
     };
 
-    // Only add Content-Type for POST/PUT requests with body
     if ((method === 'POST' || method === 'PUT') && body) {
       headers['Content-Type'] = 'application/json';
     }
@@ -196,7 +191,6 @@ export class DoceboAPI {
         const responseText = await response.text();
         
         if (!response.ok) {
-          // If 401, clear token and retry once
           if (response.status === 401 && attempt === 1) {
             console.log('🔄 Token expired, retrying...');
             this.accessToken = undefined;
@@ -209,7 +203,6 @@ export class DoceboAPI {
           throw new Error(`Docebo API error: ${response.status} ${response.statusText} - ${responseText}`);
         }
 
-        // Parse JSON response
         let result;
         try {
           result = JSON.parse(responseText);
@@ -228,7 +221,6 @@ export class DoceboAPI {
           throw error;
         }
         
-        // Wait before retry
         await new Promise(resolve => setTimeout(resolve, this.retryDelay * attempt));
       }
     }
@@ -236,7 +228,6 @@ export class DoceboAPI {
     throw new Error('API request failed after retries');
   }
 
-  // User Management Methods
   async getUsers(params: {
     page?: number;
     page_size?: number;
@@ -282,7 +273,6 @@ export class DoceboAPI {
     return result.data;
   }
 
-  // Course Management Methods
   async getCourses(params: {
     page?: number;
     page_size?: number;
@@ -317,7 +307,6 @@ export class DoceboAPI {
     return result.data;
   }
 
-  // Enrollment Methods
   async getUserEnrollments(userId: string): Promise<DoceboEnrollment[]> {
     try {
       const result = await this.apiRequest<DoceboApiListResponse<DoceboEnrollment>>(`/learn/v1/enrollments/users/${userId}`);
@@ -355,12 +344,10 @@ export class DoceboAPI {
         send_notification: false
       };
 
-      // Only add assignment_type if it's a valid value
       if (options.assignmentType && options.assignmentType !== "none") {
         enrollmentBody.assignment_type = options.assignmentType;
       }
 
-      // Remove undefined fields
       Object.keys(enrollmentBody).forEach(key => {
         if (enrollmentBody[key] === undefined) {
           delete enrollmentBody[key];
@@ -408,7 +395,6 @@ export class DoceboAPI {
     }
   }
 
-  // Health Check
   async healthCheck(): Promise<{status: string, timestamp: Date, api_version?: string}> {
     try {
       const result = await this.getUsers({ page_size: 1 });
@@ -425,7 +411,6 @@ export class DoceboAPI {
     }
   }
 
-  // Utility method to get the correct course ID from course object
   getCourseId(course: DoceboCourse): string | null {
     return course.id_course || course.course_id || course.idCourse || course.id || null;
   }
