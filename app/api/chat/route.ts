@@ -422,6 +422,22 @@ class OptimizedDoceboAPI {
       debugInfo.requestBody = enrollmentBody;
       debugInfo.requestUrl = `${this.baseUrl}/learn/v1/enrollments`;
       debugInfo.requestMethod = 'POST';
+      debugInfo.requestHeaders = {
+        'Authorization': 'Bearer [TOKEN]',
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      };
+
+      // Log the exact request for comparison
+      console.log('📡 EXACT ENROLLMENT REQUEST:');
+      console.log('URL:', `${this.baseUrl}/learn/v1/enrollments`);
+      console.log('Method: POST');
+      console.log('Headers:', {
+        'Authorization': `Bearer ${token?.substring(0, 20)}...`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      });
+      console.log('Body:', JSON.stringify(enrollmentBody, null, 2));
 
       // DEBUG STEP 6: Make enrollment request
       debugInfo.steps.push("🚀 Making enrollment request...");
@@ -445,6 +461,12 @@ class OptimizedDoceboAPI {
 
       const responseText = await response.text();
       debugInfo.rawResponse = responseText;
+      
+      // Log the exact response for comparison
+      console.log('📨 EXACT ENROLLMENT RESPONSE:');
+      console.log('Status:', response.status);
+      console.log('Headers:', Object.fromEntries(response.headers.entries()));
+      console.log('Body:', responseText);
       
       if (response.ok) {
         let result;
@@ -488,12 +510,35 @@ class OptimizedDoceboAPI {
             debugInfo.steps.push("❌ ENROLLMENT FAILED - No users enrolled");
             debugInfo.analysis = [
               "API accepted request but didn't enroll anyone",
+              "🔍 COMPARISON WITH WORKING API BROWSER CALL:",
+              "",
+              "WORKING REQUEST (API Browser):",
+              '{',
+              '  "course_ids": ["997"],',
+              '  "user_ids": ["13163"],',
+              '  "level": "3",',
+              '  "date_expire_validity": "2025-12-31",',
+              '  "assignment_type": "mandatory",',
+              '  "send_notification": false',
+              '}',
+              "",
+              "YOUR APP REQUEST:",
+              JSON.stringify(enrollmentBody, null, 2),
+              "",
+              "🔍 REQUEST DIFFERENCES:",
+              `- URL: ${debugInfo.requestUrl}`,
+              `- Headers: ${JSON.stringify(debugInfo.requestHeaders)}`,
+              "",
+              "🔍 RESPONSE COMPARISON:",
+              "Working Response: {\"data\":{\"enrolled\":[{\"id_user\":13163,\"id_course\":997,\"waiting\":false}],\"errors\":[]}}",
+              `Your Response: ${responseText}`,
+              "",
               "Common causes:",
-              "- Course enrollment rules blocking user",
-              "- User doesn't meet prerequisites", 
-              "- Course is not published/active",
-              "- User permissions insufficient",
-              "- Course has enrollment restrictions"
+              "- Different API token permissions",
+              "- Course enrollment rules checking token user",
+              "- Timing/session differences",
+              "- Course status changed since API browser test",
+              "- User enrollment status changed"
             ];
             return { 
               success: false, 
@@ -1070,7 +1115,66 @@ ${debugInfo.enrollmentVerification.enrolled ? '✅ User is enrolled' : '❌ User
       });
     }
 
-    // Test enrollment with hardcoded working values
+    // Test enrollment with exact same request as API browser
+    if (message.toLowerCase().includes('test exact api browser request')) {
+      const EXACT_WORKING_BODY = {
+        "course_ids": ["997"],
+        "user_ids": ["13163"],
+        "level": "3",
+        "date_expire_validity": "2025-12-31",
+        "assignment_type": "mandatory",
+        "send_notification": false
+      };
+
+      try {
+        const token = await api.getToken();
+        const response = await fetch(`${api.getBaseUrl()}/learn/v1/enrollments`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          body: JSON.stringify(EXACT_WORKING_BODY)
+        });
+
+        const responseText = await response.text();
+        let result;
+        try {
+          result = JSON.parse(responseText);
+        } catch (e) {
+          result = { raw: responseText };
+        }
+
+        return NextResponse.json({
+          response: `🧪 **Exact API Browser Request Test**
+
+**Request**: ${JSON.stringify(EXACT_WORKING_BODY, null, 2)}
+
+**Response Status**: ${response.status}
+**Response Body**: ${responseText}
+
+**Enrolled Count**: ${result.data?.enrolled?.length || 0}
+**Errors Count**: ${result.data?.errors?.length || 0}
+
+**Result**: ${result.data?.enrolled?.length > 0 ? '✅ SUCCESS' : '❌ FAILED'}
+
+**Analysis**: ${result.data?.enrolled?.length > 0 ? 
+  'The exact same request works from your app!' : 
+  'Even the exact API browser request fails from your app - this suggests a token/permission difference'}`,
+          success: result.data?.enrolled?.length > 0,
+          details: result,
+          timestamp: new Date().toISOString()
+        });
+      } catch (error) {
+        return NextResponse.json({
+          response: `❌ **Test Failed**: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error',
+          timestamp: new Date().toISOString()
+        });
+      }
+    }
     if (message.toLowerCase().includes('test working enrollment')) {
       const result = await api.enrollUser("13163", "997", {
         level: "3",
