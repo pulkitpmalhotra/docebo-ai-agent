@@ -14,10 +14,6 @@ const nextConfig = {
   },
   // Optimize for deployment
   swcMinify: true,
-  // Environment variables that should be available on client side
-  env: {
-    CUSTOM_KEY: process.env.CUSTOM_KEY,
-  },
   // Headers for API routes
   async headers() {
     return [
