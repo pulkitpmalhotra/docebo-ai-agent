@@ -1,7 +1,7 @@
-// app/api/chat/route.ts - Simple, Fast, Working Chat
+// app/api/chat/route.ts - Clean, working version
 import { NextRequest, NextResponse } from 'next/server';
 
-// Super simple Docebo API client that actually works
+// Simple Docebo API client
 class SimpleDoceboAPI {
   private config: any;
   private accessToken?: string;
@@ -60,7 +60,7 @@ class SimpleDoceboAPI {
     return await response.json();
   }
 
-  // Fixed methods with multiple endpoint fallbacks
+  // Enhanced methods with fallbacks
   async quickUserSearch(email: string): Promise<any> {
     const endpoints = ['/manage/v1/user', '/learn/v1/users', '/api/v1/users'];
     
@@ -346,17 +346,15 @@ const ACTION_REGISTRY: ActionHandler[] = [
   }
 ];
 
-// Enhanced command parser that uses the action registry
+// Enhanced command parser
 function parseCommand(message: string): { action: ActionHandler | null; params: any; missing: string[] } {
   const email = message.match(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/)?.[0];
   
-  // Find matching action
   const action = ACTION_REGISTRY.find(a => a.pattern(message));
   if (!action) {
     return { action: null, params: {}, missing: [] };
   }
 
-  // Extract parameters
   const params: any = {};
   const missing: string[] = [];
 
@@ -399,10 +397,9 @@ export async function POST(request: NextRequest) {
     }
 
     const { action, params, missing } = parseCommand(message);
-    let response = '';
 
     if (!action) {
-      response = `🎯 **Quick Docebo Actions**
+      const response = `🎯 **Quick Docebo Actions**
 
 **Available Commands**:
 ${ACTION_REGISTRY.map(a => `• **${a.description}**\n  Example: "${a.examples[0]}"`).join('\n\n')}
@@ -423,7 +420,7 @@ ${ACTION_REGISTRY.map(a => `• **${a.description}**\n  Example: "${a.examples[0
     }
 
     if (missing.length > 0) {
-      response = `❌ **Missing Information**: I need the following to ${action.description}:\n\n${missing.map(m => `• ${m}`).join('\n')}\n\n**Example**: "${action.examples[0]}"`;
+      const response = `❌ **Missing Information**: I need the following to ${action.description}:\n\n${missing.map(m => `• ${m}`).join('\n')}\n\n**Example**: "${action.examples[0]}"`;
       
       return NextResponse.json({
         response,
@@ -437,7 +434,7 @@ ${ACTION_REGISTRY.map(a => `• **${a.description}**\n  Example: "${a.examples[0
 
     // Execute the action
     try {
-      response = await action.execute(api, params);
+      const response = await action.execute(api, params);
       
       return NextResponse.json({
         response,
@@ -448,7 +445,7 @@ ${ACTION_REGISTRY.map(a => `• **${a.description}**\n  Example: "${a.examples[0
       });
     } catch (error) {
       console.error(`Action ${action.name} failed:`, error);
-      response = `❌ **${action.description} Failed**: ${error instanceof Error ? error.message : 'Unknown error'}\n\nPlease try again or contact support.`;
+      const response = `❌ **${action.description} Failed**: ${error instanceof Error ? error.message : 'Unknown error'}\n\nPlease try again or contact support.`;
       
       return NextResponse.json({
         response,
@@ -465,141 +462,6 @@ ${ACTION_REGISTRY.map(a => `• **${a.description}**\n  Example: "${a.examples[0
       response: `❌ **System Error**: ${error instanceof Error ? error.message : 'Unknown error'}\n\nPlease try again or contact support.`,
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
-      timestamp: new Date().toISOString()
-    }, { status: 500 });
-  }
-}quickUserSearch(command.email);
-        if (!userForCourses) {
-          response = `❌ **User Not Found**: ${command.email}`;
-          break;
-        }
-
-        const enrollments = await api.getUserEnrollments(userForCourses.user_id);
-        if (enrollments.length === 0) {
-          response = `📚 **No Enrollments**\n\n${userForCourses.fullname} is not enrolled in any courses.`;
-        } else {
-          const courseList = enrollments.slice(0, 10).map((e: any, i: number) => {
-            // Handle different field names across Docebo versions
-            const courseName = e.course_name || e.name || e.course || e.course_title || 'Unknown Course';
-            const status = e.status || e.enrollment_status || '';
-            const progress = e.completion_percentage || e.progress || '';
-            
-            let statusIcon = '';
-            if (status.toLowerCase().includes('completed') || progress === 100) {
-              statusIcon = '✅';
-            } else if (status.toLowerCase().includes('progress') || progress > 0) {
-              statusIcon = '📚';
-            } else {
-              statusIcon = '⭕';
-            }
-            
-            return `${i + 1}. ${statusIcon} ${courseName}${progress ? ` (${progress}%)` : ''}`;
-          }).join('\n');
-          
-          response = `📚 **${userForCourses.fullname}'s Courses** (${enrollments.length} total)\n\n${courseList}${enrollments.length > 10 ? `\n\n... and ${enrollments.length - 10} more courses` : ''}`;
-        }
-        break;
-
-      case 'course_users':
-        if (!command.course) {
-          response = `❌ **Missing Course**: Please specify a course name.\n\n**Example**: "Who is enrolled in Python Programming?"`;
-          break;
-        }
-
-        const courseForUsers = await api.quickCourseSearch(command.course);
-        if (!courseForUsers) {
-          response = `❌ **Course Not Found**: ${command.course}`;
-          break;
-        }
-
-        const courseEnrollments = await api.getCourseEnrollments(courseForUsers.course_id || courseForUsers.idCourse);
-        if (courseEnrollments.length === 0) {
-          response = `👥 **No Enrollments**\n\nNo users enrolled in "${courseForUsers.course_name || courseForUsers.name}".`;
-        } else {
-          const userList = courseEnrollments.slice(0, 10).map((e: any, i: number) => {
-            // Handle different field names for user data
-            const userName = e.user_name || e.fullname || e.first_name + ' ' + e.last_name || e.name || 'Unknown User';
-            const userEmail = e.email || e.user_email || '';
-            const status = e.status || e.enrollment_status || '';
-            const progress = e.completion_percentage || e.progress || '';
-            
-            let statusIcon = '';
-            if (status.toLowerCase().includes('completed') || progress === 100) {
-              statusIcon = '✅';
-            } else if (status.toLowerCase().includes('progress') || progress > 0) {
-              statusIcon = '📚';
-            } else {
-              statusIcon = '⭕';
-            }
-            
-            return `${i + 1}. ${statusIcon} ${userName}${userEmail ? ` (${userEmail})` : ''}${progress ? ` - ${progress}%` : ''}`;
-          }).join('\n');
-          
-          response = `👥 **"${courseForUsers.course_name || courseForUsers.name}" Enrollments** (${courseEnrollments.length} users)\n\n${userList}${courseEnrollments.length > 10 ? `\n\n... and ${courseEnrollments.length - 10} more users` : ''}`;
-        }
-        break;
-
-      case 'find_user':
-        if (!command.email) {
-          response = `❌ **Missing Search Term**: Please provide an email or name.\n\n**Example**: "Find user john@company.com"`;
-          break;
-        }
-
-        const foundUser = await api.quickUserSearch(command.email);
-        if (foundUser) {
-          response = `👤 **User Found**\n\n**Name**: ${foundUser.fullname}\n**Email**: ${foundUser.email}\n**Status**: ${foundUser.status === '1' ? 'Active' : 'Inactive'}\n**Last Login**: ${foundUser.last_access_date ? new Date(foundUser.last_access_date).toLocaleDateString() : 'Never'}`;
-        } else {
-          response = `❌ **User Not Found**: ${command.email}`;
-        }
-        break;
-
-      case 'find_course':
-        if (!command.course) {
-          response = `❌ **Missing Course Name**: Please specify what to search for.\n\n**Example**: "Find course Python"`;
-          break;
-        }
-
-        const foundCourse = await api.quickCourseSearch(command.course);
-        if (foundCourse) {
-          response = `📚 **Course Found**\n\n**Name**: ${foundCourse.course_name || foundCourse.name}\n**Type**: ${foundCourse.course_type || foundCourse.type}\n**Status**: ${foundCourse.status}`;
-        } else {
-          response = `❌ **Course Not Found**: ${command.course}`;
-        }
-        break;
-
-      default:
-        response = `🎯 **Quick Docebo Actions**
-
-**Enroll Someone**:
-"Enroll john@company.com in Python Programming"
-
-**Check User's Courses**:
-"What courses is sarah@test.com enrolled in?"
-
-**See Course Enrollments**:
-"Who is enrolled in Excel Training?"
-
-**Find User**:
-"Find user mike@company.com"
-
-**Find Course**:
-"Find course JavaScript"
-
-💡 **Tip**: Be specific with email addresses and course names for faster results!`;
-    }
-
-    return NextResponse.json({
-      response,
-      success: command.action !== 'help',
-      action: command.action,
-      timestamp: new Date().toISOString()
-    });
-
-  } catch (error) {
-    console.error('Chat error:', error);
-    return NextResponse.json({
-      response: `❌ **System Error**: ${error instanceof Error ? error.message : 'Unknown error'}\n\nPlease try again or contact support.`,
-      success: false,
       timestamp: new Date().toISOString()
     }, { status: 500 });
   }
