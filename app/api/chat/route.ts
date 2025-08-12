@@ -173,17 +173,18 @@ class FixedDoceboAPI {
     }
   }
 
-  // FIXED: Enrollment with correct field mapping and course ID handling
+  // FIXED: Enrollment with correct endpoint and payload structure
   async enrollUser(userId: string, courseId: number, options: any = {}): Promise<any> {
     try {
       console.log(`🎯 Attempting to enroll user ${userId} in course ${courseId}`);
       
-      // Try the main enrollment endpoint
+      // Correct enrollment payload based on your API documentation
       const enrollmentBody: any = {
-        course_ids: [Number(courseId)], // Ensure it's a number
-        user_ids: [Number(userId)],     // Convert to number if needed
-        level: options.level || "3",
-        send_notification: false
+        course_ids: [Number(courseId)],
+        user_ids: [Number(userId)],
+        level: Number(options.level) || 3,  // 3 = student, 4 = tutor, 6 = instructor
+        consider_ef_as_optional: true,
+        atomic_enrollment: true
       };
 
       // Add optional fields
@@ -196,64 +197,91 @@ class FixedDoceboAPI {
 
       console.log('📝 Enrollment payload:', enrollmentBody);
 
-      // Try different potential enrollment endpoints
-      const possibleEndpoints = [
-        '/learn/v1/enrollments',
-        '/course/v1/enrollments', 
-        '/learn/v1/courses/enrollments'
-      ];
-
-      for (const endpoint of possibleEndpoints) {
-        try {
-          console.log(`🔄 Trying enrollment endpoint: ${endpoint}`);
-          const result = await this.apiRequest(endpoint, 'POST', enrollmentBody);
-          
-          // Check for successful enrollment
-          if (result.success || (result.data && result.data.enrolled && result.data.enrolled.length > 0)) {
-            return { 
-              success: true, 
-              message: 'Successfully enrolled user in course',
-              details: result
-            };
+      // Use the correct enrollment endpoint
+      const result = await this.apiRequest('/learn/v1/enrollments', 'POST', enrollmentBody);
+      
+      console.log('📊 Enrollment result:', result);
+      
+      // Check the response structure based on your API documentation
+      if (result.data && result.data.errors) {
+        const errors = result.data.errors;
+        
+        // Look for successful enrollments in the errors array
+        let successfulEnrollments = [];
+        let errorMessages = [];
+        
+        for (const errorGroup of errors) {
+          if (errorGroup.enrolled && errorGroup.enrolled.length > 0) {
+            successfulEnrollments.push(...errorGroup.enrolled);
           }
           
-          // Check for errors
-          if (result.data && result.data.errors) {
-            const errors = result.data.errors;
-            let specificError = "Unknown enrollment restriction";
-            
-            if (errors.existing_enrollments && errors.existing_enrollments.length > 0) {
-              specificError = "User is already enrolled in this course";
-            } else if (errors.invalid_users && errors.invalid_users.length > 0) {
-              specificError = "User ID is invalid or user doesn't exist";
-            } else if (errors.invalid_courses && errors.invalid_courses.length > 0) {
-              specificError = "Course ID is invalid or course doesn't exist";
+          // Check for specific error types
+          if (errorGroup.existing_enrollments && errorGroup.existing_enrollments.length > 0) {
+            errorMessages.push("User is already enrolled in this course");
+          }
+          if (errorGroup.invalid_users && errorGroup.invalid_users.length > 0) {
+            errorMessages.push("User ID is invalid or user doesn't exist");
+          }
+          if (errorGroup.invalid_courses && errorGroup.invalid_courses.length > 0) {
+            errorMessages.push("Course ID is invalid or course doesn't exist");
+          }
+          if (errorGroup.permission_denied && errorGroup.permission_denied.length > 0) {
+            errorMessages.push("Permission denied - user cannot be enrolled in this course");
+          }
+        }
+        
+        if (successfulEnrollments.length > 0) {
+          return { 
+            success: true, 
+            message: 'Successfully enrolled user in course',
+            details: { 
+              enrolled: successfulEnrollments,
+              waiting: successfulEnrollments.some(e => e.waiting)
             }
-            
-            return { success: false, message: specificError, details: result };
-          }
-          
-          // If we get here, the endpoint worked but didn't enroll
+          };
+        } else if (errorMessages.length > 0) {
           return { 
             success: false, 
-            message: 'Enrollment request completed but user was not enrolled',
+            message: errorMessages[0],
             details: result
           };
-          
-        } catch (endpointError) {
-          console.log(`❌ Endpoint ${endpoint} failed:`, endpointError);
-          continue; // Try next endpoint
+        } else {
+          return { 
+            success: false, 
+            message: 'Unknown enrollment error occurred',
+            details: result
+          };
         }
       }
       
+      // If no errors array or unexpected response structure
       return { 
         success: false, 
-        message: 'All enrollment endpoints failed. Please check API permissions.',
-        details: { attempted_endpoints: possibleEndpoints }
+        message: 'Unexpected response format from enrollment API',
+        details: result
       };
       
     } catch (error) {
       console.error('❌ Enrollment error:', error);
+      
+      // Parse error response if available
+      if (error instanceof Error && error.message.includes('400')) {
+        return { 
+          success: false, 
+          message: 'Invalid enrollment request - check user ID, course ID, or permissions'
+        };
+      } else if (error instanceof Error && error.message.includes('403')) {
+        return { 
+          success: false, 
+          message: 'Permission denied - API user may not have enrollment permissions'
+        };
+      } else if (error instanceof Error && error.message.includes('404')) {
+        return { 
+          success: false, 
+          message: 'User or course not found'
+        };
+      }
+      
       return { 
         success: false, 
         message: `Enrollment error: ${error instanceof Error ? error.message : 'Unknown error'}`
