@@ -1,17 +1,18 @@
 {
   "name": "docebo-ai-agent",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
+  "description": "AI-powered Docebo administration assistant - Phase 1 MVP",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "test": "echo \"Phase 1 MVP - No tests configured yet\" && exit 0"
   },
   "dependencies": {
     "@google/generative-ai": "^0.2.1",
-    "@supabase/supabase-js": "^2.38.4",
     "lucide-react": "^0.294.0",
     "next": "14.0.4",
     "react": "^18.2.0",
@@ -28,5 +29,17 @@
     "eslint-config-next": "14.0.4",
     "postcss": "^8.4.32",
     "tailwindcss": "^3.4.0"
-  }
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "keywords": [
+    "docebo",
+    "lms",
+    "ai",
+    "assistant", 
+    "enrollment",
+    "education"
+  ]
 }
