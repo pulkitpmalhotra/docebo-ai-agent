@@ -119,16 +119,20 @@ class OptimizedDoceboAPI {
   } = {}): Promise<{ success: boolean; message: string; details?: any }> {
     
     try {
-      // Build enrollment request
-      const enrollmentBody = {
+      // Build enrollment request - don't include assignment_type if none specified
+      const enrollmentBody: any = {
         course_ids: [String(courseId)], // Ensure string format
         user_ids: [String(userId)],     // Ensure string format
         level: options.level || "3",
         date_begin_validity: options.dateBeginValidity,
         date_expire_validity: options.dateExpireValidity,
-        assignment_type: options.assignmentType || "none",
         send_notification: false
       };
+
+      // Only add assignment_type if it's a valid value (not "none")
+      if (options.assignmentType && options.assignmentType !== "none") {
+        enrollmentBody.assignment_type = options.assignmentType;
+      }
 
       // Remove undefined fields
       Object.keys(enrollmentBody).forEach(key => {
@@ -266,7 +270,8 @@ const ACTION_REGISTRY: ActionHandler[] = [
       'Enroll john@company.com in Python Programming',
       'Add sarah@test.com to Excel Training as mandatory',
       'Enroll mike@company.com in SQL course as optional due 2025-12-31',
-      'Add user@company.com to Leadership Training as recommended'
+      'Add user@company.com to Leadership Training as recommended',
+      'Enroll admin@company.com in Security Training as required'
     ],
     pattern: (msg) => {
       const lower = msg.toLowerCase();
@@ -308,7 +313,8 @@ const ACTION_REGISTRY: ActionHandler[] = [
       const result = await api.enrollUser(user.user_id, courseId, options);
       
       if (result.success) {
-        return `✅ **Enrollment Successful**\n\n**User**: ${user.fullname || user.first_name + ' ' + user.last_name} (${user.email})\n**Course**: ${courseObj.name || courseObj.course_name}\n**Level**: ${options.level}\n**Assignment**: ${options.assignmentType}${options.dateExpireValidity ? `\n**Due Date**: ${options.dateExpireValidity}` : ''}\n\n🎯 Successfully enrolled in Docebo!`;
+        const assignmentText = options.assignmentType && options.assignmentType !== "none" ? options.assignmentType : "standard";
+        return `✅ **Enrollment Successful**\n\n**User**: ${user.fullname || user.first_name + ' ' + user.last_name} (${user.email})\n**Course**: ${courseObj.name || courseObj.course_name}\n**Level**: ${options.level}\n**Assignment**: ${assignmentText}${options.dateExpireValidity ? `\n**Due Date**: ${options.dateExpireValidity}` : ''}\n\n🎯 Successfully enrolled in Docebo!`;
       } else {
         return `❌ **Enrollment Failed**\n\n**Issue**: ${result.message}\n\n**User**: ${user.fullname || user.first_name + ' ' + user.last_name} (${user.email})\n**Course**: ${courseObj.name || courseObj.course_name}\n\n💡 ${result.message.includes('already enrolled') ? 'User is already enrolled in this course.' : 'Check course rules and user permissions in Docebo admin panel.'}`;
       }
@@ -427,33 +433,54 @@ function parseCommand(message: string): { action: ActionHandler | null; params: 
     }
   }
 
-  // Parse course name
+  // Parse course name for "Show/List" commands
   if (action.requiredFields.includes('course')) {
     let course = '';
     
-    // Try different patterns to extract course name
-    const patterns = [
-      /(?:in|to)\s+([^(as|due|level|with)]+?)(?:\s+(?:as|due|level|with)|$)/i,
-      /"([^"]+)"/,
-      /(?:enroll|add).*?(?:in|to)\s+([^(as|due|level|with)]+?)(?:\s+(?:as|due|level|with)|$)/i
-    ];
-    
-    for (const pattern of patterns) {
-      const match = message.match(pattern);
-      if (match && match[1]) {
-        course = match[1].trim();
-        break;
+    // Special handling for "Show/List" commands
+    if (message.toLowerCase().includes('show') || message.toLowerCase().includes('list')) {
+      // For "Show [Course] enrollments" or "List enrolled users in [Course]"
+      const showPatterns = [
+        /show\s+(.+?)\s+enrollments/i,
+        /list\s+enrolled\s+users?\s+in\s+(.+)/i,
+        /show\s+(.+)/i,
+        /list\s+(.+)/i
+      ];
+      
+      for (const pattern of showPatterns) {
+        const match = message.match(pattern);
+        if (match && match[1]) {
+          course = match[1].trim();
+          // Remove common words that aren't part of course name
+          course = course.replace(/\b(courses?|for|enrollments?|enrolled|users?)\b/gi, '').trim();
+          break;
+        }
       }
-    }
-    
-    // Fallback extraction
-    if (!course) {
-      course = message
-        .replace(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g, '')
-        .replace(/^(enroll|add|bulk|multiple)/gi, '')
-        .replace(/\s+(as|due|level|with)\s+.*/gi, '')
-        .replace(/\s+(in|to)\s+/gi, ' ')
-        .trim();
+    } else {
+      // Original patterns for enrollment commands
+      const patterns = [
+        /(?:in|to)\s+([^(as|due|level|with)]+?)(?:\s+(?:as|due|level|with)|$)/i,
+        /"([^"]+)"/,
+        /(?:enroll|add).*?(?:in|to)\s+([^(as|due|level|with)]+?)(?:\s+(?:as|due|level|with)|$)/i
+      ];
+      
+      for (const pattern of patterns) {
+        const match = message.match(pattern);
+        if (match && match[1]) {
+          course = match[1].trim();
+          break;
+        }
+      }
+      
+      // Fallback extraction for enrollment commands
+      if (!course) {
+        course = message
+          .replace(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g, '')
+          .replace(/^(enroll|add|bulk|multiple)/gi, '')
+          .replace(/\s+(as|due|level|with)\s+.*/gi, '')
+          .replace(/\s+(in|to)\s+/gi, ' ')
+          .trim();
+      }
     }
     
     if (course && course.length > 2) {
@@ -589,11 +616,13 @@ export async function GET() {
     })),
     examples: [
       "Enroll john@company.com in Python Programming",
-      "Enroll sarah@test.com in Excel Training as mandatory",
+      "Enroll sarah@test.com in Excel Training as mandatory", 
       "Add mike@company.com to SQL course as optional due 2025-12-31",
       "Enroll user@company.com in Leadership Training as recommended",
+      "Enroll admin@company.com in Security Training as required",
       "What courses is john@company.com enrolled in?",
-      "Who is enrolled in Leadership Training?"
+      "Who is enrolled in Leadership Training?",
+      "Show Explore the Deal Landscape enrollments"
     ],
     note: 'Clean production version with working enrollment functionality!'
   });
