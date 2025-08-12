@@ -595,34 +595,39 @@ ${options.dueDate ? `**Due Date**: ${options.dueDate}` : ''}
       
       if (enrollments.length === 0) {
         return NextResponse.json({
-          response: `📚 **No Enrollments Found**
-
-${user.fullname} (${user.email}) is not enrolled in any courses.`,
+          response: `No Enrollments Found\n\n${user.fullname} (${user.email}) is not enrolled in any courses.`,
           success: true,
           timestamp: new Date().toISOString()
         });
       }
       
       const courseList = enrollments.slice(0, 10).map((e, i) => {
-        // Clean up course name and decode HTML entities
+        // Clean up course name and remove all HTML entities and formatting
         let courseName = e.course_name || 'Unknown Course';
-        courseName = courseName.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
+        courseName = courseName
+          .replace(/&amp;/g, '&')
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&quot;/g, '"')
+          .replace(/&#39;/g, "'")
+          .replace(/&nbsp;/g, ' ')
+          .replace(/<[^>]*>/g, '') // Remove any HTML tags
+          .trim();
         
         const status = e.enrollment_status || '';
         const progress = e.enrollment_score || '';
         
-        let statusIcon = '📚';
-        if (status === 'completed') statusIcon = '✅';
-        else if (status === 'in_progress') statusIcon = '🔄';
-        else if (status === 'enrolled') statusIcon = '📚';
+        let statusIcon = '';
+        if (status === 'completed') statusIcon = 'COMPLETED';
+        else if (status === 'in_progress') statusIcon = 'IN PROGRESS';
+        else if (status === 'enrolled') statusIcon = 'ENROLLED';
+        else statusIcon = 'ENROLLED';
         
-        return `${i + 1}. ${statusIcon} ${courseName}${status ? ` (${status})` : ''}${progress ? ` - Score: ${progress}` : ''}`;
+        return `${i + 1}. ${statusIcon} - ${courseName}${status ? ` (${status})` : ''}${progress ? ` - Score: ${progress}` : ''}`;
       }).join('\n');
       
       return NextResponse.json({
-        response: `📚 **${user.fullname}'s Courses** (${enrollments.length} total)
-
-${courseList}${enrollments.length > 10 ? `\n\n... and ${enrollments.length - 10} more courses` : ''}`,
+        response: `${user.fullname}'s Courses (${enrollments.length} total)\n\n${courseList}${enrollments.length > 10 ? `\n\n... and ${enrollments.length - 10} more courses` : ''}`,
         success: true,
         timestamp: new Date().toISOString()
       });
