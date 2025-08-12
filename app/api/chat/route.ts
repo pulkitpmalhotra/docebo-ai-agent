@@ -814,16 +814,26 @@ function parseCommand(message: string): {
     extractedCourse: string | null;
     matchedAction: string | null;
     timestamp: string;
-    parsedParams?: any;
-    missingFields?: string[];
+    parsedParams: any;
+    missingFields: string[];
   };
 } {
-  const debugInfo = {
+  const debugInfo: {
+    originalMessage: string;
+    extractedEmail: string | null;
+    extractedCourse: string | null;
+    matchedAction: string | null;
+    timestamp: string;
+    parsedParams: any;
+    missingFields: string[];
+  } = {
     originalMessage: message,
-    extractedEmail: null as string | null,
-    extractedCourse: null as string | null,
-    matchedAction: null as string | null,
-    timestamp: new Date().toISOString()
+    extractedEmail: null,
+    extractedCourse: null,
+    matchedAction: null,
+    timestamp: new Date().toISOString(),
+    parsedParams: {},
+    missingFields: []
   };
 
   const email = message.match(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/)?.[0];
