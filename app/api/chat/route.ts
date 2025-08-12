@@ -141,31 +141,44 @@ class FixedDoceboAPI {
     }
   }
 
-  // FIXED: User enrollments with correct endpoint and parameters
+  // FIXED: User enrollments with proper filtering
   async getUserEnrollments(userId: string): Promise<any[]> {
     try {
       console.log(`📚 Getting enrollments for user ID: ${userId}`);
       
-      // Use array notation for user_ids parameter
+      // First try the direct user enrollment endpoint if it exists
+      try {
+        const directResult = await this.apiRequest(`/learn/v1/enrollments/users/${userId}`, 'GET', null, {
+          page_size: 200
+        });
+        
+        if (directResult.data?.items && directResult.data.items.length > 0) {
+          console.log(`📚 Direct user endpoint success: ${directResult.data.items.length} enrollments`);
+          return directResult.data.items;
+        }
+      } catch (directError) {
+        console.log('📚 Direct user endpoint failed, trying general endpoint');
+      }
+      
+      // Fallback to general endpoint with user filter
       const result = await this.apiRequest('/course/v1/courses/enrollments', 'GET', null, {
         'user_ids[]': userId,
         page_size: 200
       });
       
-      console.log(`📚 Raw API response length: ${result.data?.items?.length || 0}`);
-      
-      // Log first few items to see the structure
       const allEnrollments = result.data?.items || [];
-      if (allEnrollments.length > 0) {
-        console.log(`📚 Sample enrollment object:`, JSON.stringify(allEnrollments[0], null, 2));
-        console.log(`📚 Available fields in enrollment:`, Object.keys(allEnrollments[0]));
-      }
+      console.log(`📚 General endpoint returned: ${allEnrollments.length} total enrollments`);
       
-      // Since the API should already filter by user_ids[], let's not filter again
-      // The issue might be that the API is working correctly and returning all user's enrollments
-      console.log(`📚 Returning all ${allEnrollments.length} enrollments from API (assuming API filtered correctly)`);
+      // Apply strict filtering to ensure we only get this user's enrollments
+      const filteredEnrollments = allEnrollments.filter((enrollment: any) => {
+        const enrollmentUserId = enrollment.user_id || enrollment.id_user;
+        return enrollmentUserId === userId || enrollmentUserId === Number(userId) || 
+               enrollmentUserId === parseInt(userId);
+      });
       
-      return allEnrollments;
+      console.log(`📚 Filtered to: ${filteredEnrollments.length} enrollments for user ${userId}`);
+      return filteredEnrollments;
+      
     } catch (error) {
       console.error('❌ Get user enrollments failed:', error);
       return [];
@@ -591,7 +604,10 @@ ${user.fullname} (${user.email}) is not enrolled in any courses.`,
       }
       
       const courseList = enrollments.slice(0, 10).map((e, i) => {
-        const courseName = e.course_name || 'Unknown Course';
+        // Clean up course name and decode HTML entities
+        let courseName = e.course_name || 'Unknown Course';
+        courseName = courseName.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
+        
         const status = e.enrollment_status || '';
         const progress = e.enrollment_score || '';
         
