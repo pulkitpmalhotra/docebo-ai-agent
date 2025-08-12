@@ -152,21 +152,20 @@ class FixedDoceboAPI {
         page_size: 200
       });
       
-      console.log(`📚 User enrollments API response:`, JSON.stringify(result, null, 2));
-      console.log(`📚 User enrollments result: ${result.data?.items?.length || 0} enrollments found for user ${userId}`);
+      console.log(`📚 Raw API response length: ${result.data?.items?.length || 0}`);
       
-      // Filter to ensure we only get enrollments for the specific user
+      // Log first few items to see the structure
       const allEnrollments = result.data?.items || [];
-      const filteredEnrollments = allEnrollments.filter((enrollment: any) => 
-        enrollment.user_id === Number(userId) || 
-        enrollment.user_id === userId ||
-        enrollment.id_user === Number(userId) ||
-        enrollment.id_user === userId
-      );
+      if (allEnrollments.length > 0) {
+        console.log(`📚 Sample enrollment object:`, JSON.stringify(allEnrollments[0], null, 2));
+        console.log(`📚 Available fields in enrollment:`, Object.keys(allEnrollments[0]));
+      }
       
-      console.log(`📚 Filtered enrollments: ${filteredEnrollments.length} enrollments for user ${userId}`);
+      // Since the API should already filter by user_ids[], let's not filter again
+      // The issue might be that the API is working correctly and returning all user's enrollments
+      console.log(`📚 Returning all ${allEnrollments.length} enrollments from API (assuming API filtered correctly)`);
       
-      return filteredEnrollments;
+      return allEnrollments;
     } catch (error) {
       console.error('❌ Get user enrollments failed:', error);
       return [];
