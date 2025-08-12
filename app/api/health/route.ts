@@ -1,6 +1,6 @@
 // app/api/health/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { HealthChecker } from '@/lib/health/health-checker';
+import type { HealthStatus } from '@/lib/health/health-checker';
 import { rateLimiter, getClientIdentifier, getRateLimitHeaders } from '@/lib/middleware/rate-limit';
 import { ErrorHandler } from '@/lib/errors/error-handler';
 
