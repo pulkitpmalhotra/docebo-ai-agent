@@ -270,11 +270,14 @@ const ACTION_REGISTRY: ActionHandler[] = [
     ],
     pattern: (msg) => {
       const lower = msg.toLowerCase();
-      return (lower.includes('enroll') || lower.includes('add')) && 
+      return ((lower.includes('enroll ') || lower.includes('add ')) && 
+              !lower.includes('what courses') &&
+              !lower.includes('show courses') &&
+              !lower.includes('who is enrolled') &&
+              !lower.includes('who enrolled')) && 
              !lower.includes('bulk') &&
              !lower.includes('group') &&
              !lower.includes('multiple') &&
-             !lower.includes('who') && 
              !lower.includes('unenroll');
     },
     requiredFields: ['email', 'course'],
@@ -317,9 +320,13 @@ const ACTION_REGISTRY: ActionHandler[] = [
     examples: ['What courses is john@company.com enrolled in?', 'Show sarah@test.com courses'],
     pattern: (msg) => {
       const lower = msg.toLowerCase();
-      return (lower.includes('courses') || lower.includes('enrolled')) && 
+      return (lower.includes('what courses') || 
+              lower.includes('show courses') ||
+              lower.includes('list courses') ||
+              (lower.includes('courses') && lower.includes('enrolled')) ||
+              (lower.includes('enrolled') && lower.includes('in'))) && 
              !lower.includes('who is enrolled') &&
-             !lower.includes('enroll');
+             !lower.includes('enroll '); // Exclude enrollment commands
     },
     requiredFields: ['email'],
     execute: async (api, { email }) => {
@@ -358,7 +365,11 @@ const ACTION_REGISTRY: ActionHandler[] = [
     examples: ['Who is enrolled in Python Programming?', 'Show Excel Training enrollments'],
     pattern: (msg) => {
       const lower = msg.toLowerCase();
-      return lower.includes('who') && lower.includes('enrolled');
+      return (lower.includes('who is enrolled') || 
+              lower.includes('who enrolled') ||
+              (lower.includes('show') && lower.includes('enrollments')) ||
+              (lower.includes('list') && lower.includes('enrolled'))) &&
+             !lower.includes('enroll '); // Exclude enrollment commands
     },
     requiredFields: ['course'],
     execute: async (api, { course }) => {
