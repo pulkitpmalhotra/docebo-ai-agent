@@ -325,9 +325,9 @@ Click any action below or type directly:`,
                         : getMessageStatusColor(message)
                     }`}
                   >
-                    <div className="prose prose-sm max-w-none">
-                      {formatMessage(message.content)}
-                    </div>
+                  <div className="prose prose-sm max-w-none">
+                    {formatMessage(message.content)}
+                  </div>
                   </div>
                   
                   <div className="text-xs text-gray-500 mt-2 flex items-center gap-2">
