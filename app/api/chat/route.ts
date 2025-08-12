@@ -147,7 +147,7 @@ class SimpleDoceboAPI {
 
   async enrollUser(userId: string, courseId: string, options: any = {}): Promise<any> {
     try {
-      const enrollmentBody = {
+      const enrollmentBody: any = {
         course_ids: [String(courseId)],
         user_ids: [String(userId)],
         level: options.level || "3",
