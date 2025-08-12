@@ -16,77 +16,75 @@ interface Message {
 interface QuickAction {
   id: string;
   title: string;
-  icon: React.ReactNode;
+  icon: JSX.Element;
   example: string;
   description: string;
 }
 
-const QUICK_ACTIONS: QuickAction[] = [
-  {
-    id: 'enroll_user',
-    title: 'Enroll User',
-    icon: React.createElement(UserPlus, { className: "w-5 h-5" }),
-    example: 'Enroll john@company.com in Python Programming',
-    description: 'Add a single user to a course'
-  },
-  {
-    id: 'get_user_courses', 
-    title: 'User Courses',
-    icon: React.createElement(User, { className: "w-5 h-5" }),
-    example: 'What courses is sarah@test.com enrolled in?',
-    description: 'See all courses for a user'
-  },
-  {
-    id: 'get_course_users',
-    title: 'Course Enrollments', 
-    icon: React.createElement(Users, { className: "w-5 h-5" }),
-    example: 'Who is enrolled in Excel Training?',
-    description: 'See who is taking a course'
-  },
-  {
-    id: 'find_user',
-    title: 'Find User',
-    icon: React.createElement(Search, { className: "w-5 h-5" }),
-    example: 'Find user mike@company.com',
-    description: 'Look up user details'
-  },
-  {
-    id: 'find_course',
-    title: 'Find Course',
-    icon: React.createElement(BookOpen, { className: "w-5 h-5" }),
-    example: 'Find Python courses',
-    description: 'Search for courses'
-  }
-];
-
 export default function DoceboChat() {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      content: 'Welcome to Docebo Assistant - Phase 1 MVP\n\nI help you manage Docebo enrollments with natural language commands.\n\nClick any action below or type directly:',
-      type: 'assistant',
-      timestamp: new Date()
-    }
-  ]);
-  
+  // Initialize state with hydration-safe values
+  const [isClient, setIsClient] = useState(false);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  
-  // Add a ref to track if component is mounted
   const isMountedRef = useRef(true);
-  
-  // Add AbortController ref for canceling requests
   const abortControllerRef = useRef<AbortController | null>(null);
 
+  // Quick actions defined inside component to avoid hydration issues
+  const quickActions: QuickAction[] = [
+    {
+      id: 'enroll_user',
+      title: 'Enroll User',
+      icon: <UserPlus className="w-5 h-5" />,
+      example: 'Enroll john@company.com in Python Programming',
+      description: 'Add a single user to a course'
+    },
+    {
+      id: 'get_user_courses', 
+      title: 'User Courses',
+      icon: <User className="w-5 h-5" />,
+      example: 'What courses is sarah@test.com enrolled in?',
+      description: 'See all courses for a user'
+    },
+    {
+      id: 'get_course_users',
+      title: 'Course Enrollments', 
+      icon: <Users className="w-5 h-5" />,
+      example: 'Who is enrolled in Excel Training?',
+      description: 'See who is taking a course'
+    },
+    {
+      id: 'find_user',
+      title: 'Find User',
+      icon: <Search className="w-5 h-5" />,
+      example: 'Find user mike@company.com',
+      description: 'Look up user details'
+    },
+    {
+      id: 'find_course',
+      title: 'Find Course',
+      icon: <BookOpen className="w-5 h-5" />,
+      example: 'Find Python courses',
+      description: 'Search for courses'
+    }
+  ];
+
+  // Handle client-side hydration
   useEffect(() => {
-    // Set mounted flag to true on mount
+    setIsClient(true);
     isMountedRef.current = true;
     
-    // Cleanup function to set mounted flag to false on unmount
+    // Initialize messages only on client side to avoid hydration mismatch
+    setMessages([{
+      id: 'welcome',
+      content: 'Welcome to Docebo Assistant - Phase 1 MVP\n\nI help you manage Docebo enrollments with natural language commands.\n\nClick any action below or type directly:',
+      type: 'assistant',
+      timestamp: new Date()
+    }]);
+    
     return () => {
       isMountedRef.current = false;
-      // Cancel any ongoing requests
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
@@ -94,14 +92,12 @@ export default function DoceboChat() {
   }, []);
 
   useEffect(() => {
-    if (isMountedRef.current) {
+    if (isClient && isMountedRef.current) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [messages]);
+  }, [messages, isClient]);
 
-  // Safe text formatting function
   const formatMessageContent = (content: string) => {
-    // Clean up any problematic characters
     const cleanContent = content
       .replace(/&amp;/g, '&')
       .replace(/&lt;/g, '<')
@@ -111,40 +107,33 @@ export default function DoceboChat() {
       .replace(/&nbsp;/g, ' ')
       .replace(/<[^>]*>/g, '');
 
-    const lines = cleanContent.split('\n');
-    
-    return lines.map((line, index) => {
-      const key = `line-${index}`;
-      
-      if (line.includes('**')) {
-        const boldText = line.replace(/\*\*/g, '');
-        return React.createElement('div', { key, className: 'mb-1' },
-          React.createElement('span', { className: 'font-bold' }, boldText)
-        );
-      }
-      
-      return React.createElement('div', { key, className: 'mb-1' }, line);
-    });
+    return cleanContent.split('\n').map((line, index) => (
+      <div key={`line-${index}`} className="mb-1">
+        {line.includes('**') ? (
+          <span className="font-bold">{line.replace(/\*\*/g, '')}</span>
+        ) : (
+          line
+        )}
+      </div>
+    ));
   };
 
   const sendMessage = async (messageText: string) => {
     if (!messageText.trim() || loading || !isMountedRef.current) return;
 
     const userMessage: Message = {
-      id: Date.now().toString(),
+      id: `user-${Date.now()}`,
       content: messageText.trim(),
       type: 'user',
       timestamp: new Date(),
     };
 
-    // Only update state if component is still mounted
     if (isMountedRef.current) {
       setMessages(prev => [...prev, userMessage]);
       setLoading(true);
       setInput('');
     }
 
-    // Create new AbortController for this request
     abortControllerRef.current = new AbortController();
 
     try {
@@ -152,13 +141,10 @@ export default function DoceboChat() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: messageText }),
-        signal: abortControllerRef.current.signal, // Add abort signal
+        signal: abortControllerRef.current.signal,
       });
 
-      // Check if component is still mounted before processing response
-      if (!isMountedRef.current) {
-        return; // Exit early if component unmounted
-      }
+      if (!isMountedRef.current) return;
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -166,13 +152,10 @@ export default function DoceboChat() {
 
       const data = await response.json();
       
-      // Double-check mounted status before updating state
-      if (!isMountedRef.current) {
-        return;
-      }
+      if (!isMountedRef.current) return;
       
       const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
+        id: `assistant-${Date.now()}`,
         content: data.response || 'No response received.',
         type: 'assistant',
         timestamp: new Date(),
@@ -184,19 +167,14 @@ export default function DoceboChat() {
       setMessages(prev => [...prev, assistantMessage]);
 
     } catch (error) {
-      // Check if the error is due to abort (user navigated away)
       if (error instanceof Error && error.name === 'AbortError') {
-        console.log('Request was aborted');
-        return; // Don't show error message for aborted requests
-      }
-
-      // Only update state if component is still mounted
-      if (!isMountedRef.current) {
         return;
       }
 
+      if (!isMountedRef.current) return;
+
       const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
+        id: `error-${Date.now()}`,
         content: `Connection Error: ${error instanceof Error ? error.message : 'Network error'}. Check your internet connection and try again.`,
         type: 'assistant',
         timestamp: new Date(),
@@ -206,7 +184,6 @@ export default function DoceboChat() {
       
       setMessages(prev => [...prev, errorMessage]);
     } finally {
-      // Only update loading state if component is still mounted
       if (isMountedRef.current) {
         setLoading(false);
       }
@@ -238,163 +215,191 @@ export default function DoceboChat() {
     return 'border-gray-200 bg-white';
   };
 
-  return React.createElement('div', { className: 'min-h-screen bg-gray-50' },
-    React.createElement('div', { className: 'max-w-4xl mx-auto p-6' },
-      // Header
-      React.createElement('div', { className: 'text-center mb-8' },
-        React.createElement('h1', { className: 'text-3xl font-bold text-gray-800 mb-2' }, 'Docebo Assistant'),
-        React.createElement('p', { className: 'text-gray-600 mb-4' }, 'Phase 1 MVP - Natural Language Enrollment Management'),
-        React.createElement('div', { className: 'flex items-center justify-center gap-2' },
-          React.createElement(Zap, { className: 'w-4 h-4 text-green-500' }),
-          React.createElement('span', { className: 'text-sm text-green-600' }, 'Live & Ready')
-        )
-      ),
+  // Don't render anything until client-side hydration is complete
+  if (!isClient) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading Docebo Assistant...</p>
+        </div>
+      </div>
+    );
+  }
 
-      // Quick Actions
-      React.createElement('div', { className: 'bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6' },
-        React.createElement('h2', { className: 'text-lg font-semibold text-gray-800 mb-4' }, 'Quick Actions'),
-        React.createElement('div', { className: 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4' },
-          ...QUICK_ACTIONS.map((action) =>
-            React.createElement('button', {
-              key: action.id,
-              onClick: () => handleQuickAction(action.example),
-              className: 'p-4 text-left border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-blue-300 transition-all group focus:outline-none focus:ring-2 focus:ring-blue-500',
-              disabled: loading
-            },
-              React.createElement('div', { className: 'flex items-center gap-3 mb-2' },
-                React.createElement('div', { className: 'p-2 bg-blue-100 text-blue-600 rounded-lg group-hover:bg-blue-200 transition-colors' }, action.icon),
-                React.createElement('span', { className: 'font-medium text-gray-800 text-sm' }, action.title)
-              ),
-              React.createElement('p', { className: 'text-xs text-gray-600 mb-2' }, action.description),
-              React.createElement('p', { className: 'text-xs text-blue-600 bg-blue-50 p-2 rounded' },
-                action.example.length > 50 ? `${action.example.substring(0, 50)}...` : action.example
-              )
-            )
-          )
-        )
-      ),
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-4xl mx-auto p-6">
+        {/* Header */}
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold text-gray-800 mb-2">Docebo Assistant</h1>
+          <p className="text-gray-600 mb-4">Phase 1 MVP - Natural Language Enrollment Management</p>
+          <div className="flex items-center justify-center gap-2">
+            <Zap className="w-4 h-4 text-green-500" />
+            <span className="text-sm text-green-600">Live & Ready</span>
+          </div>
+        </div>
 
-      // Chat Interface
-      React.createElement('div', { className: 'bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden' },
-        // Messages
-        React.createElement('div', { className: 'h-96 overflow-y-auto p-6 bg-gray-50' },
-          ...messages.map((message) =>
-            React.createElement('div', {
-              key: message.id,
-              className: `mb-6 flex gap-3 ${message.type === 'user' ? 'justify-end' : ''}`
-            },
-              message.type === 'assistant' && React.createElement('div', { className: 'w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0' },
-                React.createElement(Bot, { className: 'w-4 h-4 text-white' })
-              ),
-              
-              React.createElement('div', { className: `max-w-lg ${message.type === 'user' ? 'order-first' : ''}` },
-                React.createElement('div', {
-                  className: `p-4 rounded-xl ${
+        {/* Quick Actions */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+          <h2 className="text-lg font-semibold text-gray-800 mb-4">Quick Actions</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {quickActions.map((action) => (
+              <button
+                key={action.id}
+                onClick={() => handleQuickAction(action.example)}
+                className="p-4 text-left border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-blue-300 transition-all group focus:outline-none focus:ring-2 focus:ring-blue-500"
+                disabled={loading}
+              >
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="p-2 bg-blue-100 text-blue-600 rounded-lg group-hover:bg-blue-200 transition-colors">
+                    {action.icon}
+                  </div>
+                  <span className="font-medium text-gray-800 text-sm">{action.title}</span>
+                </div>
+                <p className="text-xs text-gray-600 mb-2">{action.description}</p>
+                <p className="text-xs text-blue-600 bg-blue-50 p-2 rounded">
+                  {action.example.length > 50 ? `${action.example.substring(0, 50)}...` : action.example}
+                </p>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Chat Interface */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          {/* Messages */}
+          <div className="h-96 overflow-y-auto p-6 bg-gray-50">
+            {messages.map((message) => (
+              <div
+                key={message.id}
+                className={`mb-6 flex gap-3 ${message.type === 'user' ? 'justify-end' : ''}`}
+              >
+                {message.type === 'assistant' && (
+                  <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0">
+                    <Bot className="w-4 h-4 text-white" />
+                  </div>
+                )}
+                
+                <div className={`max-w-lg ${message.type === 'user' ? 'order-first' : ''}`}>
+                  <div className={`p-4 rounded-xl ${
                     message.type === 'user'
                       ? 'bg-blue-500 text-white ml-auto'
                       : getMessageStatusColor(message)
-                  }`
-                },
-                  React.createElement('div', { className: 'prose prose-sm max-w-none' }, formatMessageContent(message.content))
-                ),
-                
-                React.createElement('div', { className: 'text-xs text-gray-500 mt-2 flex items-center gap-2' },
-                  message.timestamp.toLocaleTimeString(),
-                  message.success === true && React.createElement(React.Fragment, null,
-                    React.createElement(CheckCircle, { className: 'w-3 h-3 text-green-500' }),
-                    React.createElement('span', { className: 'text-green-600' }, 'Success')
-                  ),
-                  message.success === false && React.createElement(React.Fragment, null,
-                    React.createElement(AlertCircle, { className: 'w-3 h-3 text-red-500' }),
-                    React.createElement('span', { className: 'text-red-600' }, 'Failed')
-                  ),
-                  message.action && React.createElement('span', { className: 'text-blue-600' }, `Action: ${message.action}`)
-                )
-              ),
+                  }`}>
+                    <div className="prose prose-sm max-w-none">
+                      {formatMessageContent(message.content)}
+                    </div>
+                  </div>
+                  
+                  <div className="text-xs text-gray-500 mt-2 flex items-center gap-2">
+                    {message.timestamp.toLocaleTimeString()}
+                    {message.success === true && (
+                      <>
+                        <CheckCircle className="w-3 h-3 text-green-500" />
+                        <span className="text-green-600">Success</span>
+                      </>
+                    )}
+                    {message.success === false && (
+                      <>
+                        <AlertCircle className="w-3 h-3 text-red-500" />
+                        <span className="text-red-600">Failed</span>
+                      </>
+                    )}
+                    {message.action && (
+                      <span className="text-blue-600">Action: {message.action}</span>
+                    )}
+                  </div>
+                </div>
 
-              message.type === 'user' && React.createElement('div', { className: 'w-8 h-8 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0' },
-                React.createElement(User, { className: 'w-4 h-4 text-white' })
-              )
-            )
-          ),
+                {message.type === 'user' && (
+                  <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0">
+                    <User className="w-4 h-4 text-white" />
+                  </div>
+                )}
+              </div>
+            ))}
+            
+            {loading && (
+              <div className="flex gap-3 mb-6">
+                <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
+                  <Bot className="w-4 h-4 text-white" />
+                </div>
+                <div className="bg-white border border-gray-200 rounded-xl p-4">
+                  <div className="flex items-center gap-2">
+                    <div className="flex gap-1">
+                      <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></div>
+                      <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                      <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                    </div>
+                    <span className="text-gray-600 text-sm">Processing...</span>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            <div ref={messagesEndRef} />
+          </div>
           
-          loading && React.createElement('div', { className: 'flex gap-3 mb-6' },
-            React.createElement('div', { className: 'w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center' },
-              React.createElement(Bot, { className: 'w-4 h-4 text-white' })
-            ),
-            React.createElement('div', { className: 'bg-white border border-gray-200 rounded-xl p-4' },
-              React.createElement('div', { className: 'flex items-center gap-2' },
-                React.createElement('div', { className: 'flex gap-1' },
-                  React.createElement('div', { className: 'w-2 h-2 bg-blue-500 rounded-full animate-bounce' }),
-                  React.createElement('div', { className: 'w-2 h-2 bg-blue-500 rounded-full animate-bounce', style: { animationDelay: '0.1s' } }),
-                  React.createElement('div', { className: 'w-2 h-2 bg-blue-500 rounded-full animate-bounce', style: { animationDelay: '0.2s' } })
-                ),
-                React.createElement('span', { className: 'text-gray-600 text-sm' }, 'Processing...')
-              )
-            )
-          ),
-          
-          React.createElement('div', { ref: messagesEndRef })
-        ),
-        
-        // Input Area
-        React.createElement('div', { className: 'p-4 bg-white border-t border-gray-200' },
-          React.createElement('form', { onSubmit: handleSubmit, className: 'flex gap-3' },
-            React.createElement('input', {
-              type: 'text',
-              value: input,
-              onChange: (e) => {
-                if (isMountedRef.current) {
-                  setInput(e.target.value);
-                }
-              },
-              onKeyPress: handleKeyPress,
-              placeholder: 'Type your command... (e.g., \'Enroll john@company.com in Python\')',
-              className: 'flex-1 p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed',
-              disabled: loading,
-              maxLength: 500
-            }),
-            React.createElement('button', {
-              type: 'submit',
-              disabled: loading || !input.trim(),
-              className: 'px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2'
-            },
-              React.createElement(Send, { className: 'w-4 h-4' }),
-              loading ? 'Sending...' : 'Send'
-            )
-          ),
-          
-          React.createElement('div', { className: 'mt-3 text-xs text-gray-500' },
-            React.createElement('strong', null, 'Examples: '),
-            '"Enroll sarah@test.com in Excel Training" • "Who is enrolled in Python?" • "Find user mike@company.com"'
-          )
-        )
-      ),
+          {/* Input Area */}
+          <div className="p-4 bg-white border-t border-gray-200">
+            <form onSubmit={handleSubmit} className="flex gap-3">
+              <input
+                type="text"
+                value={input}
+                onChange={(e) => {
+                  if (isMountedRef.current) {
+                    setInput(e.target.value);
+                  }
+                }}
+                onKeyPress={handleKeyPress}
+                placeholder="Type your command... (e.g., 'Enroll john@company.com in Python')"
+                className="flex-1 p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={loading}
+                maxLength={500}
+              />
+              <button
+                type="submit"
+                disabled={loading || !input.trim()}
+                className="px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+              >
+                <Send className="w-4 h-4" />
+                {loading ? 'Sending...' : 'Send'}
+              </button>
+            </form>
+            
+            <div className="mt-3 text-xs text-gray-500">
+              <strong>Examples: </strong>
+              "Enroll sarah@test.com in Excel Training" • "Who is enrolled in Python?" • "Find user mike@company.com"
+            </div>
+          </div>
+        </div>
 
-      // Benefits
-      React.createElement('div', { className: 'mt-6 grid grid-cols-2 md:grid-cols-4 gap-4 text-center' },
-        React.createElement('div', { className: 'text-xs text-gray-500' },
-          React.createElement(CheckCircle, { className: 'w-4 h-4 text-green-500 mx-auto mb-1' }),
-          'Direct Actions'
-        ),
-        React.createElement('div', { className: 'text-xs text-gray-500' },
-          React.createElement(Zap, { className: 'w-4 h-4 text-blue-500 mx-auto mb-1' }),
-          'Instant Results'
-        ),
-        React.createElement('div', { className: 'text-xs text-gray-500' },
-          React.createElement(UserPlus, { className: 'w-4 h-4 text-purple-500 mx-auto mb-1' }),
-          'Real Enrollments'
-        ),
-        React.createElement('div', { className: 'text-xs text-gray-500' },
-          React.createElement(Search, { className: 'w-4 h-4 text-orange-500 mx-auto mb-1' }),
-          'Live Data'
-        )
-      ),
+        {/* Benefits */}
+        <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+          <div className="text-xs text-gray-500">
+            <CheckCircle className="w-4 h-4 text-green-500 mx-auto mb-1" />
+            Direct Actions
+          </div>
+          <div className="text-xs text-gray-500">
+            <Zap className="w-4 h-4 text-blue-500 mx-auto mb-1" />
+            Instant Results
+          </div>
+          <div className="text-xs text-gray-500">
+            <UserPlus className="w-4 h-4 text-purple-500 mx-auto mb-1" />
+            Real Enrollments
+          </div>
+          <div className="text-xs text-gray-500">
+            <Search className="w-4 h-4 text-orange-500 mx-auto mb-1" />
+            Live Data
+          </div>
+        </div>
 
-      // Footer
-      React.createElement('div', { className: 'text-center text-xs text-gray-400 mt-8' },
-        'Docebo Assistant - Phase 1 MVP • Direct API Connection • Natural Language Processing'
-      )
-    )
+        {/* Footer */}
+        <div className="text-center text-xs text-gray-400 mt-8">
+          Docebo Assistant - Phase 1 MVP • Direct API Connection • Natural Language Processing
+        </div>
+      </div>
+    </div>
   );
 }
