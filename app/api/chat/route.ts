@@ -1,4 +1,4 @@
-// app/api/chat/route.ts - Complete file with comprehensive debug mode
+// Get all debug information// app/api/chat/route.ts - Complete file with comprehensive debug mode
 import { NextRequest, NextResponse } from 'next/server';
 
 // Enhanced Docebo API client with comprehensive debugging
@@ -576,7 +576,15 @@ class OptimizedDoceboAPI {
     }
   }
 
-  // Get all debug information
+  // Public method to get access token for external use
+  async getToken(): Promise<string> {
+    return await this.getAccessToken();
+  }
+
+  // Public method to get base URL
+  getBaseUrl(): string {
+    return this.baseUrl;
+  }
   getDebugInfo(): any {
     return {
       courseSearch: (global as any).lastCourseSearchDebug,
@@ -694,8 +702,8 @@ const ACTION_REGISTRY: ActionHandler[] = [
       if (!user) return `❌ **User Not Found**: ${email}`;
 
       try {
-        const token = await api.getAccessToken();
-        const response = await fetch(`${api.baseUrl}/learn/v1/enrollments/users/${user.user_id}`, {
+        const token = await api.getToken();
+        const response = await fetch(`${api.getBaseUrl()}/learn/v1/enrollments/users/${user.user_id}`, {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Accept': 'application/json'
@@ -750,8 +758,8 @@ const ACTION_REGISTRY: ActionHandler[] = [
       if (!courseObj) return `❌ **Course Not Found**: ${course}`;
 
       try {
-        const token = await api.getAccessToken();
-        const response = await fetch(`${api.baseUrl}/learn/v1/enrollments/courses/${courseObj.course_id || courseObj.idCourse}`, {
+        const token = await api.getToken();
+        const response = await fetch(`${api.getBaseUrl()}/learn/v1/enrollments/courses/${courseObj.course_id || courseObj.idCourse}`, {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Accept': 'application/json'
