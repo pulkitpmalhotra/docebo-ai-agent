@@ -91,15 +91,19 @@ export default function DoceboChat() {
         .replace(/&nbsp;/g, ' ')
         .replace(/<[^>]*>/g, ''); // Remove any HTML tags
       
-      return (
-        <div key={index} className="mb-1">
-          {cleanLine.includes('**') ? (
+      if (cleanLine.includes('**')) {
+        return (
+          <div key={index} className="mb-1">
             <span className="font-bold">{cleanLine.replace(/\*\*/g, '')}</span>
-          ) : (
-            cleanLine
-          )}
-        </div>
-      );
+          </div>
+        );
+      } else {
+        return (
+          <div key={index} className="mb-1">
+            {cleanLine}
+          </div>
+        );
+      }
     });
   };
 
