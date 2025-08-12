@@ -203,13 +203,13 @@ class OptimizedDoceboAPI {
     return [];
   }
 
-  // Fixed enrollment methods - remove enrolled_at field
+  // Enhanced enrollment methods with better error checking and no notifications
   async enrollUser(userId: string, courseId: string, options: {
     level?: string;
     dateBeginValidity?: string;
     dateExpireValidity?: string;
     assignmentType?: string;
-  } = {}): Promise<{ success: boolean; message: string }> {
+  } = {}): Promise<{ success: boolean; message: string; details?: any }> {
     try {
       const enrollmentBody = {
         course_ids: [courseId],
@@ -217,9 +217,16 @@ class OptimizedDoceboAPI {
         level: options.level || "3",
         date_begin_validity: options.dateBeginValidity,
         date_expire_validity: options.dateExpireValidity,
-        assignment_type: options.assignmentType || "mandatory"
-        // REMOVED: enrolled_at field that was causing 400 error
+        assignment_type: options.assignmentType || "mandatory",
+        send_notification: false  // Don't send notifications
       };
+
+      // Remove undefined fields to clean up the request
+      Object.keys(enrollmentBody).forEach(key => {
+        if (enrollmentBody[key as keyof typeof enrollmentBody] === undefined) {
+          delete enrollmentBody[key as keyof typeof enrollmentBody];
+        }
+      });
 
       console.log('📡 Enrollment request body:', JSON.stringify(enrollmentBody, null, 2));
 
@@ -232,14 +239,36 @@ class OptimizedDoceboAPI {
         body: JSON.stringify(enrollmentBody)
       });
       
+      const responseText = await response.text();
+      console.log('📡 Raw API response:', responseText);
+      
       if (response.ok) {
-        const result = await response.json();
-        console.log('✅ Enrollment successful:', result);
-        return { success: true, message: `Successfully enrolled user in course` };
+        let result;
+        try {
+          result = JSON.parse(responseText);
+        } catch {
+          result = { raw_response: responseText };
+        }
+        
+        console.log('✅ Enrollment API response:', result);
+        
+        // Check if the response indicates actual success
+        if (result.success === false || result.error) {
+          return { 
+            success: false, 
+            message: `Enrollment API returned success but with error: ${result.error || result.message || 'Unknown error'}`,
+            details: result
+          };
+        }
+        
+        return { 
+          success: true, 
+          message: `Enrollment API completed successfully`,
+          details: result
+        };
       } else {
-        const errorText = await response.text();
-        console.log('❌ Enrollment failed:', errorText);
-        return { success: false, message: `Enrollment failed: ${response.status} - ${errorText}` };
+        console.log('❌ Enrollment failed:', responseText);
+        return { success: false, message: `Enrollment failed: ${response.status} - ${responseText}` };
       }
     } catch (error) {
       console.log('❌ Enrollment error:', error);
@@ -260,9 +289,16 @@ class OptimizedDoceboAPI {
         level: options.level || "3",
         date_begin_validity: options.dateBeginValidity,
         date_expire_validity: options.dateExpireValidity,
-        assignment_type: options.assignmentType || "mandatory"
-        // REMOVED: enrolled_at field
+        assignment_type: options.assignmentType || "mandatory",
+        send_notification: false  // Don't send notifications
       };
+
+      // Remove undefined fields
+      Object.keys(enrollmentBody).forEach(key => {
+        if (enrollmentBody[key as keyof typeof enrollmentBody] === undefined) {
+          delete enrollmentBody[key as keyof typeof enrollmentBody];
+        }
+      });
 
       console.log(`📡 Bulk enrolling ${userIds.length} users in ${courseIds.length} courses...`);
       console.log('📡 Request body:', JSON.stringify(enrollmentBody, null, 2));
@@ -276,19 +312,57 @@ class OptimizedDoceboAPI {
         body: JSON.stringify(enrollmentBody)
       });
       
+      const responseText = await response.text();
+      console.log('📡 Raw bulk enrollment response:', responseText);
+      
       if (response.ok) {
-        const result = await response.json();
+        let result;
+        try {
+          result = JSON.parse(responseText);
+        } catch {
+          result = { raw_response: responseText };
+        }
+        
         return { 
           success: true, 
-          message: `Successfully enrolled ${userIds.length} users in ${courseIds.length} courses`,
+          message: `Bulk enrollment API completed - check server logs for details`,
           details: result
         };
       } else {
-        const errorText = await response.text();
-        return { success: false, message: `Bulk enrollment failed: ${response.status} - ${errorText}` };
+        return { success: false, message: `Bulk enrollment failed: ${response.status} - ${responseText}` };
       }
     } catch (error) {
       return { success: false, message: `Bulk enrollment error: ${error instanceof Error ? error.message : 'Unknown error'}` };
+    }
+  }
+
+  // Add method to verify enrollment actually worked
+  async verifyEnrollment(userId: string, courseId: string): Promise<{ enrolled: boolean; details?: any }> {
+    try {
+      console.log(`🔍 Verifying enrollment for user ${userId} in course ${courseId}...`);
+      
+      const enrollments = await this.getUserEnrollments(userId);
+      const isEnrolled = enrollments.some((enrollment: any) => {
+        const enrollmentCourseId = enrollment.course_id || enrollment.idCourse || enrollment.id;
+        return enrollmentCourseId === courseId;
+      });
+      
+      console.log(`🔍 Verification result: ${isEnrolled ? 'ENROLLED' : 'NOT ENROLLED'}`);
+      
+      return {
+        enrolled: isEnrolled,
+        details: {
+          total_enrollments: enrollments.length,
+          user_id: userId,
+          course_id: courseId
+        }
+      };
+    } catch (error) {
+      console.log('❌ Verification error:', error);
+      return {
+        enrolled: false,
+        details: { error: error instanceof Error ? error.message : 'Unknown error' }
+      };
     }
   }
 
@@ -394,14 +468,24 @@ const ACTION_REGISTRY: ActionHandler[] = [
         level: level || "3",
         dateExpireValidity: dueDate,
         assignmentType: assignmentType || "mandatory"
-        // REMOVED: enrolledAt field
       };
 
+      console.log(`🎯 Attempting enrollment: User ${user.user_id} (${user.email}) → Course ${courseObj.course_id || courseObj.idCourse} (${courseObj.course_name || courseObj.name})`);
+
       const result = await api.enrollUser(user.user_id, courseObj.course_id || courseObj.idCourse, options);
+      
       if (result.success) {
-        return `✅ **Enrollment Successful**\n\n**User**: ${user.fullname} (${user.email})\n**Course**: ${courseObj.course_name || courseObj.name}\n**Level**: ${options.level}\n**Assignment**: ${options.assignmentType}${options.dateExpireValidity ? `\n**Due Date**: ${options.dateExpireValidity}` : ''}\n\n🎯 User will receive notification and can access immediately.`;
+        // Verify the enrollment actually worked
+        console.log('🔍 Verifying enrollment in Docebo...');
+        const verification = await api.verifyEnrollment(user.user_id, courseObj.course_id || courseObj.idCourse);
+        
+        if (verification.enrolled) {
+          return `✅ **Enrollment Successful & Verified**\n\n**User**: ${user.fullname} (${user.email})\n**Course**: ${courseObj.course_name || courseObj.name}\n**Level**: ${options.level}\n**Assignment**: ${options.assignmentType}${options.dateExpireValidity ? `\n**Due Date**: ${options.dateExpireValidity}` : ''}\n\n🎯 **Verified**: User is now enrolled in Docebo!\n\n📊 **API Details**: ${JSON.stringify(result.details, null, 2)}`;
+        } else {
+          return `⚠️ **Enrollment API Succeeded BUT Not Verified**\n\n**Issue**: The API call returned success, but the user is not showing as enrolled in Docebo.\n\n**User**: ${user.fullname} (${user.email})\n**Course**: ${courseObj.course_name || courseObj.name}\n\n**API Response**: ${JSON.stringify(result.details, null, 2)}\n\n**Verification Details**: ${JSON.stringify(verification.details, null, 2)}\n\n💡 **Next Steps**:\n• Check Docebo admin panel manually\n• Verify API permissions\n• Check if enrollment rules are blocking\n• Review server logs for more details`;
+        }
       } else {
-        return `❌ **Enrollment Failed**\n\n**Issue**: ${result.message}`;
+        return `❌ **Enrollment Failed**\n\n**Issue**: ${result.message}\n\n**Details**: ${JSON.stringify(result.details, null, 2)}`;
       }
     }
   },
