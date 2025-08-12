@@ -25,8 +25,32 @@ const QUICK_ACTIONS = [
     title: 'Enroll User',
     icon: <UserPlus className="w-5 h-5" />,
     example: 'Enroll john@company.com in Python Programming',
-    description: 'Add a user to a course instantly',
+    description: 'Add a single user to a course',
     requiredFields: ['email', 'course']
+  },
+  {
+    id: 'enroll_bulk_users',
+    title: 'Bulk Enroll Users',
+    icon: <Users className="w-5 h-5" />,
+    example: 'Bulk enroll users: john@company.com,sarah@test.com in Python Programming',
+    description: 'Enroll multiple users at once',
+    requiredFields: ['users', 'courses']
+  },
+  {
+    id: 'enroll_group',
+    title: 'Enroll Groups',
+    icon: <Users className="w-5 h-5" />,
+    example: 'Enroll group Sales Team in Customer Service Training',
+    description: 'Enroll entire groups in courses',
+    requiredFields: ['groups', 'courses']
+  },
+  {
+    id: 'csv_bulk_enroll',
+    title: 'CSV Bulk Enroll',
+    icon: <BookOpen className="w-5 h-5" />,
+    example: 'Upload CSV for bulk enrollment',
+    description: 'Import users from CSV file',
+    requiredFields: []
   },
   {
     id: 'get_user_courses', 
@@ -182,7 +206,7 @@ Click any action below or type directly:`,
         {/* Quick Actions */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
           <h2 className="text-lg font-semibold text-gray-800 mb-4">Quick Actions</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {QUICK_ACTIONS.map((action) => (
               <button
                 key={action.id}
@@ -193,17 +217,50 @@ Click any action below or type directly:`,
                   <div className="p-2 bg-blue-100 text-blue-600 rounded-lg group-hover:bg-blue-200 transition-colors">
                     {action.icon}
                   </div>
-                  <span className="font-medium text-gray-800">{action.title}</span>
+                  <span className="font-medium text-gray-800 text-sm">{action.title}</span>
                 </div>
-                <p className="text-sm text-gray-600 mb-2">{action.description}</p>
+                <p className="text-xs text-gray-600 mb-2">{action.description}</p>
                 <div className="text-xs text-gray-500 mb-2">
-                  <strong>Needs:</strong> {action.requiredFields.join(', ')}
+                  <strong>Needs:</strong> {action.requiredFields.length > 0 ? action.requiredFields.join(', ') : 'nothing'}
                 </div>
                 <p className="text-xs text-blue-600 bg-blue-50 p-2 rounded">
-                  "{action.example}"
+                  "{action.example.length > 60 ? `${action.example.substring(0, 60)}...` : action.example}"
                 </p>
               </button>
             ))}
+          </div>
+        </div>
+
+        {/* Advanced Examples */}
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl shadow-sm border border-blue-200 p-6 mb-6">
+          <h2 className="text-lg font-semibold text-blue-800 mb-4">🚀 Advanced Enrollment Examples</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <h3 className="font-medium text-blue-700 mb-2">Single Enrollment with Options:</h3>
+              <div className="space-y-1 text-sm text-blue-600">
+                <div className="bg-white p-2 rounded cursor-pointer hover:bg-blue-50" 
+                     onClick={() => handleQuickAction('Enroll john@company.com in Python Programming level 2')}>
+                  "Enroll john@company.com in Python Programming level 2"
+                </div>
+                <div className="bg-white p-2 rounded cursor-pointer hover:bg-blue-50"
+                     onClick={() => handleQuickAction('Add sarah@test.com to Excel Training as mandatory due 2025-12-31')}>
+                  "Add sarah@test.com to Excel Training as mandatory due 2025-12-31"
+                </div>
+              </div>
+            </div>
+            <div>
+              <h3 className="font-medium text-blue-700 mb-2">Bulk Operations:</h3>
+              <div className="space-y-1 text-sm text-blue-600">
+                <div className="bg-white p-2 rounded cursor-pointer hover:bg-blue-50"
+                     onClick={() => handleQuickAction('Bulk enroll users: john@company.com,sarah@test.com,mike@company.com in Python Programming,SQL Fundamentals')}>
+                  "Bulk enroll users: john@company.com,sarah@test.com in Python,SQL courses"
+                </div>
+                <div className="bg-white p-2 rounded cursor-pointer hover:bg-blue-50"
+                     onClick={() => handleQuickAction('Enroll groups Sales Team,Marketing Team in Leadership Training')}>
+                  "Enroll groups Sales Team,Marketing Team in Leadership Training"
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
