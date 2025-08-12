@@ -10,43 +10,55 @@ interface Message {
   timestamp: Date;
   success?: boolean;
   action?: string;
+  missing_fields?: string[];
+  examples?: string[];
+  available_actions?: Array<{
+    name: string;
+    description: string;
+    examples: string[];
+  }>;
 }
 
 const QUICK_ACTIONS = [
   {
-    id: 'enroll',
+    id: 'enroll_user',
     title: 'Enroll User',
     icon: <UserPlus className="w-5 h-5" />,
     example: 'Enroll john@company.com in Python Programming',
-    description: 'Add a user to a course instantly'
+    description: 'Add a user to a course instantly',
+    requiredFields: ['email', 'course']
   },
   {
-    id: 'user_courses', 
-    title: 'Check User Courses',
+    id: 'get_user_courses', 
+    title: 'User\'s Courses',
     icon: <User className="w-5 h-5" />,
     example: 'What courses is sarah@test.com enrolled in?',
-    description: 'See all courses for a user'
+    description: 'See all courses for a user',
+    requiredFields: ['email']
   },
   {
-    id: 'course_users',
+    id: 'get_course_users',
     title: 'Course Enrollments', 
     icon: <Users className="w-5 h-5" />,
     example: 'Who is enrolled in Excel Training?',
-    description: 'See who is taking a course'
+    description: 'See who is taking a course',
+    requiredFields: ['course']
   },
   {
     id: 'find_user',
     title: 'Find User',
     icon: <Search className="w-5 h-5" />,
     example: 'Find user mike@company.com',
-    description: 'Look up user details'
+    description: 'Look up user details',
+    requiredFields: ['email']
   },
   {
     id: 'find_course',
     title: 'Find Course',
     icon: <BookOpen className="w-5 h-5" />,
     example: 'Find course JavaScript',
-    description: 'Search for courses'
+    description: 'Search for courses',
+    requiredFields: ['course']
   }
 ];
 
@@ -95,7 +107,10 @@ Click any action below or type directly:`,
         type: 'assistant',
         timestamp: new Date(),
         success: data.success,
-        action: data.action
+        action: data.action,
+        missing_fields: data.missing_fields,
+        examples: data.examples,
+        available_actions: data.available_actions
       };
 
       setMessages(prev => [...prev, assistantMessage]);
@@ -181,6 +196,9 @@ Click any action below or type directly:`,
                   <span className="font-medium text-gray-800">{action.title}</span>
                 </div>
                 <p className="text-sm text-gray-600 mb-2">{action.description}</p>
+                <div className="text-xs text-gray-500 mb-2">
+                  <strong>Needs:</strong> {action.requiredFields.join(', ')}
+                </div>
                 <p className="text-xs text-blue-600 bg-blue-50 p-2 rounded">
                   "{action.example}"
                 </p>
