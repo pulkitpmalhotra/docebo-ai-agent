@@ -1,122 +1,140 @@
-// app/api/health/route.ts
+// app/api/health/route.ts - Simplified health check for Phase 1 MVP
 import { NextRequest, NextResponse } from 'next/server';
-import type { HealthStatus } from '@/lib/health/health-checker';
-import { rateLimiter, getClientIdentifier, getRateLimitHeaders } from '@/lib/middleware/rate-limit';
-import { ErrorHandler } from '@/lib/errors/error-handler';
+
+interface HealthResponse {
+  status: 'healthy' | 'unhealthy';
+  timestamp: string;
+  uptime: number;
+  version: string;
+  environment: string;
+  checks: {
+    environment: 'healthy' | 'unhealthy';
+    api_ready: 'healthy' | 'unhealthy';
+  };
+}
+
+const startTime = Date.now();
 
 export async function GET(request: NextRequest) {
   try {
-    // Rate limiting for health checks (more generous limits)
-    const clientId = getClientIdentifier(request);
-    const rateLimit = rateLimiter.checkRateLimit(clientId, 'anonymous');
+    const now = Date.now();
     
-    if (!rateLimit.allowed) {
-      return NextResponse.json(
-        { error: 'Rate limit exceeded' },
-        { 
-          status: 429,
-          headers: getRateLimitHeaders(rateLimit)
-        }
-      );
+    // Simple environment check
+    const requiredEnvVars = [
+      'DOCEBO_DOMAIN',
+      'DOCEBO_CLIENT_ID',
+      'DOCEBO_CLIENT_SECRET',
+      'DOCEBO_USERNAME',
+      'DOCEBO_PASSWORD',
+      'GOOGLE_GEMINI_API_KEY'
+    ];
+    
+    const missingEnvVars = requiredEnvVars.filter(varName => !process.env[varName]);
+    const envHealthy = missingEnvVars.length === 0;
+    
+    // Simple API readiness check
+    const apiReady = true; // We assume API is ready if we can respond
+    
+    const healthStatus: HealthResponse = {
+      status: envHealthy && apiReady ? 'healthy' : 'unhealthy',
+      timestamp: new Date().toISOString(),
+      uptime: now - startTime,
+      version: '1.0.0',
+      environment: process.env.NODE_ENV || 'development',
+      checks: {
+        environment: envHealthy ? 'healthy' : 'unhealthy',
+        api_ready: apiReady ? 'healthy' : 'unhealthy'
+      }
+    };
+
+    // Add missing environment variables to response if any
+    if (missingEnvVars.length > 0) {
+      (healthStatus as any).missing_env_vars = missingEnvVars;
     }
 
-    // Parse query parameters
-    const { searchParams } = new URL(request.url);
-    const detailed = searchParams.get('detailed') === 'true';
-    const useCache = searchParams.get('cache') !== 'false';
-
-    if (detailed) {
-      // Full health check with all details
-      const healthStatus = await HealthChecker.checkHealth(useCache);
-      
-      return NextResponse.json(healthStatus, {
-        status: healthStatus.status === 'healthy' ? 200 : 
-               healthStatus.status === 'degraded' ? 200 : 503,
-        headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          ...getRateLimitHeaders(rateLimit)
-        }
-      });
-    } else {
-      // Quick health check
-      const quickStatus = await HealthChecker.quickHealthCheck();
-      
-      return NextResponse.json({
-        status: quickStatus.status,
-        timestamp: new Date(quickStatus.timestamp).toISOString(),
-        uptime: Date.now() - quickStatus.timestamp
-      }, {
-        status: quickStatus.status === 'healthy' ? 200 : 503,
-        headers: {
-          'Cache-Control': 'public, max-age=30',
-          ...getRateLimitHeaders(rateLimit)
-        }
-      });
-    }
-
-  } catch (error) {
-    const { statusCode, response } = ErrorHandler.handle(error, {
-      endpoint: '/api/health',
-      method: 'GET',
-      ip: getClientIdentifier(request)
+    const statusCode = healthStatus.status === 'healthy' ? 200 : 503;
+    
+    return NextResponse.json(healthStatus, {
+      status: statusCode,
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Content-Type': 'application/json'
+      }
     });
 
-    return NextResponse.json(response, { status: statusCode });
+  } catch (error) {
+    console.error('Health check error:', error);
+    
+    return NextResponse.json({
+      status: 'unhealthy',
+      timestamp: new Date().toISOString(),
+      uptime: Date.now() - startTime,
+      version: '1.0.0',
+      environment: process.env.NODE_ENV || 'development',
+      error: error instanceof Error ? error.message : 'Unknown error',
+      checks: {
+        environment: 'unhealthy',
+        api_ready: 'unhealthy'
+      }
+    }, { 
+      status: 503,
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Content-Type': 'application/json'
+      }
+    });
   }
 }
 
-// Optional: POST endpoint for health check actions (admin only)
+// Optional: Simple POST endpoint for health actions
 export async function POST(request: NextRequest) {
   try {
-    const clientId = getClientIdentifier(request);
-    const rateLimit = rateLimiter.checkRateLimit(clientId, 'superadmin');
-    
-    if (!rateLimit.allowed) {
-      return NextResponse.json(
-        { error: 'Rate limit exceeded' },
-        { 
-          status: 429,
-          headers: getRateLimitHeaders(rateLimit)
-        }
-      );
-    }
-
     const body = await request.json();
     const { action } = body;
 
     switch (action) {
-      case 'reset_cache':
-        HealthChecker.resetCache();
+      case 'ping':
         return NextResponse.json({ 
-          message: 'Health check cache reset successfully',
+          message: 'pong',
           timestamp: new Date().toISOString()
         });
 
-      case 'force_check':
-        const healthStatus = await HealthChecker.checkHealth(false);
-        return NextResponse.json(healthStatus);
-
-      case 'error_stats':
-        const errorStats = HealthChecker.getErrorStats();
+      case 'env_check':
+        const requiredEnvVars = [
+          'DOCEBO_DOMAIN',
+          'DOCEBO_CLIENT_ID',
+          'DOCEBO_CLIENT_SECRET',
+          'DOCEBO_USERNAME',
+          'DOCEBO_PASSWORD',
+          'GOOGLE_GEMINI_API_KEY'
+        ];
+        
+        const envStatus = requiredEnvVars.map(varName => ({
+          name: varName,
+          present: !!process.env[varName],
+          value_preview: process.env[varName] ? 
+            (process.env[varName]!.length > 10 ? 
+              process.env[varName]!.substring(0, 10) + '...' : 
+              process.env[varName]) : 
+            'missing'
+        }));
+        
         return NextResponse.json({
-          error_statistics: errorStats,
+          environment_variables: envStatus,
           timestamp: new Date().toISOString()
         });
 
       default:
         return NextResponse.json(
-          { error: 'Invalid action. Supported actions: reset_cache, force_check, error_stats' },
+          { error: 'Invalid action. Supported actions: ping, env_check' },
           { status: 400 }
         );
     }
 
   } catch (error) {
-    const { statusCode, response } = ErrorHandler.handle(error, {
-      endpoint: '/api/health',
-      method: 'POST',
-      ip: getClientIdentifier(request)
-    });
-
-    return NextResponse.json(response, { status: statusCode });
+    return NextResponse.json({
+      error: error instanceof Error ? error.message : 'Unknown error',
+      timestamp: new Date().toISOString()
+    }, { status: 500 });
   }
 }
