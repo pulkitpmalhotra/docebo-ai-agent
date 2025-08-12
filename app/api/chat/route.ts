@@ -403,8 +403,8 @@ class OptimizedDoceboAPI {
       // DEBUG STEP 5: Build enrollment request
       debugInfo.steps.push("📡 Building enrollment request...");
       const enrollmentBody = {
-        course_ids: [courseId],
-        user_ids: [userId],
+        course_ids: [String(courseId)], // Ensure string format like API browser
+        user_ids: [String(userId)],     // Ensure string format like API browser
         level: options.level || "3",
         date_begin_validity: options.dateBeginValidity,
         date_expire_validity: options.dateExpireValidity,
@@ -508,41 +508,31 @@ class OptimizedDoceboAPI {
             };
           } else {
             debugInfo.steps.push("❌ ENROLLMENT FAILED - No users enrolled");
-            debugInfo.analysis = [
-              "API accepted request but didn't enroll anyone",
-              "🔍 COMPARISON WITH WORKING API BROWSER CALL:",
-              "",
-              "WORKING REQUEST (API Browser):",
-              '{',
-              '  "course_ids": ["997"],',
-              '  "user_ids": ["13163"],',
-              '  "level": "3",',
-              '  "date_expire_validity": "2025-12-31",',
-              '  "assignment_type": "mandatory",',
-              '  "send_notification": false',
-              '}',
-              "",
-              "YOUR APP REQUEST:",
-              JSON.stringify(enrollmentBody, null, 2),
-              "",
-              "🔍 REQUEST DIFFERENCES:",
-              `- URL: ${debugInfo.requestUrl}`,
-              `- Headers: ${JSON.stringify(debugInfo.requestHeaders)}`,
-              "",
-              "🔍 RESPONSE COMPARISON:",
-              "Working Response: {\"data\":{\"enrolled\":[{\"id_user\":13163,\"id_course\":997,\"waiting\":false}],\"errors\":[]}}",
-              `Your Response: ${responseText}`,
-              "",
-              "Common causes:",
-              "- Different API token permissions",
-              "- Course enrollment rules checking token user",
-              "- Timing/session differences",
-              "- Course status changed since API browser test",
-              "- User enrollment status changed"
-            ];
+            
+            // Check for specific error types
+            const errors = result.data?.errors || {};
+            let specificError = "";
+            
+            if (errors.existing_enrollments && errors.existing_enrollments.length > 0) {
+              specificError = "User is already enrolled in this course";
+              debugInfo.alreadyEnrolled = true;
+              debugInfo.existingEnrollments = errors.existing_enrollments;
+            } else if (errors.invalid_users && errors.invalid_users.length > 0) {
+              specificError = "User ID is invalid or user doesn't exist";
+            } else if (errors.invalid_courses && errors.invalid_courses.length > 0) {
+              specificError = "Course ID is invalid or course doesn't exist";
+            } else if (errors.permission_denied && errors.permission_denied.length > 0) {
+              specificError = "Permission denied - user cannot be enrolled in this course";
+            } else {
+              specificError = "Unknown enrollment restriction";
+            }
+            
+            debugInfo.specificError = specificError;
+            debugInfo.allErrors = errors;
+            
             return { 
               success: false, 
-              message: `⚠️ Enrollment request succeeded but no users were enrolled. The API accepted your request but Docebo's business rules prevented the enrollment.`,
+              message: `⚠️ ${specificError}. ${specificError.includes('already enrolled') ? 'The enrollment already exists in Docebo.' : 'Check course enrollment rules and user permissions.'}`,
               details: result,
               debug: this.debugMode ? debugInfo : undefined
             };
