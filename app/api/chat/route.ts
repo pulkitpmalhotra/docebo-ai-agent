@@ -117,11 +117,11 @@ class OptimizedDoceboAPI {
         
         courses.forEach((course: any) => {
           debugInfo.results.push({
-            id: course.course_id || course.idCourse || course.id || 'NO_ID',
-            name: course.course_name || course.name || 'NO_NAME',
+            id: course.id_course || course.course_id || course.idCourse || course.id || 'NO_ID',
+            name: course.name || course.course_name || 'NO_NAME',
             status: course.status || 'NO_STATUS',
             type: course.course_type || course.type || 'NO_TYPE',
-            code: course.course_code || 'NO_CODE'
+            code: course.code || course.course_code || 'NO_CODE'
           });
         });
         
@@ -136,8 +136,8 @@ class OptimizedDoceboAPI {
           ) || courses[0];
           
           debugInfo.bestMatch = {
-            id: bestMatch.course_id || bestMatch.idCourse || bestMatch.id || 'NO_ID',
-            name: bestMatch.course_name || bestMatch.name || 'NO_NAME',
+            id: bestMatch.id_course || bestMatch.course_id || bestMatch.idCourse || bestMatch.id || 'NO_ID',
+            name: bestMatch.name || bestMatch.course_name || 'NO_NAME',
             matchReason: 'Found by search'
           };
           
@@ -307,7 +307,7 @@ class OptimizedDoceboAPI {
         if (userResponse.ok) {
           const userData = await userResponse.json();
           debugInfo.userInfo = {
-            id: userData.data?.user_id,
+            id: userData.data?.user_id || userData.data?.id_user,
             email: userData.data?.email,
             fullname: userData.data?.fullname,
             status: userData.data?.status,
@@ -348,7 +348,7 @@ class OptimizedDoceboAPI {
         if (courseResponse.ok) {
           const courseData = await courseResponse.json();
           debugInfo.courseInfo = {
-            id: courseData.data?.course_id,
+            id: courseData.data?.course_id || courseData.data?.id_course,
             name: courseData.data?.course_name,
             status: courseData.data?.status,
             type: courseData.data?.course_type,
@@ -691,8 +691,8 @@ ${debugInfo.courseSearchDebug.attempts.map((a: any) => `  • ${a.endpoint}: ${a
       }
 
       debugInfo.foundCourse = {
-        id: courseObj.course_id || courseObj.idCourse || courseObj.id || 'NO_ID',
-        name: courseObj.course_name || courseObj.name || 'NO_NAME',
+        id: courseObj.id_course || courseObj.course_id || courseObj.idCourse || courseObj.id || 'NO_ID',
+        name: courseObj.name || courseObj.course_name || 'NO_NAME',
         rawCourseObj: courseObj // Add the raw object for debugging
       };
 
@@ -703,10 +703,10 @@ ${debugInfo.courseSearchDebug.attempts.map((a: any) => `  • ${a.endpoint}: ${a
       };
 
       debugInfo.steps.push("🎯 Attempting enrollment...");
-      console.log(`🎯 Enrolling user ${user.user_id} in course ${courseObj.course_id || courseObj.idCourse || courseObj.id}`);
+      console.log(`🎯 Enrolling user ${user.user_id} in course ${courseObj.id_course || courseObj.course_id || courseObj.idCourse || courseObj.id}`);
       
-      // Get the actual course ID with all possible fallbacks
-      const actualCourseId = courseObj.course_id || courseObj.idCourse || courseObj.id;
+      // Get the actual course ID with all possible fallbacks (id_course is the correct one!)
+      const actualCourseId = courseObj.id_course || courseObj.course_id || courseObj.idCourse || courseObj.id;
       
       if (!actualCourseId) {
         return `❌ **Course ID Missing**: Found course "${courseObj.course_name || courseObj.name}" but no valid ID
