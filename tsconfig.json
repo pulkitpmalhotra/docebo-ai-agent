@@ -1,7 +1,29 @@
 {
   "compilerOptions": {
-    "strict": false,  // Temporarily disable for Phase 1
-    "noUnusedLocals": false,
-    "noUnusedParameters": false
-  }
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "node",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "incremental": true,
+    "downlevelIteration": true,
+    "target": "es2017",
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./*"]
+    }
+  },
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "exclude": ["node_modules", "lib/cache/**", "lib/health/**", "lib/middleware/**", "lib/errors/**", "lib/rbac/**", "lib/response-formatters/**", "lib/validation/**", "lib/ai/**", "lib/auth/**"]
 }
