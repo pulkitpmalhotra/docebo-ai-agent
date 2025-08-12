@@ -144,13 +144,29 @@ class FixedDoceboAPI {
   // FIXED: User enrollments with correct endpoint and parameters
   async getUserEnrollments(userId: string): Promise<any[]> {
     try {
+      console.log(`📚 Getting enrollments for user ID: ${userId}`);
+      
+      // Use array notation for user_ids parameter
       const result = await this.apiRequest('/course/v1/courses/enrollments', 'GET', null, {
         'user_ids[]': userId,
-        page_size: 100
+        page_size: 200
       });
       
-      console.log('📚 User enrollments result:', result.data?.items?.length || 0, 'enrollments found');
-      return result.data?.items || [];
+      console.log(`📚 User enrollments API response:`, JSON.stringify(result, null, 2));
+      console.log(`📚 User enrollments result: ${result.data?.items?.length || 0} enrollments found for user ${userId}`);
+      
+      // Filter to ensure we only get enrollments for the specific user
+      const allEnrollments = result.data?.items || [];
+      const filteredEnrollments = allEnrollments.filter((enrollment: any) => 
+        enrollment.user_id === Number(userId) || 
+        enrollment.user_id === userId ||
+        enrollment.id_user === Number(userId) ||
+        enrollment.id_user === userId
+      );
+      
+      console.log(`📚 Filtered enrollments: ${filteredEnrollments.length} enrollments for user ${userId}`);
+      
+      return filteredEnrollments;
     } catch (error) {
       console.error('❌ Get user enrollments failed:', error);
       return [];
