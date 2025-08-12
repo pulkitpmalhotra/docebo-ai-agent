@@ -96,9 +96,15 @@ class OptimizedDoceboAPI {
     
     for (const endpoint of endpoints) {
       try {
-        const attempt = { 
+        const attempt: {
+          endpoint: string;
+          status: 'trying' | 'success' | 'failed';
+          searchParams: { search_text: string; page_size: number };
+          foundCount?: number;
+          error?: string;
+        } = { 
           endpoint, 
-          status: 'trying' as 'trying' | 'success' | 'failed',
+          status: 'trying',
           searchParams: { search_text: courseName, page_size: 10 }
         };
         debugInfo.attempts.push(attempt);
@@ -178,9 +184,15 @@ class OptimizedDoceboAPI {
     
     for (const endpoint of endpoints) {
       try {
-        const attempt = { 
+        const attempt: {
+          endpoint: string;
+          status: 'trying' | 'success' | 'failed';
+          searchParams: { search_text: string; page_size: number };
+          foundCount?: number;
+          error?: string;
+        } = { 
           endpoint, 
-          status: 'trying' as 'trying' | 'success' | 'failed',
+          status: 'trying',
           searchParams: { search_text: email, page_size: 5 }
         };
         debugInfo.attempts.push(attempt);
