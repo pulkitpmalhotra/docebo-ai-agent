@@ -63,7 +63,29 @@ class OptimizedDoceboAPI {
 
   // Enhanced course search with debugging
   async quickCourseSearch(courseName: string): Promise<any> {
-    const debugInfo = {
+    const debugInfo: {
+      searchTerm: string;
+      attempts: Array<{
+        endpoint: string;
+        status: string;
+        searchParams: { search_text: string; page_size: number };
+        foundCount?: number;
+        error?: string;
+      }>;
+      results: Array<{
+        id: string;
+        name: string;
+        status: string;
+        type: string;
+        code?: string;
+      }>;
+      timestamp: string;
+      bestMatch?: {
+        id: string;
+        name: string;
+        matchReason: string;
+      };
+    } = {
       searchTerm: courseName,
       attempts: [],
       results: [],
@@ -76,7 +98,7 @@ class OptimizedDoceboAPI {
       try {
         const attempt = { 
           endpoint, 
-          status: 'trying',
+          status: 'trying' as const,
           searchParams: { search_text: courseName, page_size: 10 }
         };
         debugInfo.attempts.push(attempt);
@@ -128,7 +150,24 @@ class OptimizedDoceboAPI {
 
   // Enhanced user search with debugging
   async quickUserSearch(email: string): Promise<any> {
-    const debugInfo = {
+    const debugInfo: {
+      searchTerm: string;
+      attempts: Array<{
+        endpoint: string;
+        status: string;
+        searchParams: { search_text: string; page_size: number };
+        foundCount?: number;
+        error?: string;
+      }>;
+      results: Array<{
+        id: string;
+        email: string;
+        name: string;
+        status: string;
+        expired: boolean;
+      }>;
+      timestamp: string;
+    } = {
       searchTerm: email,
       attempts: [],
       results: [],
@@ -141,7 +180,7 @@ class OptimizedDoceboAPI {
       try {
         const attempt = { 
           endpoint, 
-          status: 'trying',
+          status: 'trying' as const,
           searchParams: { search_text: email, page_size: 5 }
         };
         debugInfo.attempts.push(attempt);
@@ -745,12 +784,25 @@ const ACTION_REGISTRY: ActionHandler[] = [
 ];
 
 // Enhanced command parser with debug info
-function parseCommand(message: string): { action: ActionHandler | null; params: any; missing: string[]; debug?: any } {
+function parseCommand(message: string): { 
+  action: ActionHandler | null; 
+  params: any; 
+  missing: string[]; 
+  debug?: {
+    originalMessage: string;
+    extractedEmail: string | null;
+    extractedCourse: string | null;
+    matchedAction: string | null;
+    timestamp: string;
+    parsedParams?: any;
+    missingFields?: string[];
+  };
+} {
   const debugInfo = {
     originalMessage: message,
-    extractedEmail: null,
-    extractedCourse: null,
-    matchedAction: null,
+    extractedEmail: null as string | null,
+    extractedCourse: null as string | null,
+    matchedAction: null as string | null,
     timestamp: new Date().toISOString()
   };
 
