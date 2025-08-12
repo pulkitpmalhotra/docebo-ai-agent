@@ -1,7 +1,39 @@
-// app/api/chat/route.ts - Production-ready Chat API for Phase 1 MVP
+// app/api/chat/route.ts - Fixed imports for Vercel deployment
 import { NextRequest, NextResponse } from 'next/server';
-import { DoceboAPI, type DoceboUser, type DoceboCourse } from '@/lib/docebo-api-fixed';
-import { config } from '@/lib/config/environment';
+
+// Import from relative paths to avoid module resolution issues
+import { DoceboAPI } from '../../../lib/docebo-api-fixed';
+import type { DoceboUser, DoceboCourse } from '../../../lib/docebo-api-fixed';
+
+// Environment configuration - inline for deployment reliability
+interface EnvironmentConfig {
+  docebo: {
+    domain: string;
+    clientId: string;
+    clientSecret: string;
+    username: string;
+    password: string;
+  };
+}
+
+function validateEnvironmentVariable(name: string, value: string | undefined): string {
+  if (!value || value.trim() === '') {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+  return value.trim();
+}
+
+function getConfig(): EnvironmentConfig {
+  return {
+    docebo: {
+      domain: validateEnvironmentVariable('DOCEBO_DOMAIN', process.env.DOCEBO_DOMAIN),
+      clientId: validateEnvironmentVariable('DOCEBO_CLIENT_ID', process.env.DOCEBO_CLIENT_ID),
+      clientSecret: validateEnvironmentVariable('DOCEBO_CLIENT_SECRET', process.env.DOCEBO_CLIENT_SECRET),
+      username: validateEnvironmentVariable('DOCEBO_USERNAME', process.env.DOCEBO_USERNAME),
+      password: validateEnvironmentVariable('DOCEBO_PASSWORD', process.env.DOCEBO_PASSWORD),
+    }
+  };
+}
 
 // Standardized API response interface
 interface APIResponse {
@@ -454,14 +486,30 @@ function parseCommand(message: string): { action: ActionHandler | null; params: 
 // Initialize API client with error handling
 let api: DoceboAPI;
 try {
-  api = new DoceboAPI();
+  const config = getConfig();
+  api = new DoceboAPI(config.docebo);
 } catch (error) {
   console.error('❌ Failed to initialize Docebo API:', error);
-  throw error;
+  // Don't throw here, let individual requests handle the error
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse<APIResponse>> {
   try {
+    // Initialize API if not already done
+    if (!api) {
+      try {
+        const config = getConfig();
+        api = new DoceboAPI(config.docebo);
+      } catch (error) {
+        return NextResponse.json({
+          response: '❌ **Configuration Error**: Missing or invalid environment variables. Please check your Docebo configuration.',
+          success: false,
+          error: 'Configuration error',
+          timestamp: new Date().toISOString()
+        }, { status: 500 });
+      }
+    }
+
     const body = await request.json();
     const { message } = body;
     
@@ -565,8 +613,16 @@ ${ACTION_REGISTRY.map(a => `• **${a.description}**\n  Example: "${a.examples[0
 
 export async function GET(): Promise<NextResponse> {
   try {
-    // Test API connectivity
-    const healthStatus = await api.healthCheck();
+    // Test API connectivity if possible
+    let healthStatus = { status: 'unknown', timestamp: new Date() };
+    
+    if (api) {
+      try {
+        healthStatus = await api.healthCheck();
+      } catch (error) {
+        console.warn('Health check failed:', error);
+      }
+    }
     
     return NextResponse.json({
       status: 'Docebo Chat API - Phase 1 MVP Ready',
