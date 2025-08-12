@@ -371,11 +371,13 @@ const ACTION_REGISTRY: ActionHandler[] = [
     examples: ['Who is enrolled in Python Programming?', 'Show Excel Training enrollments'],
     pattern: (msg) => {
       const lower = msg.toLowerCase();
-      return (lower.includes('who is enrolled') || 
-              lower.includes('who enrolled') ||
+      return (lower.includes('who is enrolled in') || 
+              lower.includes('who enrolled in') ||
+              lower.includes('who is enrolled') ||
               (lower.includes('show') && lower.includes('enrollments')) ||
               (lower.includes('list') && lower.includes('enrolled'))) &&
-             !lower.includes('enroll '); // Exclude enrollment commands
+             !lower.includes('enroll ') && // Exclude "enroll " commands
+             !lower.includes('what courses'); // Exclude user course queries
     },
     requiredFields: ['course'],
     execute: async (api, { course }) => {
@@ -417,6 +419,10 @@ function parseCommand(message: string): { action: ActionHandler | null; params: 
   const email = message.match(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/)?.[0];
   
   const action = ACTION_REGISTRY.find(a => a.pattern(message));
+  
+  // Debug: Log which action was matched (can be removed later)
+  console.log(`Debug: Message "${message}" matched action: ${action?.name || 'none'}`);
+  
   if (!action) {
     return { action: null, params: {}, missing: [] };
   }
@@ -482,6 +488,8 @@ function parseCommand(message: string): { action: ActionHandler | null; params: 
           .trim();
       }
     }
+    
+    console.log(`Debug: Parsed course name: "${course}" from message: "${message}"`);
     
     if (course && course.length > 2) {
       params.course = course;
