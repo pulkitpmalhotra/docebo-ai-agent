@@ -640,10 +640,25 @@ const ACTION_REGISTRY: ActionHandler[] = [
       };
 
       debugInfo.steps.push("🔍 Searching for user...");
+      console.log(`🔍 User search starting for: ${email}`);
       const user = await api.quickUserSearch(email);
+      console.log(`🔍 User search result:`, user);
+      
       if (!user) {
         debugInfo.userSearchFailed = true;
-        return `❌ **User Not Found**: ${email}\n\n**Debug Info**: User search failed. Check if email exists in Docebo.\n\n🔍 Try: "debug enrollment" for detailed search info`;
+        debugInfo.userSearchDebug = (global as any).lastUserSearchDebug;
+        return `❌ **User Not Found**: ${email}
+
+**User Search Debug**:
+${debugInfo.userSearchDebug ? `
+📝 Search Term: "${debugInfo.userSearchDebug.searchTerm}"
+🔍 Attempts: ${debugInfo.userSearchDebug.attempts.length}
+📊 Results: ${debugInfo.userSearchDebug.results.length} users found
+${debugInfo.userSearchDebug.results.map((u: any) => `  • ID: ${u.id}, Email: ${u.email}, Name: ${u.name}`).join('\n')}
+${debugInfo.userSearchDebug.attempts.map((a: any) => `  • ${a.endpoint}: ${a.status} (${a.foundCount || 0} results)`).join('\n')}
+` : 'No search debug available'}
+
+🔍 Try: "debug enrollment" for detailed search info`;
       }
 
       debugInfo.foundUser = {
@@ -653,10 +668,26 @@ const ACTION_REGISTRY: ActionHandler[] = [
       };
 
       debugInfo.steps.push("🔍 Searching for course...");
+      console.log(`🔍 Course search starting for: ${course}`);
       const courseObj = await api.quickCourseSearch(course);
+      console.log(`🔍 Course search result:`, courseObj);
+      
       if (!courseObj) {
         debugInfo.courseSearchFailed = true;
-        return `❌ **Course Not Found**: ${course}\n\n**Debug Info**: Course search failed. Available courses will be shown in debug info.\n\n🔍 Try: "debug enrollment" for detailed search info`;
+        debugInfo.courseSearchDebug = (global as any).lastCourseSearchDebug;
+        return `❌ **Course Not Found**: ${course}
+
+**Course Search Debug**:
+${debugInfo.courseSearchDebug ? `
+📝 Search Term: "${debugInfo.courseSearchDebug.searchTerm}"
+🔍 Attempts: ${debugInfo.courseSearchDebug.attempts.length}
+📊 Results: ${debugInfo.courseSearchDebug.results.length} courses found
+${debugInfo.courseSearchDebug.results.map((c: any) => `  • ID: ${c.id}, Name: "${c.name}", Status: ${c.status}`).join('\n')}
+${debugInfo.courseSearchDebug.attempts.map((a: any) => `  • ${a.endpoint}: ${a.status} (${a.foundCount || 0} results)`).join('\n')}
+` : 'No search debug available'}
+
+**Expected**: Should find Course ID "997" for "Explore the Deal Landscape"
+🔍 Try: "debug enrollment" for detailed search info`;
       }
 
       debugInfo.foundCourse = {
@@ -671,18 +702,47 @@ const ACTION_REGISTRY: ActionHandler[] = [
       };
 
       debugInfo.steps.push("🎯 Attempting enrollment...");
+      console.log(`🎯 Enrolling user ${user.user_id} in course ${courseObj.course_id || courseObj.idCourse}`);
+      
       const result = await api.enrollUser(user.user_id, courseObj.course_id || courseObj.idCourse, options);
       
       // Store debug info globally
       (global as any).lastActionDebug = debugInfo;
       
       if (result.success) {
-        return `✅ **Enrollment Successful**\n\n**User**: ${user.fullname} (${user.email})\n**Course**: ${courseObj.course_name || courseObj.name}\n**Level**: ${options.level}\n**Assignment**: ${options.assignmentType}${options.dateExpireValidity ? `\n**Due Date**: ${options.dateExpireValidity}` : ''}\n\n🎯 **Status**: Successfully enrolled in Docebo!\n\n${result.debug ? `\n**Debug Summary**: ${result.debug.steps.join(' → ')}` : ''}`;
+        return `✅ **Enrollment Successful**
+
+**User**: ${user.fullname} (${user.email})
+**Course**: ${courseObj.course_name || courseObj.name}
+**IDs Used**: User ID ${user.user_id} → Course ID ${courseObj.course_id || courseObj.idCourse}
+**Level**: ${options.level}
+**Assignment**: ${options.assignmentType}${options.dateExpireValidity ? `\n**Due Date**: ${options.dateExpireValidity}` : ''}
+
+🎯 **Status**: Successfully enrolled in Docebo!
+
+${result.debug ? `\n**Debug Summary**: ${result.debug.steps.join(' → ')}` : ''}`;
       } else {
         const debugSummary = result.debug ? `\n\n**Debug Summary**:\n${result.debug.steps.map((step: string, i: number) => `${i + 1}. ${step}`).join('\n')}` : '';
         const analysisText = result.debug?.analysis ? `\n\n**Analysis**: ${Array.isArray(result.debug.analysis) ? result.debug.analysis.join('\n') : result.debug.analysis}` : '';
         
-        return `❌ **Enrollment Failed**\n\n**Issue**: ${result.message}\n\n**User**: ${user.fullname} (${user.email})\n**Course**: ${courseObj.course_name || courseObj.name}${debugSummary}${analysisText}\n\n🔍 **Next Steps**:\n• Try: "debug enrollment" for full diagnostic info\n• Check Docebo admin panel for enrollment rules\n• Verify course is published and user has access`;
+        return `❌ **Enrollment Failed**
+
+**Issue**: ${result.message}
+**User**: ${user.fullname} (${user.email})
+**Course**: ${courseObj.course_name || courseObj.name}
+**IDs Used**: User ID ${user.user_id} → Course ID ${courseObj.course_id || courseObj.idCourse}
+**Expected IDs**: User ID 13163 → Course ID 997
+
+${debugSummary}${analysisText}
+
+**Search Results**:
+👤 User Search: ${debugInfo.foundUser ? '✅ Found' : '❌ Failed'}
+📚 Course Search: ${debugInfo.foundCourse ? '✅ Found' : '❌ Failed'}
+
+🔍 **Next Steps**:
+• Try: "debug enrollment" for full diagnostic info
+• Compare found IDs with working IDs (13163, 997)
+• Check if search is finding wrong user/course`;
       }
     }
   },
