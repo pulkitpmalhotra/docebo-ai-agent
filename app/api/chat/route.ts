@@ -527,9 +527,12 @@ ${displayResults.map((course: any, i: number) => {
   return `${i + 1}. ${statusIcon} **${course.enrollmentStatus.toUpperCase()}** - ${course.courseName}${course.score ? ` (Score: ${course.score})` : ''}`;
 }).join('\n')}
 
-${hasMore && totalCount <= 100 ? `\n🔄 **Load More**: "Load more cache_${cacheKey}" (Show next 20)` : ''}
-${totalCount > 100 ? `\n📊 **Full Export**: "Export CSV cache_${cacheKey}" (All ${totalCount} enrollments)` : ''}
-${hasMore && totalCount <= 100 ? `\n📊 **Or Export All**: "Export CSV cache_${cacheKey}"` : ''}`,
+${hasMore ? `\n🔄 **Load More**: "Load more cache_${cacheKey}" (Show next 20)` : ''}
+📊 **Export CSV**: "Export CSV cache_${cacheKey}" (All ${totalCount} enrollments)
+
+💡 **Actions Available:**
+${hasMore ? `- Type: "Load more cache_${cacheKey}" for next 20 results` : ''}
+- Type: "Export CSV cache_${cacheKey}" for complete spreadsheet`,
           success: true,
           totalCount: totalCount,
           hasMore: hasMore,
