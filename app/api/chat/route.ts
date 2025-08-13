@@ -141,28 +141,32 @@ class FixedDoceboAPI {
     }
   }
 
-  // FIXED: User enrollments using pagination to get ALL enrollments
-  async getUserEnrollments(userId: string): Promise<any[]> {
+  // ALTERNATIVE: Get ALL enrollments and filter client-side (for better pagination)
+  async getUserEnrollmentsAlternative(userId: string): Promise<any[]> {
     try {
-      console.log(`📚 Getting enrollments for user ID: ${userId}`);
+      console.log(`📚 Alternative approach: Getting ALL enrollments and filtering for user ${userId}`);
       
       let allUserEnrollments: any[] = [];
       let currentPage = 1;
       let hasMoreData = true;
-      const maxPages = 10; // Safety limit to prevent infinite loops
+      const maxPages = 50; // Higher limit since we're filtering client-side
+      let totalProcessed = 0;
       
-      while (hasMoreData && currentPage <= maxPages) {
+      while (hasMoreData && currentPage <= maxPages && allUserEnrollments.length < 100) {
         console.log(`📚 Fetching page ${currentPage}...`);
         
-        // Use the correct endpoint with pagination
+        // Get ALL enrollments without user filter to ensure pagination works
         const result = await this.apiRequest('/course/v1/courses/enrollments', 'GET', null, {
-          'user_ids[]': userId,
-          page_size: 500,
-          page: currentPage
+          page_size: 200,
+          page: currentPage,
+          sort_attr: 'enrollment_created_at',
+          sort_dir: 'desc'
         });
         
         const pageEnrollments = result.data?.items || [];
-        console.log(`📚 Page ${currentPage}: ${pageEnrollments.length} items returned`);
+        totalProcessed += pageEnrollments.length;
+        
+        console.log(`📚 Page ${currentPage}: ${pageEnrollments.length} total items, ${totalProcessed} processed so far`);
         
         // Filter to get only enrollments for our specific user
         const filteredPageEnrollments = pageEnrollments.filter((enrollment: any) => {
@@ -171,22 +175,93 @@ class FixedDoceboAPI {
           return enrollmentUserId === targetUserId;
         });
         
-        console.log(`📚 Page ${currentPage}: ${filteredPageEnrollments.length} enrollments for user ${userId}`);
+        console.log(`📚 Page ${currentPage}: Found ${filteredPageEnrollments.length} enrollments for user ${userId}`);
         
         // Add filtered enrollments to our collection
         allUserEnrollments.push(...filteredPageEnrollments);
         
         // Check if we have more data
-        hasMoreData = result.data?.has_more_data || false;
+        hasMoreData = result.data?.has_more_data === true;
+        
+        // Safety checks
+        if (pageEnrollments.length === 0) {
+          console.log(`📚 Page ${currentPage}: No items returned, stopping`);
+          hasMoreData = false;
+        }
+        
         currentPage++;
         
-        // If we got fewer items than page_size, we've likely reached the end
-        if (pageEnrollments.length < 500) {
-          hasMoreData = false;
+        // Add delay to be respectful
+        if (hasMoreData) {
+          await new Promise(resolve => setTimeout(resolve, 200));
         }
       }
       
-      console.log(`📚 Total enrollments collected across ${currentPage - 1} pages: ${allUserEnrollments.length}`);
+      console.log(`📚 ✅ Alternative method: Found ${allUserEnrollments.length} enrollments for user ${userId} across ${currentPage - 1} pages`);
+      
+      return allUserEnrollments;
+      
+    } catch (error) {
+      console.error('❌ Alternative user enrollments method failed:', error);
+      return [];
+    }
+  }
+
+  // FIXED: User enrollments - try both methods
+  async getUserEnrollments(userId: string): Promise<any[]> {
+    try {
+      console.log(`📚 Getting enrollments for user ID: ${userId}`);
+      
+      // First try the direct method with user_ids[] filter
+      let allUserEnrollments: any[] = [];
+      let currentPage = 1;
+      let hasMoreData = true;
+      const maxPages = 10;
+      
+      while (hasMoreData && currentPage <= maxPages) {
+        console.log(`📚 Method 1 - Fetching page ${currentPage}...`);
+        
+        const result = await this.apiRequest('/course/v1/courses/enrollments', 'GET', null, {
+          'user_ids[]': userId,
+          page_size: 200,
+          page: currentPage
+        });
+        
+        const pageEnrollments = result.data?.items || [];
+        console.log(`📚 Method 1 - Page ${currentPage}: ${pageEnrollments.length} items, has_more: ${result.data?.has_more_data}`);
+        
+        const filteredPageEnrollments = pageEnrollments.filter((enrollment: any) => {
+          return enrollment.user_id === Number(userId);
+        });
+        
+        allUserEnrollments.push(...filteredPageEnrollments);
+        console.log(`📚 Method 1 - Page ${currentPage}: ${filteredPageEnrollments.length} for user ${userId}, total so far: ${allUserEnrollments.length}`);
+        
+        hasMoreData = result.data?.has_more_data === true;
+        
+        if (pageEnrollments.length === 0) {
+          hasMoreData = false;
+        }
+        
+        currentPage++;
+        
+        if (hasMoreData) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+      }
+      
+      console.log(`📚 ✅ Method 1 result: ${allUserEnrollments.length} enrollments`);
+      
+      // If Method 1 didn't get enough results, try the alternative method
+      if (allUserEnrollments.length < 10) {
+        console.log(`📚 🔄 Method 1 only found ${allUserEnrollments.length} enrollments. Trying alternative method...`);
+        const alternativeResults = await this.getUserEnrollmentsAlternative(userId);
+        
+        if (alternativeResults.length > allUserEnrollments.length) {
+          console.log(`📚 ✅ Alternative method found more results: ${alternativeResults.length} vs ${allUserEnrollments.length}`);
+          return alternativeResults;
+        }
+      }
       
       return allUserEnrollments;
       
