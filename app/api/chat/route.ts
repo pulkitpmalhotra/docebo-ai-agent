@@ -40,6 +40,16 @@ const PATTERNS = {
     const lower = msg.toLowerCase();
     return (lower.includes('course info') || lower.includes('course details') || 
             lower.includes('tell me about course'));
+  },
+  userQuestion: (msg: string) => {
+    const lower = msg.toLowerCase();
+    // Check for user-specific questions
+    return (lower.includes('what is') || lower.includes('when did') || 
+            lower.includes('how many') || lower.includes('does user') ||
+            lower.includes('can user') || lower.includes('is user') ||
+            lower.includes('user status') || lower.includes('user role') ||
+            lower.includes('user access') || lower.includes('last login')) &&
+           (msg.includes('@') || lower.includes('user'));
   }
 };
 
@@ -167,22 +177,122 @@ class ReliableDoceboAPI {
       console.log(`⚠️ Could not fetch additional details for user ${user.user_id}`);
     }
 
-    // Merge data from both sources
+    // Try to get user's organizational data (branches/groups)
+    let orgDetails = null;
+    try {
+      orgDetails = await this.apiRequest(`/manage/v1/user/${user.user_id}/branches`);
+      console.log(`🏛️ User branches:`, JSON.stringify(orgDetails, null, 2));
+    } catch (error) {
+      console.log(`⚠️ Could not fetch branch details for user ${user.user_id}`);
+    }
+
+    let groupDetails = null;
+    try {
+      groupDetails = await this.apiRequest(`/manage/v1/user/${user.user_id}/groups`);
+      console.log(`👥 User groups:`, JSON.stringify(groupDetails, null, 2));
+    } catch (error) {
+      console.log(`⚠️ Could not fetch group details for user ${user.user_id}`);
+    }
+
+    // Merge data from all sources
     const mergedUser = additionalDetails?.data || user;
+
+    // Map user level to readable format
+    const getUserLevel = (level: any): string => {
+      if (!level) return 'Not specified';
+      
+      const levelStr = level.toString().toLowerCase();
+      const levelNum = parseInt(level);
+      
+      // Map common Docebo levels
+      switch (levelNum) {
+        case 1:
+        case 1024:
+          return 'Superadmin';
+        case 4:
+        case 256:
+          return 'Power User';
+        case 6:
+        case 64:
+          return 'User Manager';
+        case 7:
+        case 32:
+          return 'User';
+        default:
+          // Check string-based levels
+          if (levelStr.includes('admin') || levelStr.includes('super')) return 'Superadmin';
+          if (levelStr.includes('power')) return 'Power User';
+          if (levelStr.includes('manager')) return 'User Manager';
+          if (levelStr.includes('user')) return 'User';
+          return `Level ${level}`;
+      }
+    };
+
+    // Extract branches from various possible sources
+    const extractBranches = (): string => {
+      const sources = [
+        orgDetails?.data?.items,
+        mergedUser.branches,
+        user.branches,
+        mergedUser.branch,
+        user.branch
+      ];
+      
+      for (const source of sources) {
+        if (Array.isArray(source) && source.length > 0) {
+          return source.map((b: any) => {
+            if (typeof b === 'string') return b;
+            return b.name || b.branch_name || b.title || JSON.stringify(b);
+          }).join(', ');
+        }
+        if (source && typeof source === 'object' && !Array.isArray(source)) {
+          return source.name || source.branch_name || source.title || JSON.stringify(source);
+        }
+        if (typeof source === 'string' && source.trim()) {
+          return source;
+        }
+      }
+      return 'None assigned';
+    };
+
+    // Extract groups from various possible sources  
+    const extractGroups = (): string => {
+      const sources = [
+        groupDetails?.data?.items,
+        mergedUser.groups,
+        user.groups,
+        mergedUser.group,
+        user.group
+      ];
+      
+      for (const source of sources) {
+        if (Array.isArray(source) && source.length > 0) {
+          return source.map((g: any) => {
+            if (typeof g === 'string') return g;
+            return g.name || g.group_name || g.title || JSON.stringify(g);
+          }).join(', ');
+        }
+        if (source && typeof source === 'object' && !Array.isArray(source)) {
+          return source.name || source.group_name || source.title || JSON.stringify(source);
+        }
+        if (typeof source === 'string' && source.trim()) {
+          return source;
+        }
+      }
+      return 'None assigned';
+    };
 
     return {
       id: user.user_id || user.id,
-      fullname: user.fullname || user.firstname + ' ' + user.lastname || 'Not available',
+      fullname: user.fullname || `${user.firstname || ''} ${user.lastname || ''}`.trim() || 'Not available',
       email: user.email,
       username: user.username || 'Not available',
       status: user.status === '1' ? 'Active' : user.status === '0' ? 'Inactive' : `Status: ${user.status}`,
-      level: user.level || mergedUser.level || 'Not specified',
+      level: getUserLevel(user.level || mergedUser.level),
       
-      // Try multiple possible field names for branches
-      branches: mergedUser.branches || user.branches || mergedUser.branch || user.branch || [],
-      
-      // Try multiple possible field names for groups  
-      groups: mergedUser.groups || user.groups || mergedUser.group || user.group || [],
+      // Use improved extraction methods
+      branches: extractBranches(),
+      groups: extractGroups(),
       
       // Try multiple date field formats
       creationDate: user.register_date || user.creation_date || user.created_at || mergedUser.register_date || 'Not available',
@@ -193,11 +303,14 @@ class ReliableDoceboAPI {
       
       // Additional fields that might be available
       department: user.department || mergedUser.department || 'Not specified',
-      role: user.role || mergedUser.role || user.user_level || 'Not specified',
       
-      // Raw data for debugging
-      rawUserData: user,
-      rawAdditionalData: additionalDetails?.data || null
+      // Raw data for debugging (remove this later)
+      debug: {
+        userFields: Object.keys(user),
+        additionalFields: additionalDetails?.data ? Object.keys(additionalDetails.data) : [],
+        branchData: orgDetails?.data ? 'Available' : 'Not available',
+        groupData: groupDetails?.data ? 'Available' : 'Not available'
+      }
     };
   }
 
@@ -301,7 +414,6 @@ export async function POST(request: NextRequest) {
 👤 **Username**: ${userDetails.username}
 📊 **Status**: ${userDetails.status}
 🏢 **Level**: ${userDetails.level}
-🏢 **Role**: ${userDetails.role}
 🏛️ **Department**: ${userDetails.department}
 
 ### 🌍 **Preferences**
@@ -313,26 +425,16 @@ export async function POST(request: NextRequest) {
 🔐 **Last Access**: ${userDetails.lastAccess}
 
 ### 👥 **Organization**
-🏛️ **Branches**: ${
-  Array.isArray(userDetails.branches) && userDetails.branches.length > 0 
-    ? userDetails.branches.map((b: any) => typeof b === 'object' ? (b.name || b.branch_name || JSON.stringify(b)) : b).join(', ')
-    : userDetails.branches && typeof userDetails.branches === 'object'
-    ? JSON.stringify(userDetails.branches)
-    : 'None assigned'
-}
-👥 **Groups**: ${
-  Array.isArray(userDetails.groups) && userDetails.groups.length > 0 
-    ? userDetails.groups.map((g: any) => typeof g === 'object' ? (g.name || g.group_name || JSON.stringify(g)) : g).join(', ')
-    : userDetails.groups && typeof userDetails.groups === 'object'
-    ? JSON.stringify(userDetails.groups)
-    : 'None assigned'
-}
+🏛️ **Branches**: ${userDetails.branches}
+👥 **Groups**: ${userDetails.groups}
 
-### 🔍 **Debug Info** (Remove after testing)
-**Raw Data Available**: ${Object.keys(userDetails.rawUserData || {}).join(', ')}
-${userDetails.rawAdditionalData ? `**Additional Data**: ${Object.keys(userDetails.rawAdditionalData).join(', ')}` : '**Additional Data**: None'}
+### 🔍 **Debug Info** (Temporary)
+**Available Fields**: ${userDetails.debug?.userFields?.join(', ') || 'None'}
+**Branch API**: ${userDetails.debug?.branchData || 'Unknown'}
+**Group API**: ${userDetails.debug?.groupData || 'Unknown'}
 
-💡 **Admin Complete**: All available user information retrieved in one search!`,
+💡 **Admin Complete**: All available user information retrieved!
+💬 **Ask More**: "What is ${userDetails.email}'s last login?" or "When did ${userDetails.email} join?"`,
             success: true,
             searchResults: users,
             userDetails: userDetails,
@@ -537,7 +639,76 @@ ${courseDetails.description || 'No description available'}`,
       }
     }
     
-    // DEFAULT - Help message
+    // 5. FLEXIBLE USER QUESTIONS
+    if (PATTERNS.userQuestion(message)) {
+      if (!email) {
+        return NextResponse.json({
+          response: `❌ **Missing Email**: I need an email address to answer questions about a user.
+
+**Examples**: 
+- "What is john@company.com's last login?"
+- "When did sarah@test.com join?"
+- "Is mike@company.com active?"`,
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      try {
+        const userDetails = await api.getUserDetails(email);
+        const question = message.toLowerCase();
+        
+        let answer = '';
+        
+        if (question.includes('last login') || question.includes('last access')) {
+          answer = `🔐 **Last Access**: ${userDetails.lastAccess}`;
+        } else if (question.includes('when') && (question.includes('join') || question.includes('creat'))) {
+          answer = `📅 **Account Created**: ${userDetails.creationDate}`;
+        } else if (question.includes('status') || question.includes('active') || question.includes('inactive')) {
+          answer = `📊 **Status**: ${userDetails.status}`;
+        } else if (question.includes('level') || question.includes('role') || question.includes('permission')) {
+          answer = `🏢 **Level**: ${userDetails.level}`;
+        } else if (question.includes('branch') || question.includes('department')) {
+          answer = `🏛️ **Branches**: ${userDetails.branches}\n🏛️ **Department**: ${userDetails.department}`;
+        } else if (question.includes('group')) {
+          answer = `👥 **Groups**: ${userDetails.groups}`;
+        } else if (question.includes('language') || question.includes('timezone')) {
+          answer = `🌍 **Language**: ${userDetails.language}\n🕐 **Timezone**: ${userDetails.timezone}`;
+        } else if (question.includes('email') || question.includes('contact')) {
+          answer = `📧 **Email**: ${userDetails.email}\n👤 **Username**: ${userDetails.username}`;
+        } else {
+          // General fallback - provide relevant info based on keywords
+          answer = `👤 **${userDetails.fullname}** - Quick Info:
+📊 **Status**: ${userDetails.status}
+🏢 **Level**: ${userDetails.level}
+📅 **Created**: ${userDetails.creationDate}
+🔐 **Last Access**: ${userDetails.lastAccess}`;
+        }
+        
+        return NextResponse.json({
+          response: `💬 **Question About**: ${userDetails.fullname}
+
+${answer}
+
+💡 **More Questions**: 
+- "What is ${email}'s status?"
+- "When did ${email} last login?"
+- "What level is ${email}?"
+- "What groups is ${email} in?"`,
+          success: true,
+          userDetails: userDetails,
+          questionAnswered: true,
+          timestamp: new Date().toISOString()
+        });
+        
+      } catch (error) {
+        return NextResponse.json({
+          response: `❌ **Error**: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+    }
     return NextResponse.json({
       response: `🎯 **Docebo Assistant** - *Reliable & Fast*
 
