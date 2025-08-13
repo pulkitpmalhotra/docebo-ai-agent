@@ -59,7 +59,8 @@ class BackgroundEnrollmentProcessor {
     return this.accessToken!;
   }
 
-  private async apiRequest(endpoint: string, params?: any): Promise<any> {
+  // Make this method public so it can be called from outside the class
+  public async apiRequest(endpoint: string, params?: any): Promise<any> {
     const token = await this.getAccessToken();
     
     let url = `${this.baseUrl}${endpoint}`;
@@ -88,6 +89,16 @@ class BackgroundEnrollmentProcessor {
     }
 
     return await response.json();
+  }
+
+  // Public method to find a user by email
+  public async findUserByEmail(email: string): Promise<any> {
+    const users = await this.apiRequest('/manage/v1/user', {
+      search_text: email,
+      page_size: 5
+    });
+    
+    return users.data?.items?.find((u: any) => u.email.toLowerCase() === email.toLowerCase());
   }
 
   async processUserEnrollments(jobId: string, userId: string, userEmail: string): Promise<void> {
@@ -249,13 +260,8 @@ ${cached.totalCount > 20 ? `\n... and ${cached.totalCount - 20} more courses` : 
       processor = new BackgroundEnrollmentProcessor(getConfig());
     }
     
-    // Find user first (quick operation)
-    const users = await processor.apiRequest('/manage/v1/user', {
-      search_text: email,
-      page_size: 5
-    });
-    
-    const user = users.data?.items?.find((u: any) => u.email.toLowerCase() === email.toLowerCase());
+    // Find user first (quick operation) - now using the public method
+    const user = await processor.findUserByEmail(email);
     
     if (!user) {
       return NextResponse.json({
