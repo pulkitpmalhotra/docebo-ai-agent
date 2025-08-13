@@ -617,9 +617,6 @@ ${options.dueDate ? `**Due Date**: ${options.dueDate}` : ''}
       console.log(`📊 Raw enrollments returned: ${enrollments.length}`);
       console.log(`📊 First few enrollments:`, JSON.stringify(enrollments.slice(0, 3), null, 2));
       
-      // Get debug info from the API call for display in response
-      const debugInfo = await api.getEnrollmentDebugInfo(user.user_id);
-      
       if (enrollments.length === 0) {
         return NextResponse.json({
           response: `📚 **No Enrollments Found**
@@ -672,8 +669,7 @@ ${courseList}${enrollments.length > displayLimit ? `\n\n... and ${enrollments.le
 - User ID: ${user.user_id}
 - Endpoint: \`/course/v1/courses/enrollments?user_ids[]=${user.user_id}\`
 - Total Enrollments Found: ${enrollments.length}
-- Showing: ${displayLimit}
-- API Debug: ${debugInfo}`,
+- Showing: ${displayLimit}`,
         success: true,
         timestamp: new Date().toISOString()
       });
