@@ -1,4 +1,12 @@
-// app/api/chat/route.ts - Clean & Reliable - Working Features Only
+function extractCourse(message: string): string | null {
+  const quotedMatch = message.match(/"([^"]+)"/);
+  if (quotedMatch) return quotedMatch[1];
+  
+  const courseMatch = message.match(/find\s+(.+?)\s+course/i);
+  if (courseMatch) return courseMatch[1].trim();
+  
+  return null;
+}// app/api/chat/route.ts - Clean & Reliable - Working Features Only
 import { NextRequest, NextResponse } from 'next/server';
 
 // Environment configuration
@@ -19,7 +27,13 @@ function getConfig() {
   };
 }
 
-// Simple patterns for working operations
+// Simple cache for storing search results
+const searchCache = new Map();
+
+// Generate cache key for storing results
+function generateSearchCacheKey(): string {
+  return `search_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+}
 const PATTERNS = {
   searchUsers: (msg: string) => {
     const lower = msg.toLowerCase();
@@ -57,6 +71,12 @@ const PATTERNS = {
       lower.includes('level') || lower.includes('groups') ||
       lower.includes('branches') || lower.includes('department')
     );
+  },
+  showAllResults: (msg: string) => {
+    const lower = msg.toLowerCase();
+    return (lower.includes('show all') || lower.includes('all results') || 
+            lower.includes('all courses') || lower.includes('all users')) &&
+           lower.includes('search_');
   }
 };
 
@@ -66,7 +86,10 @@ function extractEmail(message: string): string | null {
   return match ? match[0] : null;
 }
 
-function extractCourse(message: string): string | null {
+function extractSearchCacheKey(message: string): string | null {
+  const match = message.match(/search_([a-f0-9A-F_]+)/);
+  return match ? match[1] : null;
+}
   const quotedMatch = message.match(/"([^"]+)"/);
   if (quotedMatch) return quotedMatch[1];
   
@@ -617,10 +640,67 @@ export async function POST(request: NextRequest) {
     // Parse message
     const email = extractEmail(message);
     const course = extractCourse(message);
+    const searchCacheKey = extractSearchCacheKey(message);
     
-    console.log(`📋 Parsed - Email: ${email}, Course: ${course}`);
-    console.log(`🔍 Pattern matching - userQuestion: ${PATTERNS.userQuestion(message)}, searchUsers: ${PATTERNS.searchUsers(message)}, getUserInfo: ${PATTERNS.getUserInfo(message)}`);
+    console.log(`📋 Parsed - Email: ${email}, Course: ${course}, SearchCache: ${searchCacheKey}`);
+    console.log(`🔍 Pattern matching - userQuestion: ${PATTERNS.userQuestion(message)}, searchUsers: ${PATTERNS.searchUsers(message)}, showAllResults: ${PATTERNS.showAllResults(message)}`);
     
+    // 1. SHOW ALL SEARCH RESULTS
+    if (PATTERNS.showAllResults(message) && searchCacheKey) {
+      console.log(`📋 Show all results request for: ${searchCacheKey}`);
+      
+      const cachedSearch = searchCache.get(searchCacheKey);
+      if (!cachedSearch) {
+        return NextResponse.json({
+          response: `❌ **Search Results Expired**: The search results are no longer available.
+
+Please run your search again to get fresh results.`,
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      const { results, searchTerm, searchType } = cachedSearch;
+      
+      if (searchType === 'courses') {
+        const courseList = results.map((course: any, i: number) => {
+          const courseName = api.getCourseName(course);
+          const courseId = api.getCourseId(course);
+          const status = course.status || course.course_status || 'Unknown';
+          const statusIcon = status === 'published' ? '✅' : status === 'draft' ? '📝' : status === 'archived' ? '📦' : '❓';
+          return `${i + 1}. ${statusIcon} **${courseName}** (ID: ${courseId}) - *${status}*`;
+        }).join('\n');
+        
+        return NextResponse.json({
+          response: `📚 **All Course Search Results**: "${searchTerm}" (${results.length} total)
+
+${courseList}
+
+💡 **Get Details**: "Course info [course name]" for detailed information`,
+          success: true,
+          totalCount: results.length,
+          showingAll: true,
+          timestamp: new Date().toISOString()
+        });
+      } else if (searchType === 'users') {
+        const userList = results.map((user: any, i: number) => {
+          const statusIcon = user.status === '1' ? '✅' : '❌';
+          return `${i + 1}. ${statusIcon} **${user.fullname}** (${user.email})`;
+        }).join('\n');
+        
+        return NextResponse.json({
+          response: `👥 **All User Search Results**: "${searchTerm}" (${results.length} total)
+
+${userList}
+
+💡 **Get Details**: "User info [email]" or "Find user [email]" for detailed information`,
+          success: true,
+          totalCount: results.length,
+          showingAll: true,
+          timestamp: new Date().toISOString()
+        });
+      }
+    }
     // 1. FLEXIBLE USER QUESTIONS (Check this first before other patterns)
     if (PATTERNS.userQuestion(message)) {
       console.log(`💬 User question detected: ${message}`);
@@ -843,7 +923,9 @@ ${userList}${users.length > 20 ? `\n\n... and ${users.length - 20} more users` :
       const courseList = courses.slice(0, displayCount).map((course, i) => {
         const courseName = api.getCourseName(course);
         const courseId = api.getCourseId(course);
-        return `${i + 1}. **${courseName}** (ID: ${courseId})`;
+        const status = course.status || course.course_status || 'Unknown';
+        const statusIcon = status === 'published' ? '✅' : status === 'draft' ? '📝' : status === 'archived' ? '📦' : '❓';
+        return `${i + 1}. ${statusIcon} **${courseName}** (ID: ${courseId}) - *${status}*`;
       }).join('\n');
       
       return NextResponse.json({
