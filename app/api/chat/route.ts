@@ -147,22 +147,37 @@ class FixedDoceboAPI {
       console.log(`📚 Getting enrollments for user ID: ${userId}`);
       
       // Use the correct endpoint: /course/v1/courses/enrollments with user_ids[] parameter
+      // Increase page_size to get ALL enrollments, not just 200
       const result = await this.apiRequest('/course/v1/courses/enrollments', 'GET', null, {
         'user_ids[]': userId,
-        page_size: 200
+        page_size: 500  // Increased from 200 to 500 to get more results
       });
       
       const allEnrollments = result.data?.items || [];
       console.log(`📚 API returned: ${allEnrollments.length} total enrollments`);
+      console.log(`📚 Total count from API: ${result.data?.total_count || 'unknown'}`);
+      console.log(`📚 Has more data: ${result.data?.has_more_data || false}`);
       
       // Apply strict filtering to ensure we only get this user's enrollments
       const filteredEnrollments = allEnrollments.filter((enrollment: any) => {
         const enrollmentUserId = enrollment.user_id;
-        return enrollmentUserId === userId || enrollmentUserId === Number(userId) || 
+        const matches = enrollmentUserId === userId || enrollmentUserId === Number(userId) || 
                enrollmentUserId === parseInt(userId);
+        
+        if (!matches) {
+          console.log(`📚 Filtered out enrollment for user ${enrollmentUserId}, expecting ${userId}`);
+        }
+        
+        return matches;
       });
       
-      console.log(`📚 Filtered to: ${filteredEnrollments.length} enrollments for user ${userId}`);
+      console.log(`📚 After filtering: ${filteredEnrollments.length} enrollments for user ${userId}`);
+      
+      // If we have more data available, we might need pagination
+      if (result.data?.has_more_data && filteredEnrollments.length < (result.data?.total_count || 0)) {
+        console.log(`⚠️ Warning: API indicates more data available. Consider implementing pagination.`);
+      }
+      
       return filteredEnrollments;
       
     } catch (error) {
@@ -577,17 +592,24 @@ ${options.dueDate ? `**Due Date**: ${options.dueDate}` : ''}
       // Get enrollments using the CORRECT endpoint
       const enrollments = await api.getUserEnrollments(user.user_id);
       
+      console.log(`📊 Raw enrollments returned: ${enrollments.length}`);
+      console.log(`📊 First few enrollments:`, JSON.stringify(enrollments.slice(0, 3), null, 2));
+      
       if (enrollments.length === 0) {
         return NextResponse.json({
           response: `📚 **No Enrollments Found**
 
-${user.fullname} (${user.email}) is not enrolled in any courses.`,
+${user.fullname} (${user.email}) is not enrolled in any courses.
+
+🔍 **Debug Info**: User ID ${user.user_id} found, but no enrollments returned from API.`,
           success: true,
           timestamp: new Date().toISOString()
         });
       }
       
-      const courseList = enrollments.slice(0, 10).map((e, i) => {
+      // Show MORE courses - let's show up to 20 instead of 10
+      const displayLimit = Math.min(20, enrollments.length);
+      const courseList = enrollments.slice(0, displayLimit).map((e, i) => {
         // Clean up course name and remove all HTML entities and formatting
         let courseName = e.course_name || 'Unknown Course';
         courseName = courseName
@@ -602,22 +624,30 @@ ${user.fullname} (${user.email}) is not enrolled in any courses.`,
         
         const status = e.enrollment_status || '';
         const progress = e.enrollment_score || '';
+        const courseType = e.course_type || '';
         
         let statusIcon = '';
         if (status === 'completed') statusIcon = '✅ COMPLETED';
         else if (status === 'in_progress') statusIcon = '🔄 IN PROGRESS';
         else if (status === 'enrolled') statusIcon = '📚 ENROLLED';
+        else if (status === 'subscription_to_confirm') statusIcon = '⏳ PENDING';
+        else if (status === 'waiting') statusIcon = '⏸️ WAITING';
+        else if (status === 'suspended') statusIcon = '🚫 SUSPENDED';
         else statusIcon = '📚 ENROLLED';
         
-        return `${i + 1}. ${statusIcon} - ${courseName}${progress ? ` (Score: ${progress})` : ''}`;
+        return `${i + 1}. ${statusIcon} - ${courseName}${courseType ? ` [${courseType.toUpperCase()}]` : ''}${progress ? ` (Score: ${progress})` : ''}`;
       }).join('\n');
       
       return NextResponse.json({
         response: `📚 **${user.fullname}'s Courses** (${enrollments.length} total)
 
-${courseList}${enrollments.length > 10 ? `\n\n... and ${enrollments.length - 10} more courses` : ''}
+${courseList}${enrollments.length > displayLimit ? `\n\n... and ${enrollments.length - displayLimit} more courses` : ''}
 
-📊 **Endpoint Used**: \`/course/v1/courses/enrollments?user_ids[]=${user.user_id}\``,
+📊 **Debug Info**: 
+- User ID: ${user.user_id}
+- Endpoint: \`/course/v1/courses/enrollments?user_ids[]=${user.user_id}\`
+- Total Enrollments Found: ${enrollments.length}
+- Showing: ${displayLimit}`,
         success: true,
         timestamp: new Date().toISOString()
       });
