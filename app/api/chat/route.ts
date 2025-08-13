@@ -147,31 +147,41 @@ class FixedDoceboAPI {
       console.log(`📚 Getting enrollments for user ID: ${userId}`);
       
       // Use the correct endpoint: /course/v1/courses/enrollments with user_ids[] parameter
-      // Increase page_size to get ALL enrollments, not just 200
       const result = await this.apiRequest('/course/v1/courses/enrollments', 'GET', null, {
         'user_ids[]': userId,
-        page_size: 500  // Increased from 200 to 500 to get more results
+        page_size: 500
       });
       
-      console.log(`📚 FULL API RESPONSE:`, JSON.stringify(result, null, 2));
-      
       const allEnrollments = result.data?.items || [];
-      console.log(`📚 API returned: ${allEnrollments.length} total enrollments`);
+      console.log(`📚 API returned: ${allEnrollments.length} total items`);
       console.log(`📚 Total count from API: ${result.data?.total_count || 'unknown'}`);
       console.log(`📚 Has more data: ${result.data?.has_more_data || false}`);
-      console.log(`📚 Current page: ${result.data?.current_page || 'unknown'}`);
-      console.log(`📚 Current page size: ${result.data?.current_page_size || 'unknown'}`);
       
-      // Log first few enrollments to see what we got
-      console.log(`📚 First 3 enrollments:`, allEnrollments.slice(0, 3));
+      // Check unique user IDs in the response
+      const uniqueUserIds = [...new Set(allEnrollments.map((e: any) => e.user_id))];
+      console.log(`📚 Unique user IDs in response:`, uniqueUserIds);
       
-      // Check if we're getting the right user - NO FILTERING for now
-      console.log(`📚 All user IDs in response:`, allEnrollments.map((e: any) => e.user_id));
+      // Apply filtering to get ONLY enrollments for our specific user
+      const filteredEnrollments = allEnrollments.filter((enrollment: any) => {
+        const enrollmentUserId = enrollment.user_id;
+        const targetUserId = Number(userId);
+        const matches = enrollmentUserId === targetUserId;
+        
+        if (!matches) {
+          console.log(`📚 Filtered out: user ${enrollmentUserId} (course: ${enrollment.course_name})`);
+        }
+        
+        return matches;
+      });
       
-      // TEMPORARILY: Return ALL enrollments without filtering to see what we get
-      console.log(`📚 Returning ALL ${allEnrollments.length} enrollments without filtering`);
+      console.log(`📚 After filtering: ${filteredEnrollments.length} enrollments for user ${userId}`);
       
-      return allEnrollments;
+      // Log sample of filtered results
+      if (filteredEnrollments.length > 0) {
+        console.log(`📚 Sample filtered enrollment:`, JSON.stringify(filteredEnrollments[0], null, 2));
+      }
+      
+      return filteredEnrollments;
       
     } catch (error) {
       console.error('❌ Get user enrollments failed:', error);
