@@ -141,7 +141,7 @@ class FixedDoceboAPI {
     }
   }
 
-  // OPTIMIZED: User enrollments with faster pagination and timeout handling
+  // SUPER OPTIMIZED: Faster pagination with larger batches
   async getUserEnrollments(userId: string): Promise<any[]> {
     try {
       console.log(`📚 Getting enrollments for user ID: ${userId}`);
@@ -149,50 +149,83 @@ class FixedDoceboAPI {
       let allUserEnrollments: any[] = [];
       let currentPage = 1;
       let hasMoreData = true;
-      const maxPages = 50; // Increased limit but with timeout protection
+      const maxPages = 100; // Increased significantly
       const startTime = Date.now();
-      const timeoutMs = 25000; // 25 seconds to leave buffer for response
+      const timeoutMs = 28000; // 28 seconds for safety
       
       while (hasMoreData && currentPage <= maxPages) {
         // Check timeout
         if (Date.now() - startTime > timeoutMs) {
-          console.log(`📚 ⏰ Timeout approaching, stopping at page ${currentPage} with ${allUserEnrollments.length} enrollments found`);
+          console.log(`📚 ⏰ Timeout approaching after ${Math.floor((Date.now() - startTime) / 1000)}s, stopping at page ${currentPage}`);
           break;
         }
         
-        console.log(`📚 Fetching page ${currentPage}...`);
+        // Batch requests - process multiple pages in parallel for speed
+        const batchSize = 3; // Process 3 pages at once
+        const promises = [];
         
-        const result = await this.apiRequest('/course/v1/courses/enrollments', 'GET', null, {
-          'user_ids[]': userId,
-          page_size: 200,
-          page: currentPage
-        });
-        
-        const pageEnrollments = result.data?.items || [];
-        
-        const filteredPageEnrollments = pageEnrollments.filter((enrollment: any) => {
-          return enrollment.user_id === Number(userId);
-        });
-        
-        allUserEnrollments.push(...filteredPageEnrollments);
-        console.log(`📚 Page ${currentPage}: ${filteredPageEnrollments.length} enrollments found (total: ${allUserEnrollments.length})`);
-        
-        hasMoreData = result.data?.has_more_data === true;
-        
-        if (pageEnrollments.length === 0) {
-          hasMoreData = false;
+        for (let i = 0; i < batchSize && (currentPage + i) <= maxPages; i++) {
+          const pageNum = currentPage + i;
+          
+          const promise = this.apiRequest('/course/v1/courses/enrollments', 'GET', null, {
+            'user_ids[]': userId,
+            page_size: 200,
+            page: pageNum
+          }).then(result => ({
+            page: pageNum,
+            data: result
+          })).catch(error => ({
+            page: pageNum,
+            error: error
+          }));
+          
+          promises.push(promise);
         }
         
-        currentPage++;
+        console.log(`📚 Fetching pages ${currentPage}-${currentPage + batchSize - 1}...`);
         
-        // Reduced delay for faster processing
+        // Wait for all batch requests to complete
+        const results = await Promise.all(promises);
+        
+        let batchEnrollments = 0;
+        let shouldContinue = false;
+        
+        for (const result of results) {
+          if (result.error) {
+            console.log(`📚 Page ${result.page}: Error - ${result.error}`);
+            continue;
+          }
+          
+          const pageEnrollments = result.data?.data?.items || [];
+          
+          const filteredPageEnrollments = pageEnrollments.filter((enrollment: any) => {
+            return enrollment.user_id === Number(userId);
+          });
+          
+          allUserEnrollments.push(...filteredPageEnrollments);
+          batchEnrollments += filteredPageEnrollments.length;
+          
+          // Check if this page indicates more data
+          if (result.data?.data?.has_more_data === true) {
+            shouldContinue = true;
+          }
+          
+          console.log(`📚 Page ${result.page}: ${filteredPageEnrollments.length} enrollments`);
+        }
+        
+        console.log(`📚 Batch complete: +${batchEnrollments} enrollments (total: ${allUserEnrollments.length})`);
+        
+        hasMoreData = shouldContinue;
+        currentPage += batchSize;
+        
+        // Very short delay since we're batching
         if (hasMoreData) {
-          await new Promise(resolve => setTimeout(resolve, 50));
+          await new Promise(resolve => setTimeout(resolve, 10));
         }
       }
       
       const totalTime = Date.now() - startTime;
-      console.log(`📚 ✅ Found ${allUserEnrollments.length} enrollments across ${currentPage - 1} pages in ${totalTime}ms`);
+      console.log(`📚 ✅ Found ${allUserEnrollments.length} enrollments across ~${currentPage} pages in ${totalTime}ms`);
       
       return allUserEnrollments;
       
