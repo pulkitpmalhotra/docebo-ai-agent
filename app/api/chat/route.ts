@@ -141,47 +141,54 @@ class FixedDoceboAPI {
     }
   }
 
-  // FIXED: User enrollments using the CORRECT endpoint with proper filtering
+  // FIXED: User enrollments using pagination to get ALL enrollments
   async getUserEnrollments(userId: string): Promise<any[]> {
     try {
       console.log(`📚 Getting enrollments for user ID: ${userId}`);
       
-      // Use the correct endpoint: /course/v1/courses/enrollments with user_ids[] parameter
-      const result = await this.apiRequest('/course/v1/courses/enrollments', 'GET', null, {
-        'user_ids[]': userId,
-        page_size: 500
-      });
+      let allUserEnrollments: any[] = [];
+      let currentPage = 1;
+      let hasMoreData = true;
+      const maxPages = 10; // Safety limit to prevent infinite loops
       
-      const allEnrollments = result.data?.items || [];
-      console.log(`📚 API returned: ${allEnrollments.length} total items`);
-      console.log(`📚 Total count from API: ${result.data?.total_count || 'unknown'}`);
-      console.log(`📚 Has more data: ${result.data?.has_more_data || false}`);
-      
-      // Check unique user IDs in the response
-      const uniqueUserIds = [...new Set(allEnrollments.map((e: any) => e.user_id))];
-      console.log(`📚 Unique user IDs in response:`, uniqueUserIds);
-      
-      // Apply filtering to get ONLY enrollments for our specific user
-      const filteredEnrollments = allEnrollments.filter((enrollment: any) => {
-        const enrollmentUserId = enrollment.user_id;
-        const targetUserId = Number(userId);
-        const matches = enrollmentUserId === targetUserId;
+      while (hasMoreData && currentPage <= maxPages) {
+        console.log(`📚 Fetching page ${currentPage}...`);
         
-        if (!matches) {
-          console.log(`📚 Filtered out: user ${enrollmentUserId} (course: ${enrollment.course_name || 'Unknown'})`);
+        // Use the correct endpoint with pagination
+        const result = await this.apiRequest('/course/v1/courses/enrollments', 'GET', null, {
+          'user_ids[]': userId,
+          page_size: 500,
+          page: currentPage
+        });
+        
+        const pageEnrollments = result.data?.items || [];
+        console.log(`📚 Page ${currentPage}: ${pageEnrollments.length} items returned`);
+        
+        // Filter to get only enrollments for our specific user
+        const filteredPageEnrollments = pageEnrollments.filter((enrollment: any) => {
+          const enrollmentUserId = enrollment.user_id;
+          const targetUserId = Number(userId);
+          return enrollmentUserId === targetUserId;
+        });
+        
+        console.log(`📚 Page ${currentPage}: ${filteredPageEnrollments.length} enrollments for user ${userId}`);
+        
+        // Add filtered enrollments to our collection
+        allUserEnrollments.push(...filteredPageEnrollments);
+        
+        // Check if we have more data
+        hasMoreData = result.data?.has_more_data || false;
+        currentPage++;
+        
+        // If we got fewer items than page_size, we've likely reached the end
+        if (pageEnrollments.length < 500) {
+          hasMoreData = false;
         }
-        
-        return matches;
-      });
-      
-      console.log(`📚 After filtering: ${filteredEnrollments.length} enrollments for user ${userId}`);
-      
-      // Log sample of filtered results
-      if (filteredEnrollments.length > 0) {
-        console.log(`📚 Sample filtered enrollment:`, JSON.stringify(filteredEnrollments[0], null, 2));
       }
       
-      return filteredEnrollments;
+      console.log(`📚 Total enrollments collected across ${currentPage - 1} pages: ${allUserEnrollments.length}`);
+      
+      return allUserEnrollments;
       
     } catch (error) {
       console.error('❌ Get user enrollments failed:', error);
