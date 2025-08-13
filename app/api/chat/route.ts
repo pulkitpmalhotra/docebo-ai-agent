@@ -1,4 +1,4 @@
-// app/api/chat/route.ts - Fixed for googlesandbox.docebosaas.com API structure
+// app/api/chat/route.ts - Fixed getUserEnrollments to use correct endpoint only
 import { NextRequest, NextResponse } from 'next/server';
 
 // Environment configuration
@@ -109,7 +109,7 @@ class FixedDoceboAPI {
     return result;
   }
 
-  // FIXED: User search with correct endpoint and field mapping
+  // User search with correct endpoint and field mapping
   async searchUsers(searchText: string, limit: number = 25): Promise<any[]> {
     try {
       const result = await this.apiRequest('/manage/v1/user', 'GET', null, {
@@ -125,7 +125,7 @@ class FixedDoceboAPI {
     }
   }
 
-  // FIXED: Course search with correct endpoint (/course/v1/courses instead of /learn/v1/courses)
+  // Course search with correct endpoint
   async searchCourses(searchText: string, limit: number = 25): Promise<any[]> {
     try {
       const result = await this.apiRequest('/course/v1/courses', 'GET', null, {
@@ -141,37 +141,23 @@ class FixedDoceboAPI {
     }
   }
 
-  // FIXED: User enrollments with proper filtering
+  // FIXED: User enrollments using the CORRECT endpoint only
   async getUserEnrollments(userId: string): Promise<any[]> {
     try {
       console.log(`📚 Getting enrollments for user ID: ${userId}`);
       
-      // First try the direct user enrollment endpoint if it exists
-      try {
-        const directResult = await this.apiRequest(`/learn/v1/enrollments/users/${userId}`, 'GET', null, {
-          page_size: 200
-        });
-        
-        if (directResult.data?.items && directResult.data.items.length > 0) {
-          console.log(`📚 Direct user endpoint success: ${directResult.data.items.length} enrollments`);
-          return directResult.data.items;
-        }
-      } catch (directError) {
-        console.log('📚 Direct user endpoint failed, trying general endpoint');
-      }
-      
-      // Fallback to general endpoint with user filter
+      // Use the correct endpoint: /course/v1/courses/enrollments with user_ids[] parameter
       const result = await this.apiRequest('/course/v1/courses/enrollments', 'GET', null, {
         'user_ids[]': userId,
         page_size: 200
       });
       
       const allEnrollments = result.data?.items || [];
-      console.log(`📚 General endpoint returned: ${allEnrollments.length} total enrollments`);
+      console.log(`📚 API returned: ${allEnrollments.length} total enrollments`);
       
       // Apply strict filtering to ensure we only get this user's enrollments
       const filteredEnrollments = allEnrollments.filter((enrollment: any) => {
-        const enrollmentUserId = enrollment.user_id || enrollment.id_user;
+        const enrollmentUserId = enrollment.user_id;
         return enrollmentUserId === userId || enrollmentUserId === Number(userId) || 
                enrollmentUserId === parseInt(userId);
       });
@@ -185,7 +171,7 @@ class FixedDoceboAPI {
     }
   }
 
-  // FIXED: Course enrollments with correct endpoint and parameters
+  // Course enrollments with correct endpoint and parameters
   async getCourseEnrollments(courseId: string): Promise<any[]> {
     try {
       console.log(`👥 Getting enrollments for course ID: ${courseId}`);
@@ -203,9 +189,7 @@ class FixedDoceboAPI {
       const allEnrollments = result.data?.items || [];
       const filteredEnrollments = allEnrollments.filter((enrollment: any) => 
         enrollment.course_id === Number(courseId) || 
-        enrollment.course_id === courseId ||
-        enrollment.id_course === Number(courseId) ||
-        enrollment.id_course === courseId
+        enrollment.course_id === courseId
       );
       
       console.log(`👥 Filtered enrollments: ${filteredEnrollments.length} enrollments for course ${courseId}`);
@@ -217,7 +201,7 @@ class FixedDoceboAPI {
     }
   }
 
-  // FIXED: Enrollment with correct endpoint and payload structure
+  // Enrollment with correct endpoint and payload structure
   async enrollUser(userId: string, courseId: number, options: any = {}): Promise<any> {
     try {
       console.log(`🎯 Attempting to enroll user ${userId} in course ${courseId}`);
@@ -360,20 +344,20 @@ class FixedDoceboAPI {
     }
   }
 
-  // FIXED: Course ID extraction with correct field mapping
+  // Course ID extraction with correct field mapping
   getCourseId(course: any): number | null {
     // Your API returns course ID as "id" (number), not course_id
     return course.id || course.course_id || course.idCourse || null;
   }
 
-  // FIXED: Course name extraction with correct field mapping  
+  // Course name extraction with correct field mapping  
   getCourseName(course: any): string {
     // Your API uses "title", not "course_name"
     return course.title || course.course_name || course.name || 'Unknown Course';
   }
 }
 
-// FIXED: Command patterns with better regex
+// Command patterns with better regex
 const PATTERNS = {
   enroll: (msg: string) => {
     const lower = msg.toLowerCase();
@@ -403,7 +387,7 @@ const PATTERNS = {
   }
 };
 
-// FIXED: Improved parsers
+// Improved parsers
 function extractEmail(message: string): string | null {
   const match = message.match(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/);
   return match ? match[0] : null;
@@ -590,12 +574,14 @@ ${options.dueDate ? `**Due Date**: ${options.dueDate}` : ''}
         });
       }
       
-      // Get enrollments
+      // Get enrollments using the CORRECT endpoint
       const enrollments = await api.getUserEnrollments(user.user_id);
       
       if (enrollments.length === 0) {
         return NextResponse.json({
-          response: `No Enrollments Found\n\n${user.fullname} (${user.email}) is not enrolled in any courses.`,
+          response: `📚 **No Enrollments Found**
+
+${user.fullname} (${user.email}) is not enrolled in any courses.`,
           success: true,
           timestamp: new Date().toISOString()
         });
@@ -618,16 +604,20 @@ ${options.dueDate ? `**Due Date**: ${options.dueDate}` : ''}
         const progress = e.enrollment_score || '';
         
         let statusIcon = '';
-        if (status === 'completed') statusIcon = 'COMPLETED';
-        else if (status === 'in_progress') statusIcon = 'IN PROGRESS';
-        else if (status === 'enrolled') statusIcon = 'ENROLLED';
-        else statusIcon = 'ENROLLED';
+        if (status === 'completed') statusIcon = '✅ COMPLETED';
+        else if (status === 'in_progress') statusIcon = '🔄 IN PROGRESS';
+        else if (status === 'enrolled') statusIcon = '📚 ENROLLED';
+        else statusIcon = '📚 ENROLLED';
         
-        return `${i + 1}. ${statusIcon} - ${courseName}${status ? ` (${status})` : ''}${progress ? ` - Score: ${progress}` : ''}`;
+        return `${i + 1}. ${statusIcon} - ${courseName}${progress ? ` (Score: ${progress})` : ''}`;
       }).join('\n');
       
       return NextResponse.json({
-        response: `${user.fullname}'s Courses (${enrollments.length} total)\n\n${courseList}${enrollments.length > 10 ? `\n\n... and ${enrollments.length - 10} more courses` : ''}`,
+        response: `📚 **${user.fullname}'s Courses** (${enrollments.length} total)
+
+${courseList}${enrollments.length > 10 ? `\n\n... and ${enrollments.length - 10} more courses` : ''}
+
+📊 **Endpoint Used**: \`/course/v1/courses/enrollments?user_ids[]=${user.user_id}\``,
         success: true,
         timestamp: new Date().toISOString()
       });
@@ -815,7 +805,8 @@ export async function GET() {
     endpoints_used: [
       '/manage/v1/user - User search',
       '/course/v1/courses - Course search', 
-      '/course/v1/courses/enrollments - Enrollment management'
-    ]
+      '/course/v1/courses/enrollments - User & Course enrollment data'
+    ],
+    user_enrollments_endpoint: '/course/v1/courses/enrollments?user_ids[]=USER_ID'
   });
 }
