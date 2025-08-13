@@ -429,18 +429,39 @@ class ReliableDoceboAPI {
       throw new Error(`Course not found: ${courseName}`);
     }
 
+    // Try to get more detailed course information
+    let detailedCourse = null;
+    try {
+      const courseId = course.id || course.course_id || course.idCourse;
+      detailedCourse = await this.apiRequest(`/course/v1/courses/${courseId}`);
+      console.log(`📋 Detailed course data:`, JSON.stringify(detailedCourse, null, 2));
+    } catch (error) {
+      console.log(`⚠️ Could not fetch detailed course info`);
+    }
+
+    // Merge data from both sources
+    const mergedCourse = detailedCourse?.data || course;
+
     return {
       id: course.id || course.course_id || course.idCourse,
       name: course.title || course.course_name || course.name,
-      description: course.description,
-      type: course.course_type,
-      status: course.status,
-      language: course.lang_code,
-      credits: course.credits,
-      duration: course.mediumTime,
-      category: course.category,
-      creationDate: course.date_creation,
-      modificationDate: course.date_modification
+      description: mergedCourse.description || course.description || 'No description available',
+      type: mergedCourse.course_type || course.course_type || 'Not specified',
+      status: mergedCourse.status || course.status || 'Not specified',
+      language: mergedCourse.lang_code || course.lang_code || mergedCourse.language || 'Not specified',
+      credits: mergedCourse.credits || course.credits || 'Not specified',
+      duration: mergedCourse.mediumTime || course.mediumTime || mergedCourse.duration || 'Not specified',
+      category: mergedCourse.category || course.category || 'Not specified',
+      creationDate: mergedCourse.date_creation || course.date_creation || mergedCourse.created_at || 'Not available',
+      modificationDate: mergedCourse.date_modification || course.date_modification || mergedCourse.updated_at || 'Not available',
+      // Additional fields
+      code: mergedCourse.code || course.code || 'Not available',
+      level: mergedCourse.level || course.level || 'Not specified',
+      // Raw debug data
+      debug: {
+        foundFields: Object.keys(course),
+        detailedFields: detailedCourse?.data ? Object.keys(detailedCourse.data) : []
+      }
     };
   }
 
@@ -602,11 +623,6 @@ ${answer}
 🏛️ **Branches**: ${userDetails.branches}
 👥 **Groups**: ${userDetails.groups}
 
-### 🔍 **Debug Info** (Temporary)
-**Available Fields**: ${userDetails.debug?.userFields?.join(', ') || 'None'}
-**Branch API**: ${userDetails.debug?.branchData || 'Unknown'}
-**Group API**: ${userDetails.debug?.groupData || 'Unknown'}
-
 💡 **Admin Complete**: All available user information retrieved!
 💬 **Ask More**: "What is ${userDetails.email}'s last login?" or "When did ${userDetails.email} join?"`,
             success: true,
@@ -747,12 +763,13 @@ ${courseList}${courses.length > 20 ? `\n\n... and ${courses.length - 20} more co
 👤 **Username**: ${userDetails.username}
 📊 **Status**: ${userDetails.status}
 🏢 **Level**: ${userDetails.level}
-🌍 **Language**: ${userDetails.language || 'Not specified'}
-🕐 **Timezone**: ${userDetails.timezone || 'Not specified'}
-📅 **Created**: ${userDetails.creationDate || 'Not available'}
-🔐 **Last Access**: ${userDetails.lastAccess || 'Not available'}
-🏛️ **Branches**: ${userDetails.branches?.length > 0 ? userDetails.branches.map((b: any) => b.name).join(', ') : 'None'}
-👥 **Groups**: ${userDetails.groups?.length > 0 ? userDetails.groups.map((g: any) => g.name).join(', ') : 'None'}`,
+🏛️ **Department**: ${userDetails.department}
+🌍 **Language**: ${userDetails.language}
+🕐 **Timezone**: ${userDetails.timezone}
+📅 **Created**: ${userDetails.creationDate}
+🔐 **Last Access**: ${userDetails.lastAccess}
+🏛️ **Branches**: ${userDetails.branches}
+👥 **Groups**: ${userDetails.groups}`,
           success: true,
           data: userDetails,
           timestamp: new Date().toISOString()
