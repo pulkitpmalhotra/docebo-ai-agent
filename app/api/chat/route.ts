@@ -43,13 +43,20 @@ const PATTERNS = {
   },
   userQuestion: (msg: string) => {
     const lower = msg.toLowerCase();
-    // Check for user-specific questions
-    return (lower.includes('what is') || lower.includes('when did') || 
-            lower.includes('how many') || lower.includes('does user') ||
-            lower.includes('can user') || lower.includes('is user') ||
-            lower.includes('user status') || lower.includes('user role') ||
-            lower.includes('user access') || lower.includes('last login')) &&
-           (msg.includes('@') || lower.includes('user'));
+    const hasEmail = msg.includes('@');
+    
+    // Check for user-specific questions with email
+    return hasEmail && (
+      lower.includes('what is') || lower.includes('when did') || 
+      lower.includes('how many') || lower.includes('does') ||
+      lower.includes('can ') || lower.includes('is ') ||
+      lower.includes('what groups') || lower.includes('what branches') ||
+      lower.includes('what level') || lower.includes('what status') ||
+      lower.includes('last login') || lower.includes('last access') ||
+      lower.includes('when ') || lower.includes('status') ||
+      lower.includes('level') || lower.includes('groups') ||
+      lower.includes('branches') || lower.includes('department')
+    );
   }
 };
 
@@ -380,8 +387,82 @@ export async function POST(request: NextRequest) {
     const course = extractCourse(message);
     
     console.log(`📋 Parsed - Email: ${email}, Course: ${course}`);
+    console.log(`🔍 Pattern matching - userQuestion: ${PATTERNS.userQuestion(message)}, searchUsers: ${PATTERNS.searchUsers(message)}, getUserInfo: ${PATTERNS.getUserInfo(message)}`);
     
-    // 1. USER SEARCH (Enhanced with auto user details for email searches)
+    // 1. FLEXIBLE USER QUESTIONS (Check this first before other patterns)
+    if (PATTERNS.userQuestion(message)) {
+      console.log(`💬 User question detected: ${message}`);
+      
+      if (!email) {
+        return NextResponse.json({
+          response: `❌ **Missing Email**: I need an email address to answer questions about a user.
+
+**Examples**: 
+- "What is john@company.com's last login?"
+- "When did sarah@test.com join?"
+- "Is mike@company.com active?"`,
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      try {
+        const userDetails = await api.getUserDetails(email);
+        const question = message.toLowerCase();
+        
+        let answer = '';
+        
+        if (question.includes('last login') || question.includes('last access')) {
+          answer = `🔐 **Last Access**: ${userDetails.lastAccess}`;
+        } else if (question.includes('when') && (question.includes('join') || question.includes('creat'))) {
+          answer = `📅 **Account Created**: ${userDetails.creationDate}`;
+        } else if (question.includes('status') || question.includes('active') || question.includes('inactive')) {
+          answer = `📊 **Status**: ${userDetails.status}`;
+        } else if (question.includes('level') || question.includes('role') || question.includes('permission')) {
+          answer = `🏢 **Level**: ${userDetails.level}`;
+        } else if (question.includes('branch') || question.includes('department')) {
+          answer = `🏛️ **Branches**: ${userDetails.branches}\n🏛️ **Department**: ${userDetails.department}`;
+        } else if (question.includes('group')) {
+          answer = `👥 **Groups**: ${userDetails.groups}`;
+        } else if (question.includes('language') || question.includes('timezone')) {
+          answer = `🌍 **Language**: ${userDetails.language}\n🕐 **Timezone**: ${userDetails.timezone}`;
+        } else if (question.includes('email') || question.includes('contact')) {
+          answer = `📧 **Email**: ${userDetails.email}\n👤 **Username**: ${userDetails.username}`;
+        } else {
+          // General fallback - provide relevant info based on keywords
+          answer = `👤 **${userDetails.fullname}** - Quick Info:
+📊 **Status**: ${userDetails.status}
+🏢 **Level**: ${userDetails.level}
+📅 **Created**: ${userDetails.creationDate}
+🔐 **Last Access**: ${userDetails.lastAccess}`;
+        }
+        
+        return NextResponse.json({
+          response: `💬 **Question About**: ${userDetails.fullname}
+
+${answer}
+
+💡 **More Questions**: 
+- "What is ${email}'s status?"
+- "When did ${email} last login?"
+- "What level is ${email}?"
+- "What groups is ${email} in?"`,
+          success: true,
+          userDetails: userDetails,
+          questionAnswered: true,
+          timestamp: new Date().toISOString()
+        });
+        
+      } catch (error) {
+        return NextResponse.json({
+          response: `❌ **Error**: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+    }
+    
+    // 2. USER SEARCH (Enhanced with auto user details for email searches)
     if (PATTERNS.searchUsers(message)) {
       const searchTerm = email || message.replace(/find|user|search/gi, '').trim();
       
@@ -507,7 +588,7 @@ ${userList}${users.length > 20 ? `\n\n... and ${users.length - 20} more users` :
       }
     }
     
-    // 2. COURSE SEARCH  
+    // 3. COURSE SEARCH  
     if (PATTERNS.searchCourses(message)) {
       const searchTerm = course || message.replace(/find|search|course/gi, '').trim();
       
@@ -550,7 +631,7 @@ ${courseList}${courses.length > 20 ? `\n\n... and ${courses.length - 20} more co
       });
     }
     
-    // 3. USER DETAILS
+    // 4. USER DETAILS
     if (PATTERNS.getUserInfo(message)) {
       if (!email) {
         return NextResponse.json({
@@ -593,7 +674,7 @@ ${courseList}${courses.length > 20 ? `\n\n... and ${courses.length - 20} more co
       }
     }
     
-    // 4. COURSE DETAILS
+    // 5. COURSE DETAILS
     if (PATTERNS.getCourseInfo(message)) {
       const courseName = course || message.replace(/course info|course details|tell me about course/gi, '').trim();
       
