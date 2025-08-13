@@ -238,7 +238,7 @@ export async function POST(request: NextRequest) {
     
     console.log(`📋 Parsed - Email: ${email}, Course: ${course}`);
     
-    // 1. USER SEARCH
+    // 1. USER SEARCH (Enhanced with auto user details for email searches)
     if (PATTERNS.searchUsers(message)) {
       const searchTerm = email || message.replace(/find|user|search/gi, '').trim();
       
@@ -252,32 +252,109 @@ export async function POST(request: NextRequest) {
         });
       }
       
-      const users = await api.searchUsers(searchTerm, 50);
-      
-      if (users.length === 0) {
-        return NextResponse.json({
-          response: `👥 **No Users Found**: No users match "${searchTerm}"`,
-          success: false,
-          timestamp: new Date().toISOString()
-        });
-      }
-      
-      const displayCount = Math.min(users.length, 20);
-      const userList = users.slice(0, displayCount).map((user, i) => {
-        const statusIcon = user.status === '1' ? '✅' : '❌';
-        return `${i + 1}. ${statusIcon} **${user.fullname}** (${user.email})`;
-      }).join('\n');
-      
-      return NextResponse.json({
-        response: `👥 **User Search Results**: Found ${users.length} users (Showing ${displayCount})
+      // If searching by email, provide detailed info automatically
+      if (email) {
+        try {
+          console.log(`📧 Email search detected: ${email} - Getting detailed user info`);
+          
+          const users = await api.searchUsers(searchTerm, 10);
+          const userDetails = await api.getUserDetails(email);
+          
+          return NextResponse.json({
+            response: `👥 **User Found**: ${userDetails.fullname}
+
+## 📋 **Complete User Information**
+
+### 👤 **Basic Details**
+📧 **Email**: ${userDetails.email}
+🆔 **User ID**: ${userDetails.id}
+👤 **Username**: ${userDetails.username}
+📊 **Status**: ${userDetails.status}
+🏢 **Level**: ${userDetails.level}
+
+### 🌍 **Preferences**
+🌍 **Language**: ${userDetails.language || 'Not specified'}
+🕐 **Timezone**: ${userDetails.timezone || 'Not specified'}
+
+### 📅 **Activity**
+📅 **Created**: ${userDetails.creationDate || 'Not available'}
+🔐 **Last Access**: ${userDetails.lastAccess || 'Not available'}
+
+### 👥 **Organization**
+🏛️ **Branches**: ${userDetails.branches?.length > 0 ? userDetails.branches.map((b: any) => b.name).join(', ') : 'None assigned'}
+👥 **Groups**: ${userDetails.groups?.length > 0 ? userDetails.groups.map((g: any) => g.name).join(', ') : 'None assigned'}
+
+💡 **Admin Complete**: All user information retrieved in one search!`,
+            success: true,
+            searchResults: users,
+            userDetails: userDetails,
+            autoDetailsFetched: true,
+            timestamp: new Date().toISOString()
+          });
+          
+        } catch (error) {
+          // If detailed lookup fails, fall back to regular search
+          console.log(`⚠️ Detailed lookup failed for ${email}, falling back to search results`);
+          
+          const users = await api.searchUsers(searchTerm, 50);
+          
+          if (users.length === 0) {
+            return NextResponse.json({
+              response: `👥 **No Users Found**: No users match "${searchTerm}"`,
+              success: false,
+              timestamp: new Date().toISOString()
+            });
+          }
+          
+          const displayCount = Math.min(users.length, 20);
+          const userList = users.slice(0, displayCount).map((user, i) => {
+            const statusIcon = user.status === '1' ? '✅' : '❌';
+            return `${i + 1}. ${statusIcon} **${user.fullname}** (${user.email})`;
+          }).join('\n');
+          
+          return NextResponse.json({
+            response: `👥 **User Search Results**: Found ${users.length} users (Showing ${displayCount})
 
 ${userList}${users.length > 20 ? `\n\n... and ${users.length - 20} more users` : ''}
 
-💡 **Get Details**: "User info ${users[0]?.email}" for more information`,
-        success: true,
-        totalCount: users.length,
-        timestamp: new Date().toISOString()
-      });
+⚠️ **Note**: Could not retrieve detailed information for "${email}". ${error instanceof Error ? error.message : 'User may not exist.'}
+
+💡 **Try**: "User info [exact_email]" for detailed information`,
+            success: true,
+            totalCount: users.length,
+            detailsError: error instanceof Error ? error.message : 'Unknown error',
+            timestamp: new Date().toISOString()
+          });
+        }
+      } else {
+        // Regular name-based search (no email detected)
+        const users = await api.searchUsers(searchTerm, 50);
+        
+        if (users.length === 0) {
+          return NextResponse.json({
+            response: `👥 **No Users Found**: No users match "${searchTerm}"`,
+            success: false,
+            timestamp: new Date().toISOString()
+          });
+        }
+        
+        const displayCount = Math.min(users.length, 20);
+        const userList = users.slice(0, displayCount).map((user, i) => {
+          const statusIcon = user.status === '1' ? '✅' : '❌';
+          return `${i + 1}. ${statusIcon} **${user.fullname}** (${user.email})`;
+        }).join('\n');
+        
+        return NextResponse.json({
+          response: `👥 **User Search Results**: Found ${users.length} users (Showing ${displayCount})
+
+${userList}${users.length > 20 ? `\n\n... and ${users.length - 20} more users` : ''}
+
+💡 **Get Details**: "Find user [email]" or "User info [email]" for complete information`,
+          success: true,
+          totalCount: users.length,
+          timestamp: new Date().toISOString()
+        });
+      }
     }
     
     // 2. COURSE SEARCH  
@@ -419,8 +496,9 @@ ${courseDetails.description || 'No description available'}`,
 I can help you with these **working features**:
 
 • **👥 Find users**: "Find user mike@company.com"
-  - Search by name or email
-  - Shows up to 20 results
+  - **Email searches**: Get complete user details automatically
+  - **Name searches**: Shows list of matching users
+  - Smart detection: Email = full details, Name = search results
 
 • **📖 Find courses**: "Find Python courses"
   - Search by course name or keyword
@@ -437,12 +515,12 @@ I can help you with these **working features**:
 **Your message**: "${message}"
 
 **Examples:**
-- "Find user pulkitpmalhotra@gmail.com"
+- "Find user pulkitpmalhotra@gmail.com" *(Auto-details for emails)*
+- "Find user mike" *(Search results for names)*
 - "Find Python courses"
-- "User info pulkitpmalhotra@gmail.com"
 - "Course info Python Programming"
 
-💡 **All features work reliably within 10-15 seconds!**`,
+💡 **Admin Efficiency**: Email searches provide complete user info automatically!`,
       success: false,
       timestamp: new Date().toISOString()
     });
