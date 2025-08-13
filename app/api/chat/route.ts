@@ -155,19 +155,49 @@ class ReliableDoceboAPI {
       throw new Error(`User not found: ${email}`);
     }
 
+    // Log the raw user data for debugging
+    console.log(`🔍 Raw user data for ${email}:`, JSON.stringify(user, null, 2));
+
+    // Try to get additional user details from user-specific endpoint
+    let additionalDetails = null;
+    try {
+      additionalDetails = await this.apiRequest(`/manage/v1/user/${user.user_id}`);
+      console.log(`📋 Additional user details:`, JSON.stringify(additionalDetails, null, 2));
+    } catch (error) {
+      console.log(`⚠️ Could not fetch additional details for user ${user.user_id}`);
+    }
+
+    // Merge data from both sources
+    const mergedUser = additionalDetails?.data || user;
+
     return {
-      id: user.user_id,
-      fullname: user.fullname,
+      id: user.user_id || user.id,
+      fullname: user.fullname || user.firstname + ' ' + user.lastname || 'Not available',
       email: user.email,
-      username: user.username,
-      status: user.status === '1' ? 'Active' : 'Inactive',
-      level: user.level,
-      branches: user.branches || [],
-      groups: user.groups || [],
-      creationDate: user.register_date,
-      lastAccess: user.last_access_date,
-      timezone: user.timezone,
-      language: user.language
+      username: user.username || 'Not available',
+      status: user.status === '1' ? 'Active' : user.status === '0' ? 'Inactive' : `Status: ${user.status}`,
+      level: user.level || mergedUser.level || 'Not specified',
+      
+      // Try multiple possible field names for branches
+      branches: mergedUser.branches || user.branches || mergedUser.branch || user.branch || [],
+      
+      // Try multiple possible field names for groups  
+      groups: mergedUser.groups || user.groups || mergedUser.group || user.group || [],
+      
+      // Try multiple date field formats
+      creationDate: user.register_date || user.creation_date || user.created_at || mergedUser.register_date || 'Not available',
+      lastAccess: user.last_access_date || user.last_access || user.last_login || mergedUser.last_access_date || 'Not available',
+      
+      timezone: user.timezone || mergedUser.timezone || 'Not specified',
+      language: user.language || user.lang_code || mergedUser.language || 'Not specified',
+      
+      // Additional fields that might be available
+      department: user.department || mergedUser.department || 'Not specified',
+      role: user.role || mergedUser.role || user.user_level || 'Not specified',
+      
+      // Raw data for debugging
+      rawUserData: user,
+      rawAdditionalData: additionalDetails?.data || null
     };
   }
 
@@ -271,20 +301,38 @@ export async function POST(request: NextRequest) {
 👤 **Username**: ${userDetails.username}
 📊 **Status**: ${userDetails.status}
 🏢 **Level**: ${userDetails.level}
+🏢 **Role**: ${userDetails.role}
+🏛️ **Department**: ${userDetails.department}
 
 ### 🌍 **Preferences**
-🌍 **Language**: ${userDetails.language || 'Not specified'}
-🕐 **Timezone**: ${userDetails.timezone || 'Not specified'}
+🌍 **Language**: ${userDetails.language}
+🕐 **Timezone**: ${userDetails.timezone}
 
 ### 📅 **Activity**
-📅 **Created**: ${userDetails.creationDate || 'Not available'}
-🔐 **Last Access**: ${userDetails.lastAccess || 'Not available'}
+📅 **Created**: ${userDetails.creationDate}
+🔐 **Last Access**: ${userDetails.lastAccess}
 
 ### 👥 **Organization**
-🏛️ **Branches**: ${userDetails.branches?.length > 0 ? userDetails.branches.map((b: any) => b.name).join(', ') : 'None assigned'}
-👥 **Groups**: ${userDetails.groups?.length > 0 ? userDetails.groups.map((g: any) => g.name).join(', ') : 'None assigned'}
+🏛️ **Branches**: ${
+  Array.isArray(userDetails.branches) && userDetails.branches.length > 0 
+    ? userDetails.branches.map((b: any) => typeof b === 'object' ? (b.name || b.branch_name || JSON.stringify(b)) : b).join(', ')
+    : userDetails.branches && typeof userDetails.branches === 'object'
+    ? JSON.stringify(userDetails.branches)
+    : 'None assigned'
+}
+👥 **Groups**: ${
+  Array.isArray(userDetails.groups) && userDetails.groups.length > 0 
+    ? userDetails.groups.map((g: any) => typeof g === 'object' ? (g.name || g.group_name || JSON.stringify(g)) : g).join(', ')
+    : userDetails.groups && typeof userDetails.groups === 'object'
+    ? JSON.stringify(userDetails.groups)
+    : 'None assigned'
+}
 
-💡 **Admin Complete**: All user information retrieved in one search!`,
+### 🔍 **Debug Info** (Remove after testing)
+**Raw Data Available**: ${Object.keys(userDetails.rawUserData || {}).join(', ')}
+${userDetails.rawAdditionalData ? `**Additional Data**: ${Object.keys(userDetails.rawAdditionalData).join(', ')}` : '**Additional Data**: None'}
+
+💡 **Admin Complete**: All available user information retrieved in one search!`,
             success: true,
             searchResults: users,
             userDetails: userDetails,
