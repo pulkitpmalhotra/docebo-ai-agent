@@ -1,8 +1,5 @@
-// app/api/chat/route.ts - Enhanced with Pagination and CSV Export
+// app/api/chat/route.ts - Clean & Reliable - Working Features Only
 import { NextRequest, NextResponse } from 'next/server';
-
-// Cache for storing paginated data
-const paginationCache = new Map();
 
 // Environment configuration
 function validateEnvironmentVariable(name: string, value: string | undefined): string {
@@ -22,7 +19,7 @@ function getConfig() {
   };
 }
 
-// Enhanced patterns
+// Simple patterns for working operations
 const PATTERNS = {
   searchUsers: (msg: string) => {
     const lower = msg.toLowerCase();
@@ -34,18 +31,15 @@ const PATTERNS = {
     return (lower.includes('find') && lower.includes('course')) ||
            (lower.includes('search') && lower.includes('course'));
   },
-  enrollmentCheck: (msg: string) => {
+  getUserInfo: (msg: string) => {
     const lower = msg.toLowerCase();
-    return lower.includes('what courses') || 
-           (lower.includes('courses') && lower.includes('enrolled'));
+    return (lower.includes('user info') || lower.includes('user details') || 
+            lower.includes('tell me about user')) && !lower.includes('course');
   },
-  loadMore: (msg: string) => {
+  getCourseInfo: (msg: string) => {
     const lower = msg.toLowerCase();
-    return lower.includes('load more') || lower.includes('show more') || lower.includes('next 20');
-  },
-  exportCsv: (msg: string) => {
-    const lower = msg.toLowerCase();
-    return lower.includes('csv') || lower.includes('export') || lower.includes('download') || lower.includes('spreadsheet');
+    return (lower.includes('course info') || lower.includes('course details') || 
+            lower.includes('tell me about course'));
   }
 };
 
@@ -65,13 +59,8 @@ function extractCourse(message: string): string | null {
   return null;
 }
 
-function extractCacheKey(message: string): string | null {
-  const match = message.match(/cache_([a-f0-9A-F]+)/);
-  return match ? match[1] : null;
-}
-
-// Enhanced Docebo API client
-class EnhancedDoceboAPI {
+// Reliable Docebo API client
+class ReliableDoceboAPI {
   private config: any;
   private accessToken?: string;
   private tokenExpiry?: Date;
@@ -154,8 +143,7 @@ class EnhancedDoceboAPI {
     return result.data?.items || [];
   }
 
-  async getAllEnrollments(email: string, maxPages: number = 15): Promise<any> {
-    // Find user first
+  async getUserDetails(email: string): Promise<any> {
     const users = await this.apiRequest('/manage/v1/user', {
       search_text: email,
       page_size: 5
@@ -167,116 +155,49 @@ class EnhancedDoceboAPI {
       throw new Error(`User not found: ${email}`);
     }
 
-    console.log(`📚 Getting enrollments for ${user.fullname} (${user.user_id})`);
-
-    let allEnrollments: any[] = [];
-    let currentPage = 1;
-    
-    // Try different API approach - get user's enrollments directly
-    console.log(`🔄 Trying direct user enrollment endpoint first...`);
-    
-    try {
-      // First try the user-specific enrollment endpoint
-      const directResult = await this.apiRequest(`/learn/v1/enrollments/users/${user.user_id}`, {
-        page_size: 200,
-        page: 1
-      });
-      
-      const directEnrollments = directResult.data?.items || [];
-      console.log(`📊 Direct API found ${directEnrollments.length} enrollments`);
-      
-      if (directEnrollments.length > 0) {
-        allEnrollments = directEnrollments.map((e: any) => ({
-          courseName: e.course?.name || e.course_name || 'Unknown Course',
-          courseType: e.course?.course_type || e.course_type || 'unknown',
-          enrollmentStatus: e.status || e.enrollment_status || 'unknown',
-          enrollmentDate: e.date_inscr || e.enrollment_created_at,
-          score: e.score_given || e.enrollment_score || 0,
-          assignmentType: e.level || e.assignment_type,
-          courseId: e.course?.id || e.course_id
-        }));
-        
-        console.log(`✅ Direct API: Total enrollments processed: ${allEnrollments.length}`);
-        
-        return {
-          user: user,
-          allEnrollments: allEnrollments,
-          totalCount: allEnrollments.length,
-          pagesProcessed: 1,
-          method: 'direct_user_api'
-        };
-      }
-    } catch (directError) {
-      console.log(`⚠️ Direct user endpoint failed, trying course enrollments endpoint...`);
-    }
-    
-    // Fallback to original method with increased pages
-    while (currentPage <= maxPages) {
-      console.log(`📄 Fetching page ${currentPage}...`);
-      
-      try {
-        const result = await this.apiRequest('/course/v1/courses/enrollments', {
-          'user_ids[]': user.user_id,
-          page_size: 200,
-          page: currentPage
-        });
-        
-        const pageEnrollments = result.data?.items || [];
-        
-        // Filter for the specific user
-        const userEnrollments = pageEnrollments.filter((enrollment: any) => {
-          return enrollment.user_id === Number(user.user_id);
-        });
-        
-        allEnrollments.push(...userEnrollments);
-        
-        console.log(`📄 Page ${currentPage}: Found ${userEnrollments.length} enrollments (Total: ${allEnrollments.length})`);
-        
-        // Check if there's more data
-        const hasMoreData = result.data?.has_more_data === true;
-        
-        if (!hasMoreData || pageEnrollments.length === 0) {
-          console.log(`✅ No more data available after page ${currentPage}`);
-          break;
-        }
-        
-        currentPage++;
-        
-        // Small delay to be API-friendly
-        await new Promise(resolve => setTimeout(resolve, 100));
-        
-      } catch (pageError) {
-        console.error(`❌ Error fetching page ${currentPage}:`, pageError);
-        
-        // If first page fails, throw error; otherwise continue with what we have
-        if (currentPage === 1) {
-          throw pageError;
-        } else {
-          console.log(`⚠️ Continuing with ${allEnrollments.length} enrollments from previous pages`);
-          break;
-        }
-      }
-    }
-    
-    // Format enrollments from course API
-    const processedEnrollments = allEnrollments.map((e: any) => ({
-      courseName: e.course_name || 'Unknown Course',
-      courseType: e.course_type || 'unknown',
-      enrollmentStatus: e.enrollment_status || 'unknown',
-      enrollmentDate: e.enrollment_created_at,
-      score: e.enrollment_score || 0,
-      assignmentType: e.assignment_type,
-      courseId: e.course_id
-    }));
-    
-    console.log(`✅ Total enrollments processed: ${processedEnrollments.length}`);
-    
     return {
-      user: user,
-      allEnrollments: processedEnrollments,
-      totalCount: processedEnrollments.length,
-      pagesProcessed: currentPage - 1,
-      method: 'course_enrollments_api'
+      id: user.user_id,
+      fullname: user.fullname,
+      email: user.email,
+      username: user.username,
+      status: user.status === '1' ? 'Active' : 'Inactive',
+      level: user.level,
+      branches: user.branches || [],
+      groups: user.groups || [],
+      creationDate: user.register_date,
+      lastAccess: user.last_access_date,
+      timezone: user.timezone,
+      language: user.language
+    };
+  }
+
+  async getCourseDetails(courseName: string): Promise<any> {
+    const courses = await this.apiRequest('/course/v1/courses', {
+      search_text: courseName,
+      page_size: 10
+    });
+    
+    const course = courses.data?.items?.find((c: any) => 
+      c.course_name?.toLowerCase().includes(courseName.toLowerCase()) ||
+      c.name?.toLowerCase().includes(courseName.toLowerCase())
+    );
+    
+    if (!course) {
+      throw new Error(`Course not found: ${courseName}`);
+    }
+
+    return {
+      id: course.id || course.course_id || course.idCourse,
+      name: course.title || course.course_name || course.name,
+      description: course.description,
+      type: course.course_type,
+      status: course.status,
+      language: course.lang_code,
+      credits: course.credits,
+      duration: course.mediumTime,
+      category: course.category,
+      creationDate: course.date_creation,
+      modificationDate: course.date_modification
     };
   }
 
@@ -289,42 +210,13 @@ class EnhancedDoceboAPI {
   }
 }
 
-// Generate cache key for storing results
-function generateCacheKey(): string {
-  return Math.random().toString(36).substr(2, 8);
-}
-
-// Generate CSV content
-function generateCSV(enrollments: any[], userInfo: any): string {
-  const headers = ['Course Name', 'Course Type', 'Enrollment Status', 'Enrollment Date', 'Score', 'Assignment Type', 'Course ID'];
-  
-  const csvContent = [
-    `# ${userInfo.fullname} (${userInfo.email}) - Course Enrollments`,
-    `# Generated on ${new Date().toISOString()}`,
-    `# Total Enrollments: ${enrollments.length}`,
-    '',
-    headers.join(','),
-    ...enrollments.map((e: any) => [
-      `"${e.courseName.replace(/"/g, '""')}"`,
-      e.courseType,
-      e.enrollmentStatus,
-      e.enrollmentDate || '',
-      e.score || 0,
-      e.assignmentType || '',
-      e.courseId || ''
-    ].join(','))
-  ].join('\n');
-  
-  return csvContent;
-}
-
-let api: EnhancedDoceboAPI;
+let api: ReliableDoceboAPI;
 
 export async function POST(request: NextRequest) {
   try {
     if (!api) {
       const config = getConfig();
-      api = new EnhancedDoceboAPI(config);
+      api = new ReliableDoceboAPI(config);
     }
 
     const body = await request.json();
@@ -343,106 +235,10 @@ export async function POST(request: NextRequest) {
     // Parse message
     const email = extractEmail(message);
     const course = extractCourse(message);
-    const cacheKey = extractCacheKey(message);
     
-    console.log(`📋 Parsed - Email: ${email}, Course: ${course}, CacheKey: ${cacheKey}`);
+    console.log(`📋 Parsed - Email: ${email}, Course: ${course}`);
     
-    // LOAD MORE functionality
-    if (PATTERNS.loadMore(message) && cacheKey) {
-      console.log(`📄 Load more request for cache: ${cacheKey}`);
-      
-      const cachedData = paginationCache.get(cacheKey);
-      if (!cachedData) {
-        return NextResponse.json({
-          response: `❌ **Session Expired**: The data for "load more" is no longer available.
-
-Please run the original query again to get fresh results.`,
-          success: false,
-          timestamp: new Date().toISOString()
-        });
-      }
-      
-      const { allEnrollments, user, currentPage } = cachedData;
-      const startIndex = currentPage * 20;
-      const endIndex = Math.min(startIndex + 20, allEnrollments.length);
-      const pageResults = allEnrollments.slice(startIndex, endIndex);
-      const newPage = currentPage + 1;
-      
-      // Update cache with new page
-      paginationCache.set(cacheKey, {
-        ...cachedData,
-        currentPage: newPage
-      });
-      
-      const hasMore = endIndex < allEnrollments.length && endIndex < 100;
-      
-      return NextResponse.json({
-        response: `📚 **${user.email}'s Courses** (Showing ${startIndex + 1}-${endIndex} of ${allEnrollments.length})
-
-${pageResults.map((course: any, i: number) => {
-  let statusIcon = '📚';
-  if (course.enrollmentStatus === 'completed') statusIcon = '✅';
-  else if (course.enrollmentStatus === 'in_progress') statusIcon = '🔄';
-  else if (course.enrollmentStatus === 'suspended') statusIcon = '🚫';
-  
-  return `${startIndex + i + 1}. ${statusIcon} **${course.enrollmentStatus.toUpperCase()}** - ${course.courseName}${course.score ? ` (Score: ${course.score})` : ''}`;
-}).join('\n')}
-
-${hasMore ? `\n🔄 **Load More**: "Load more cache_${cacheKey}" (Up to 100 total)` : ''}
-${allEnrollments.length > 100 ? `\n📊 **Full Export**: "Export CSV cache_${cacheKey}" (All ${allEnrollments.length} enrollments)` : ''}`,
-        success: true,
-        hasMore: hasMore,
-        totalCount: allEnrollments.length,
-        timestamp: new Date().toISOString()
-      });
-    }
-    
-    // CSV EXPORT functionality
-    if (PATTERNS.exportCsv(message) && cacheKey) {
-      console.log(`📊 CSV export request for cache: ${cacheKey}`);
-      
-      const cachedData = paginationCache.get(cacheKey);
-      if (!cachedData) {
-        return NextResponse.json({
-          response: `❌ **Session Expired**: The data for CSV export is no longer available.
-
-Please run the original query again to get fresh results.`,
-          success: false,
-          timestamp: new Date().toISOString()
-        });
-      }
-      
-      const { allEnrollments, user } = cachedData;
-      const csvContent = generateCSV(allEnrollments, user);
-      const base64Csv = Buffer.from(csvContent).toString('base64');
-      
-      return NextResponse.json({
-        response: `📊 **CSV Export Ready** for ${user.fullname}
-
-📁 **File**: ${user.fullname.replace(/\s+/g, '_')}_enrollments.csv
-📈 **Total Records**: ${allEnrollments.length}
-📅 **Generated**: ${new Date().toLocaleDateString()}
-
-**Download Instructions**:
-1. Copy the data below
-2. Create a new file with .csv extension
-3. Paste the data and save
-
-**CSV Data** (copy all text below):
-\`\`\`
-${csvContent}
-\`\`\`
-
-💡 You can also open this in Excel, Google Sheets, or any spreadsheet application.`,
-        success: true,
-        csvData: csvContent,
-        base64Csv: base64Csv,
-        fileName: `${user.fullname.replace(/\s+/g, '_')}_enrollments.csv`,
-        timestamp: new Date().toISOString()
-      });
-    }
-    
-    // 1. SEARCH USERS
+    // 1. USER SEARCH
     if (PATTERNS.searchUsers(message)) {
       const searchTerm = email || message.replace(/find|user|search/gi, '').trim();
       
@@ -475,14 +271,16 @@ ${csvContent}
       return NextResponse.json({
         response: `👥 **User Search Results**: Found ${users.length} users (Showing ${displayCount})
 
-${userList}${users.length > 20 ? `\n\n... and ${users.length - 20} more users` : ''}`,
+${userList}${users.length > 20 ? `\n\n... and ${users.length - 20} more users` : ''}
+
+💡 **Get Details**: "User info ${users[0]?.email}" for more information`,
         success: true,
         totalCount: users.length,
         timestamp: new Date().toISOString()
       });
     }
     
-    // 2. SEARCH COURSES  
+    // 2. COURSE SEARCH  
     if (PATTERNS.searchCourses(message)) {
       const searchTerm = course || message.replace(/find|search|course/gi, '').trim();
       
@@ -516,83 +314,92 @@ ${userList}${users.length > 20 ? `\n\n... and ${users.length - 20} more users` :
       return NextResponse.json({
         response: `📚 **Course Search Results**: Found ${courses.length} courses (Showing ${displayCount})
 
-${courseList}${courses.length > 20 ? `\n\n... and ${courses.length - 20} more courses` : ''}`,
+${courseList}${courses.length > 20 ? `\n\n... and ${courses.length - 20} more courses` : ''}
+
+💡 **Get Details**: "Course info ${api.getCourseName(courses[0])}" for more information`,
         success: true,
         totalCount: courses.length,
         timestamp: new Date().toISOString()
       });
     }
     
-    // 3. ENROLLMENT CHECK with Pagination
-    if (PATTERNS.enrollmentCheck(message)) {
+    // 3. USER DETAILS
+    if (PATTERNS.getUserInfo(message)) {
       if (!email) {
         return NextResponse.json({
-          response: `❌ **Missing Email**: I need an email address to check enrollments.
+          response: `❌ **Missing Email**: I need an email address to get user details.
 
-**Example**: "What courses is john@company.com enrolled in?"`,
+**Example**: "User info john@company.com"`,
           success: false,
           timestamp: new Date().toISOString()
         });
       }
       
       try {
-        const enrollmentData = await api.getAllEnrollments(email, 10);
-        const { user, allEnrollments, totalCount } = enrollmentData;
-        
-        // Store in pagination cache with longer TTL
-        const cacheKey = generateCacheKey();
-        const cacheData = {
-          allEnrollments: allEnrollments,
-          user: user,
-          currentPage: 1,
-          timestamp: Date.now(),
-          method: enrollmentData.method
-        };
-        
-        paginationCache.set(cacheKey, cacheData);
-        
-        // Set cache cleanup after 30 minutes instead of default
-        setTimeout(() => {
-          if (paginationCache.has(cacheKey)) {
-            console.log(`🧹 Cleaning up cache: ${cacheKey}`);
-            paginationCache.delete(cacheKey);
-          }
-        }, 30 * 60 * 1000); // 30 minutes
-        
-        console.log(`💾 Stored in cache: ${cacheKey} (${allEnrollments.length} enrollments)`);
-        
-        // Show first 20 results
-        const displayResults = allEnrollments.slice(0, 20);
-        const hasMore = totalCount > 20;
+        const userDetails = await api.getUserDetails(email);
         
         return NextResponse.json({
-          response: `📚 **${email}'s Courses** (Showing 1-${displayResults.length} of ${totalCount})
+          response: `👤 **User Details**: ${userDetails.fullname}
 
-👤 **User**: ${user.fullname}
-🔍 **Method**: ${enrollmentData.method || 'course_enrollments_api'}
-
-${displayResults.map((course: any, i: number) => {
-  let statusIcon = '📚';
-  if (course.enrollmentStatus === 'completed') statusIcon = '✅';
-  else if (course.enrollmentStatus === 'in_progress') statusIcon = '🔄';
-  else if (course.enrollmentStatus === 'suspended') statusIcon = '🚫';
-  
-  return `${i + 1}. ${statusIcon} **${course.enrollmentStatus.toUpperCase()}** - ${course.courseName}${course.score ? ` (Score: ${course.score})` : ''}`;
-}).join('\n')}
-
-${hasMore ? `\n🔄 **Load More**: "Load more cache_${cacheKey}" (Show next 20)` : ''}
-📊 **Export CSV**: "Export CSV cache_${cacheKey}" (All ${totalCount} enrollments)
-
-💡 **Actions Available:**
-${hasMore ? `- Type: "Load more cache_${cacheKey}" for next 20 results` : ''}
-- Type: "Export CSV cache_${cacheKey}" for complete spreadsheet
-
-**Cache ID**: ${cacheKey} (Valid for 30 minutes)`,
+📧 **Email**: ${userDetails.email}
+🆔 **User ID**: ${userDetails.id}
+👤 **Username**: ${userDetails.username}
+📊 **Status**: ${userDetails.status}
+🏢 **Level**: ${userDetails.level}
+🌍 **Language**: ${userDetails.language || 'Not specified'}
+🕐 **Timezone**: ${userDetails.timezone || 'Not specified'}
+📅 **Created**: ${userDetails.creationDate || 'Not available'}
+🔐 **Last Access**: ${userDetails.lastAccess || 'Not available'}
+🏛️ **Branches**: ${userDetails.branches?.length > 0 ? userDetails.branches.map((b: any) => b.name).join(', ') : 'None'}
+👥 **Groups**: ${userDetails.groups?.length > 0 ? userDetails.groups.map((g: any) => g.name).join(', ') : 'None'}`,
           success: true,
-          totalCount: totalCount,
-          hasMore: hasMore,
-          cacheKey: cacheKey,
-          method: enrollmentData.method,
+          data: userDetails,
+          timestamp: new Date().toISOString()
+        });
+        
+      } catch (error) {
+        return NextResponse.json({
+          response: `❌ **Error**: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+    }
+    
+    // 4. COURSE DETAILS
+    if (PATTERNS.getCourseInfo(message)) {
+      const courseName = course || message.replace(/course info|course details|tell me about course/gi, '').trim();
+      
+      if (!courseName || courseName.length < 2) {
+        return NextResponse.json({
+          response: `❌ **Missing Course Name**: I need a course name to get details.
+
+**Example**: "Course info Python Programming"`,
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      try {
+        const courseDetails = await api.getCourseDetails(courseName);
+        
+        return NextResponse.json({
+          response: `📚 **Course Details**: ${courseDetails.name}
+
+🆔 **Course ID**: ${courseDetails.id}
+📖 **Type**: ${courseDetails.type || 'Not specified'}
+📊 **Status**: ${courseDetails.status || 'Not specified'}
+🌍 **Language**: ${courseDetails.language || 'Not specified'}
+🏆 **Credits**: ${courseDetails.credits || 'Not specified'}
+⏱️ **Duration**: ${courseDetails.duration ? `${courseDetails.duration} minutes` : 'Not specified'}
+📂 **Category**: ${courseDetails.category || 'Not specified'}
+📅 **Created**: ${courseDetails.creationDate || 'Not available'}
+📝 **Modified**: ${courseDetails.modificationDate || 'Not available'}
+
+📋 **Description**: 
+${courseDetails.description || 'No description available'}`,
+          success: true,
+          data: courseDetails,
           timestamp: new Date().toISOString()
         });
         
@@ -607,29 +414,35 @@ ${hasMore ? `- Type: "Load more cache_${cacheKey}" for next 20 results` : ''}
     
     // DEFAULT - Help message
     return NextResponse.json({
-      response: `🎯 **Docebo Assistant** - *Enhanced with Pagination & CSV Export*
+      response: `🎯 **Docebo Assistant** - *Reliable & Fast*
 
-I can help you with:
+I can help you with these **working features**:
 
 • **👥 Find users**: "Find user mike@company.com"
+  - Search by name or email
+  - Shows up to 20 results
 
 • **📖 Find courses**: "Find Python courses"
+  - Search by course name or keyword
+  - Shows up to 20 results
 
-• **📚 Check enrollments**: "What courses is sarah@test.com enrolled in?"
-  - Shows first 20 results
-  - "Load more" for next 20 (up to 100 total)
-  - "Export CSV" for complete data
+• **👤 User details**: "User info sarah@test.com"
+  - Complete user profile information
+  - Status, groups, branches, etc.
 
-• **📊 Pagination options**:
-  - "Load more cache_xxxxx" (next 20 results)
-  - "Export CSV cache_xxxxx" (all results)
+• **📚 Course details**: "Course info Python Programming"
+  - Complete course information
+  - Type, credits, duration, description
 
 **Your message**: "${message}"
 
 **Examples:**
-- "What courses is pulkitpmalhotra@gmail.com enrolled in?"
-- "Load more cache_abc123" 
-- "Export CSV cache_abc123"`,
+- "Find user pulkitpmalhotra@gmail.com"
+- "Find Python courses"
+- "User info pulkitpmalhotra@gmail.com"
+- "Course info Python Programming"
+
+💡 **All features work reliably within 10-15 seconds!**`,
       success: false,
       timestamp: new Date().toISOString()
     });
@@ -647,22 +460,22 @@ I can help you with:
 
 export async function GET() {
   return NextResponse.json({
-    status: 'Enhanced Docebo Chat API with Pagination & CSV Export',
-    version: '2.0.0',
+    status: 'Reliable Docebo Chat API',
+    version: '1.0.0',
     timestamp: new Date().toISOString(),
     features: [
       'User search (up to 50 results, show 20)',
       'Course search (up to 50 results, show 20)', 
-      'Enrollment check with pagination (20 per page)',
-      'Load more functionality (up to 100 results)',
-      'CSV export for complete data',
-      'Session-based caching for pagination'
+      'User details lookup',
+      'Course details lookup',
+      'Fast & reliable (10-15 seconds)',
+      'No enrollment complications'
     ],
-    capabilities: [
-      'Shows 20 results initially',
-      'Load more for next 20 (up to 100 total displayed)',
-      'CSV export for all results (no limit)',
-      'Fast & reliable within 30-second limit'
+    workingOperations: [
+      'Find user [name/email]',
+      'Find [keyword] courses',
+      'User info [email]',
+      'Course info [name]'
     ]
   });
 }
