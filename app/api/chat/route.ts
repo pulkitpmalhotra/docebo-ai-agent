@@ -548,8 +548,8 @@ class ReliableDoceboAPI {
       credits: extractField('credits', ['credit_hours', 'points']),
       duration: extractField('duration', ['mediumTime', 'estimated_duration', 'average_completion_time', 'time_estimation']),
       category: extractField('category', ['category_name', 'course_category']),
-      creationDate: extractField('created', ['date_creation', 'created_at', 'creation_date', 'date_begin']),
-      modificationDate: extractField('modified', ['date_modification', 'updated_at', 'modification_date', 'last_edit']),
+      creationDate: extractField('created', ['date_creation', 'created_at', 'creation_date', 'date_begin', 'created_on']),
+      modificationDate: extractField('modified', ['last_update', 'updated_on', 'date_modification', 'modification_date']),
       code: extractField('code', ['course_code', 'sku']),
       level: extractField('level', ['difficulty_level', 'course_level']),
       price: extractField('price', ['cost', 'fee']),
@@ -567,7 +567,6 @@ class ReliableDoceboAPI {
       })(),
       // Additional fields that might be interesting
       certificate: extractField('certificate', ['has_certificate', 'certification']),
-      modificationDate: extractField('modified', ['last_update', 'updated_on', 'date_modification', 'modification_date']),
       // Debug information  
       debug: {
         foundFields: Array.from(availableFields).sort(),
