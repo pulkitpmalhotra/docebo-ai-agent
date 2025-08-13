@@ -498,11 +498,12 @@ class ReliableDoceboAPI {
       }
     }
 
-    // Extract all available fields
-    const extractField = (fieldName: string): string => {
+    // Extract all available fields with better mapping
+    const extractField = (fieldName: string, possibleKeys: string[] = []): string => {
       const sources = [detailedCourse?.data, course];
-      const possibleKeys = [
+      const allKeys = [
         fieldName,
+        ...possibleKeys,
         fieldName.toLowerCase(),
         fieldName.replace(/_/g, ''),
         `course_${fieldName}`,
@@ -511,9 +512,20 @@ class ReliableDoceboAPI {
       
       for (const source of sources) {
         if (!source) continue;
-        for (const key of possibleKeys) {
-          if (source[key] !== undefined && source[key] !== null && source[key] !== '') {
-            return String(source[key]);
+        for (const key of allKeys) {
+          const value = source[key];
+          if (value !== undefined && value !== null && value !== '') {
+            // Handle object values (like category)
+            if (typeof value === 'object' && value.name) {
+              return String(value.name);
+            }
+            if (typeof value === 'object' && value.title) {
+              return String(value.title);
+            }
+            if (typeof value === 'object') {
+              return JSON.stringify(value);
+            }
+            return String(value);
           }
         }
       }
@@ -530,26 +542,34 @@ class ReliableDoceboAPI {
       id: courseId || 'Not available',
       name: course.title || course.course_name || course.name || 'Unknown Course',
       description: extractField('description'),
-      type: extractField('course_type') || extractField('type'),
-      status: extractField('status'),
-      language: extractField('lang_code') || extractField('language'),
-      credits: extractField('credits'),
-      duration: extractField('mediumTime') || extractField('duration') || extractField('estimated_duration'),
-      category: extractField('category') || extractField('category_name'),
-      creationDate: extractField('date_creation') || extractField('created_at') || extractField('creation_date'),
-      modificationDate: extractField('date_modification') || extractField('updated_at') || extractField('modification_date'),
-      code: extractField('code') || extractField('course_code'),
-      level: extractField('level'),
-      price: extractField('price'),
-      instructor: extractField('instructor') || extractField('instructor_name'),
-      // Debug information
+      type: extractField('type', ['course_type', 'content_type', 'learning_object_type']),
+      status: extractField('status', ['course_status', 'publication_status']),
+      language: extractField('language', ['lang_code', 'default_language', 'course_language']),
+      credits: extractField('credits', ['credit_hours', 'points']),
+      duration: extractField('duration', ['mediumTime', 'estimated_duration', 'average_completion_time', 'time_estimation']),
+      category: extractField('category', ['category_name', 'course_category']),
+      creationDate: extractField('created', ['date_creation', 'created_at', 'creation_date', 'date_begin']),
+      modificationDate: extractField('modified', ['date_modification', 'updated_at', 'modification_date', 'last_edit']),
+      code: extractField('code', ['course_code', 'sku']),
+      level: extractField('level', ['difficulty_level', 'course_level']),
+      price: extractField('price', ['cost', 'fee']),
+      instructor: extractField('instructor', ['instructor_name', 'author', 'creator']),
+      // Additional fields that might be interesting
+      certificate: extractField('certificate', ['has_certificate', 'certification']),
+      enrollments: extractField('enrollments', ['enrolled_users', 'user_count']),
+      rating: extractField('rating', ['average_rating', 'score']),
+      // Debug information  
       debug: {
         foundFields: Array.from(availableFields).sort(),
         courseId: courseId,
         detailEndpointUsed: detailedCourse ? 'Success' : 'Failed',
         totalFieldsAvailable: availableFields.size,
         rawCourseKeys: Object.keys(course),
-        rawDetailedKeys: detailedCourse?.data ? Object.keys(detailedCourse.data) : []
+        rawDetailedKeys: detailedCourse?.data ? Object.keys(detailedCourse.data) : [],
+        // Show first few raw values for debugging
+        sampleData: Object.fromEntries(
+          Object.entries(course).slice(0, 5).map(([k, v]) => [k, typeof v === 'object' ? '[object]' : v])
+        )
       }
     };
   }
@@ -894,26 +914,29 @@ ${courseList}${courses.length > 20 ? `\n\n... and ${courses.length - 20} more co
           response: `📚 **Course Details**: ${courseDetails.name}
 
 🆔 **Course ID**: ${courseDetails.id}
+📝 **Code**: ${courseDetails.code}
 📖 **Type**: ${courseDetails.type}
 📊 **Status**: ${courseDetails.status}
 🌍 **Language**: ${courseDetails.language}
 🏆 **Credits**: ${courseDetails.credits}
-⏱️ **Duration**: ${courseDetails.duration ? `${courseDetails.duration} minutes` : courseDetails.duration}
+⏱️ **Duration**: ${courseDetails.duration !== 'Not available' ? `${courseDetails.duration} minutes` : courseDetails.duration}
 📂 **Category**: ${courseDetails.category}
+📊 **Level**: ${courseDetails.level}
 💰 **Price**: ${courseDetails.price}
 👨‍🏫 **Instructor**: ${courseDetails.instructor}
-📝 **Code**: ${courseDetails.code}
-📊 **Level**: ${courseDetails.level}
+🏆 **Certificate**: ${courseDetails.certificate}
+👥 **Enrollments**: ${courseDetails.enrollments}
+⭐ **Rating**: ${courseDetails.rating}
 📅 **Created**: ${courseDetails.creationDate}
 📝 **Modified**: ${courseDetails.modificationDate}
 
 📋 **Description**: 
 ${courseDetails.description}
 
-### 🔍 **Debug Info** (Temporary)
-**Total Fields Available**: ${courseDetails.debug?.totalFieldsAvailable || 0}
-**Available Fields**: ${courseDetails.debug?.foundFields?.slice(0, 10).join(', ') || 'None'}${courseDetails.debug?.foundFields?.length > 10 ? '...' : ''}
-**Detail API**: ${courseDetails.debug?.detailEndpointUsed || 'Unknown'}`,
+### 🔍 **Debug Info** (Temporary - Remove after field mapping is complete)
+**Total Fields**: ${courseDetails.debug?.totalFieldsAvailable || 0}
+**Sample Raw Data**: ${JSON.stringify(courseDetails.debug?.sampleData || {}, null, 2)}
+**All Available Fields**: ${courseDetails.debug?.foundFields?.join(', ') || 'None'}`,
           success: true,
           data: courseDetails,
           timestamp: new Date().toISOString()
