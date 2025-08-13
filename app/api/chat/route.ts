@@ -1,4 +1,4 @@
-// app/api/chat/route.ts - Clean & Complete Version
+// app/api/chat/route.ts - Fixed compilation issues
 import { NextRequest, NextResponse } from 'next/server';
 
 // Environment configuration
@@ -1129,77 +1129,6 @@ ${sessionList}${sessions.length > 20 ? `\n\n... and ${sessions.length - 20} more
 • Contact your Docebo admin about available training materials
 
 💡 **Alternative**: Try "Find ${searchTerm} courses" to search for courses with related content`,
-          success: false,
-          timestamp: new Date().toISOString()
-        });
-      }
-      
-      const displayCount = Math.min(materials.length, 20);
-      const materialList = materials.slice(0, displayCount).map((mat, i) => {
-        const matName = api.getMaterialName(mat);
-        const matId = mat.id || mat.material_id || 'N/A';
-        const type = mat.type || mat.material_type || 'Unknown';
-        const typeIcon = type === 'video' ? '🎥' : type === 'document' ? '📄' : '📁';
-        return `${i + 1}. ${typeIcon} **${matName}** (ID: ${matId}) - *${type}*`;
-      }).join('\n');
-      
-      return NextResponse.json({
-        response: `📄 **Training Material Search Results**: Found ${materials.length} materials (Showing ${displayCount})
-
-${materialList}${materials.length > 20 ? `\n\n... and ${materials.length - 20} more materials` : ''}`,
-        success: true,
-        totalCount: materials.length,
-        timestamp: new Date().toISOString()
-      });
-    }
-      }
-      
-      const sessions = await api.searchSessions(searchTerm, 50);
-      
-      if (sessions.length === 0) {
-        return NextResponse.json({
-          response: `🎯 **No Sessions Found**: No sessions match "${searchTerm}"`,
-          success: false,
-          timestamp: new Date().toISOString()
-        });
-      }
-      
-      const displayCount = Math.min(sessions.length, 20);
-      const sessionList = sessions.slice(0, displayCount).map((sess, i) => {
-        const sessName = api.getSessionName(sess);
-        const sessId = sess.id || sess.session_id || 'N/A';
-        const status = sess.status || 'Unknown';
-        const statusIcon = status === 'active' ? '✅' : status === 'cancelled' ? '❌' : '❓';
-        return `${i + 1}. ${statusIcon} **${sessName}** (ID: ${sessId}) - *${status}*`;
-      }).join('\n');
-      
-      return NextResponse.json({
-        response: `🎯 **Session Search Results**: Found ${sessions.length} sessions (Showing ${displayCount})
-
-${sessionList}${sessions.length > 20 ? `\n\n... and ${sessions.length - 20} more sessions` : ''}`,
-        success: true,
-        totalCount: sessions.length,
-        timestamp: new Date().toISOString()
-      });
-    }
-    
-    // 7. TRAINING MATERIAL SEARCH
-    if (PATTERNS.searchTrainingMaterials(message)) {
-      const searchTerm = trainingMaterial || message.replace(/find|search|training material|material/gi, '').trim();
-      
-      if (!searchTerm || searchTerm.length < 2) {
-        return NextResponse.json({
-          response: `❌ **Missing Search Term**: I need a material name to search for.`,
-          success: false,
-          timestamp: new Date().toISOString()
-        });
-      }
-      
-      const materials = await api.searchTrainingMaterials(searchTerm, 50);
-      
-      if (materials.length === 0) {
-        return NextResponse.json({
-          response: `📄 **No Training Materials Found**: No materials match "${searchTerm}"`,
           success: false,
           timestamp: new Date().toISOString()
         });
