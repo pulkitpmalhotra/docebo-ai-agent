@@ -153,32 +153,25 @@ class FixedDoceboAPI {
         page_size: 500  // Increased from 200 to 500 to get more results
       });
       
+      console.log(`📚 FULL API RESPONSE:`, JSON.stringify(result, null, 2));
+      
       const allEnrollments = result.data?.items || [];
       console.log(`📚 API returned: ${allEnrollments.length} total enrollments`);
       console.log(`📚 Total count from API: ${result.data?.total_count || 'unknown'}`);
       console.log(`📚 Has more data: ${result.data?.has_more_data || false}`);
+      console.log(`📚 Current page: ${result.data?.current_page || 'unknown'}`);
+      console.log(`📚 Current page size: ${result.data?.current_page_size || 'unknown'}`);
       
-      // Apply strict filtering to ensure we only get this user's enrollments
-      const filteredEnrollments = allEnrollments.filter((enrollment: any) => {
-        const enrollmentUserId = enrollment.user_id;
-        const matches = enrollmentUserId === userId || enrollmentUserId === Number(userId) || 
-               enrollmentUserId === parseInt(userId);
-        
-        if (!matches) {
-          console.log(`📚 Filtered out enrollment for user ${enrollmentUserId}, expecting ${userId}`);
-        }
-        
-        return matches;
-      });
+      // Log first few enrollments to see what we got
+      console.log(`📚 First 3 enrollments:`, allEnrollments.slice(0, 3));
       
-      console.log(`📚 After filtering: ${filteredEnrollments.length} enrollments for user ${userId}`);
+      // Check if we're getting the right user - NO FILTERING for now
+      console.log(`📚 All user IDs in response:`, allEnrollments.map(e => e.user_id));
       
-      // If we have more data available, we might need pagination
-      if (result.data?.has_more_data && filteredEnrollments.length < (result.data?.total_count || 0)) {
-        console.log(`⚠️ Warning: API indicates more data available. Consider implementing pagination.`);
-      }
+      // TEMPORARILY: Return ALL enrollments without filtering to see what we get
+      console.log(`📚 Returning ALL ${allEnrollments.length} enrollments without filtering`);
       
-      return filteredEnrollments;
+      return allEnrollments;
       
     } catch (error) {
       console.error('❌ Get user enrollments failed:', error);
