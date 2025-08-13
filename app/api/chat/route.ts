@@ -670,6 +670,8 @@ class ReliableDoceboAPI {
       category: extractField('category', ['category_name', 'course_category']),
       creationDate: extractField('created', ['date_creation', 'created_at', 'creation_date', 'date_begin', 'created_on']),
       modificationDate: extractField('modified', ['last_update', 'updated_on', 'date_modification', 'modification_date']),
+      createdBy: extractField('created_by', ['creator', 'author', 'created_by_name', 'creator_name', 'created_by_username', 'author_name', 'instructor']),
+      lastUpdatedBy: extractField('updated_by', ['modified_by', 'last_updated_by', 'updated_by_name', 'modified_by_name', 'last_modified_by', 'updated_by_username']),
       code: extractField('code', ['course_code', 'sku']),
       level: extractField('level', ['difficulty_level', 'course_level']),
       price: extractField('price', ['cost', 'fee']),
@@ -1118,7 +1120,9 @@ ${courseList}${courses.length > 20 ? `\n\n... and ${courses.length - 20} more co
 ⭐ **Rating**: ${courseDetails.rating}
 🏆 **Certificate**: ${courseDetails.certificate}
 📅 **Created**: ${courseDetails.creationDate}
+👤 **Created By**: ${courseDetails.createdBy}
 📝 **Last Updated**: ${courseDetails.modificationDate}
+👤 **Last Updated By**: ${courseDetails.lastUpdatedBy}
 
 📋 **Description**: 
 ${courseDetails.description}`,
