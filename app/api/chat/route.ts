@@ -197,6 +197,8 @@ class ReliableDoceboAPI {
     let branchDetails = null;
     let groupDetails = null;
     let userOrgDetails = null;
+    let managerDetails = null;
+    let branchListDetails = null;
 
     // Try user-specific endpoint
     try {
@@ -212,6 +214,16 @@ class ReliableDoceboAPI {
       console.log(`🏛️ User branches endpoint:`, JSON.stringify(branchDetails, null, 2));
     } catch (error) {
       console.log(`⚠️ Branches endpoint failed for ${user.user_id}:`, error);
+    }
+
+    // Try alternative branches endpoint
+    try {
+      branchListDetails = await this.apiRequest('/manage/v1/branches', {
+        user_id: user.user_id
+      });
+      console.log(`🏛️ Alternative branches endpoint:`, JSON.stringify(branchListDetails, null, 2));
+    } catch (error) {
+      console.log(`⚠️ Alternative branches endpoint failed:`, error);
     }
 
     // Try groups endpoint
@@ -230,6 +242,14 @@ class ReliableDoceboAPI {
       console.log(`⚠️ Org chart endpoint failed for ${user.user_id}:`, error);
     }
 
+    // Try manager/supervisor endpoint
+    try {
+      managerDetails = await this.apiRequest(`/manage/v1/user/${user.user_id}/manager`);
+      console.log(`👔 Manager endpoint:`, JSON.stringify(managerDetails, null, 2));
+    } catch (error) {
+      console.log(`⚠️ Manager endpoint failed:`, error);
+    }
+
     // Try alternative group/branch lookups
     let alternativeGroups = null;
     try {
@@ -240,6 +260,15 @@ class ReliableDoceboAPI {
       console.log(`👥 Alternative groups search:`, JSON.stringify(alternativeGroups, null, 2));
     } catch (error) {
       console.log(`⚠️ Alternative groups search failed:`, error);
+    }
+
+    // Try to get all branches and filter by user
+    let allBranches = null;
+    try {
+      allBranches = await this.apiRequest('/manage/v1/branches');
+      console.log(`🏛️ All branches endpoint:`, JSON.stringify(allBranches, null, 2));
+    } catch (error) {
+      console.log(`⚠️ All branches endpoint failed:`, error);
     }
 
     // Merge data from all sources
@@ -276,50 +305,128 @@ class ReliableDoceboAPI {
       }
     };
 
-    // Extract branches from all possible sources
+    // Extract branches from all possible sources with enhanced logic
     const extractBranches = (): string => {
       const sources = [
         branchDetails?.data?.items,
         branchDetails?.data,
+        branchListDetails?.data?.items,
         userOrgDetails?.data?.branches,
         mergedUser.branches,
         user.branches,
         mergedUser.branch,
         user.branch,
         user.branch_name,
-        mergedUser.branch_name
+        mergedUser.branch_name,
+        user.branch_id,
+        mergedUser.branch_id
       ];
       
       console.log(`🏛️ Checking branch sources:`, sources.map(s => s ? (Array.isArray(s) ? `Array(${s.length})` : typeof s) : 'null'));
       
+      // Try to find branches in the data
       for (const source of sources) {
         try {
           if (Array.isArray(source) && source.length > 0) {
             const result = source.map((b: any) => {
               if (typeof b === 'string') return b;
               if (b && typeof b === 'object') {
-                return b.name || b.branch_name || b.title || b.description || JSON.stringify(b);
+                return b.name || b.branch_name || b.title || b.description || b.code || JSON.stringify(b);
               }
               return String(b);
             }).filter(Boolean).join(', ');
             console.log(`🏛️ Found branches from array:`, result);
-            return result;
+            if (result && result !== 'null' && result !== 'undefined') return result;
           }
           if (source && typeof source === 'object' && !Array.isArray(source)) {
-            const result = source.name || source.branch_name || source.title || JSON.stringify(source);
+            const result = source.name || source.branch_name || source.title || source.code || JSON.stringify(source);
             console.log(`🏛️ Found branches from object:`, result);
-            return result;
+            if (result && result !== 'null' && result !== 'undefined') return result;
           }
-          if (typeof source === 'string' && source.trim()) {
+          if (typeof source === 'string' && source.trim() && source !== 'null' && source !== 'undefined') {
             console.log(`🏛️ Found branches from string:`, source);
             return source;
+          }
+          if (typeof source === 'number' && source > 0) {
+            // If we have a branch ID, try to look it up in all branches
+            if (allBranches?.data?.items) {
+              const branch = allBranches.data.items.find((b: any) => b.id === source || b.branch_id === source);
+              if (branch) {
+                const branchName = branch.name || branch.branch_name || branch.title || `Branch ${source}`;
+                console.log(`🏛️ Found branch by ID ${source}:`, branchName);
+                return branchName;
+              }
+            }
+            return `Branch ID: ${source}`;
           }
         } catch (error) {
           console.log(`⚠️ Error processing branch source:`, error);
           continue;
         }
       }
+      
+      // Last resort: check if user object has any field that might indicate branch
+      const userFieldsToCheck = Object.keys(user).filter(key => 
+        key.toLowerCase().includes('branch') || 
+        key.toLowerCase().includes('office') || 
+        key.toLowerCase().includes('location')
+      );
+      
+      for (const field of userFieldsToCheck) {
+        const value = user[field];
+        if (value && typeof value === 'string' && value.trim()) {
+          console.log(`🏛️ Found branch in user field ${field}:`, value);
+          return value;
+        }
+      }
+      
       return 'None assigned';
+    };
+
+    // Extract direct manager information
+    const extractManager = (): string => {
+      const sources = [
+        managerDetails?.data,
+        userOrgDetails?.data?.manager,
+        mergedUser.manager,
+        user.manager,
+        mergedUser.supervisor,
+        user.supervisor,
+        mergedUser.manager_id,
+        user.manager_id,
+        mergedUser.reports_to,
+        user.reports_to
+      ];
+      
+      console.log(`👔 Checking manager sources:`, sources.map(s => s ? (typeof s === 'object' ? 'Object' : typeof s) : 'null'));
+      
+      for (const source of sources) {
+        try {
+          if (source && typeof source === 'object') {
+            // Manager object with details
+            const managerName = source.fullname || source.name || 
+                              `${source.firstname || ''} ${source.lastname || ''}`.trim() ||
+                              source.email || source.username;
+            if (managerName && managerName.trim()) {
+              console.log(`👔 Found manager from object:`, managerName);
+              return managerName;
+            }
+          }
+          if (typeof source === 'string' && source.trim()) {
+            console.log(`👔 Found manager from string:`, source);
+            return source;
+          }
+          if (typeof source === 'number' && source > 0) {
+            console.log(`👔 Found manager ID:`, source);
+            return `Manager ID: ${source}`;
+          }
+        } catch (error) {
+          console.log(`⚠️ Error processing manager source:`, error);
+          continue;
+        }
+      }
+      
+      return 'Not assigned';
     };
 
     // Extract groups from all possible sources  
@@ -371,6 +478,7 @@ class ReliableDoceboAPI {
 
     const branches = extractBranches();
     const groups = extractGroups();
+    const manager = extractManager();
 
     return {
       id: user.user_id || user.id,
@@ -383,6 +491,7 @@ class ReliableDoceboAPI {
       // Use improved extraction methods
       branches: branches,
       groups: groups,
+      manager: manager,
       
       // Try multiple date field formats
       creationDate: user.register_date || user.creation_date || user.created_at || mergedUser.register_date || 'Not available',
@@ -401,11 +510,22 @@ class ReliableDoceboAPI {
         branchApiCalled: branchDetails ? 'Success' : 'Failed',
         groupApiCalled: groupDetails ? 'Success' : 'Failed',
         orgChartApiCalled: userOrgDetails ? 'Success' : 'Failed',
+        managerApiCalled: managerDetails ? 'Success' : 'Failed',
         alternativeGroupsApiCalled: alternativeGroups ? 'Success' : 'Failed',
+        branchListApiCalled: branchListDetails ? 'Success' : 'Failed',
+        allBranchesApiCalled: allBranches ? 'Success' : 'Failed',
         rawBranchData: branchDetails?.data || null,
         rawGroupData: groupDetails?.data || null,
         rawOrgData: userOrgDetails?.data || null,
-        rawAlternativeGroups: alternativeGroups?.data || null
+        rawManagerData: managerDetails?.data || null,
+        rawAlternativeGroups: alternativeGroups?.data || null,
+        rawBranchList: branchListDetails?.data || null,
+        // Show fields that might contain branch/manager info
+        branchFields: Object.keys(user).filter(k => k.toLowerCase().includes('branch')),
+        managerFields: Object.keys(user).filter(k => k.toLowerCase().includes('manager') || k.toLowerCase().includes('supervisor')),
+        userFieldSample: Object.fromEntries(
+          Object.entries(user).slice(0, 10).map(([k, v]) => [k, typeof v === 'object' ? '[object]' : v])
+        )
       }
     };
   }
@@ -732,6 +852,8 @@ ${userList}
           answer = `🏛️ **Branches**: ${userDetails.branches}\n🏛️ **Department**: ${userDetails.department}`;
         } else if (question.includes('group')) {
           answer = `👥 **Groups**: ${userDetails.groups}`;
+        } else if (question.includes('manager') || question.includes('supervisor') || question.includes('reports to')) {
+          answer = `👔 **Manager**: ${userDetails.manager}`;
         } else if (question.includes('language') || question.includes('timezone')) {
           answer = `🌍 **Language**: ${userDetails.language}\n🕐 **Timezone**: ${userDetails.timezone}`;
         } else if (question.includes('email') || question.includes('contact')) {
@@ -816,6 +938,7 @@ ${answer}
 ### 👥 **Organization**
 🏛️ **Branches**: ${userDetails.branches}
 👥 **Groups**: ${userDetails.groups}
+👔 **Manager**: ${userDetails.manager}
 
 💡 **Admin Complete**: All available user information retrieved!
 💬 **Ask More**: "What is ${userDetails.email}'s last login?" or "When did ${userDetails.email} join?"`,
@@ -965,7 +1088,8 @@ ${courseList}${courses.length > 20 ? `\n\n... and ${courses.length - 20} more co
 📅 **Created**: ${userDetails.creationDate}
 🔐 **Last Access**: ${userDetails.lastAccess}
 🏛️ **Branches**: ${userDetails.branches}
-👥 **Groups**: ${userDetails.groups}`,
+👥 **Groups**: ${userDetails.groups}
+👔 **Manager**: ${userDetails.manager}`,
           success: true,
           data: userDetails,
           timestamp: new Date().toISOString()
