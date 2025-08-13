@@ -66,7 +66,7 @@ function extractCourse(message: string): string | null {
 }
 
 function extractCacheKey(message: string): string | null {
-  const match = message.match(/cache_([a-f0-9]+)/);
+  const match = message.match(/cache_([a-f0-9A-F]+)/);
   return match ? match[1] : null;
 }
 
@@ -154,7 +154,7 @@ class EnhancedDoceboAPI {
     return result.data?.items || [];
   }
 
-  async getAllEnrollments(email: string, maxPages: number = 10): Promise<any> {
+  async getAllEnrollments(email: string, maxPages: number = 15): Promise<any> {
     // Find user first
     const users = await this.apiRequest('/manage/v1/user', {
       search_text: email,
@@ -172,7 +172,45 @@ class EnhancedDoceboAPI {
     let allEnrollments: any[] = [];
     let currentPage = 1;
     
-    // Get multiple pages to collect more data
+    // Try different API approach - get user's enrollments directly
+    console.log(`🔄 Trying direct user enrollment endpoint first...`);
+    
+    try {
+      // First try the user-specific enrollment endpoint
+      const directResult = await this.apiRequest(`/learn/v1/enrollments/users/${user.user_id}`, {
+        page_size: 200,
+        page: 1
+      });
+      
+      const directEnrollments = directResult.data?.items || [];
+      console.log(`📊 Direct API found ${directEnrollments.length} enrollments`);
+      
+      if (directEnrollments.length > 0) {
+        allEnrollments = directEnrollments.map((e: any) => ({
+          courseName: e.course?.name || e.course_name || 'Unknown Course',
+          courseType: e.course?.course_type || e.course_type || 'unknown',
+          enrollmentStatus: e.status || e.enrollment_status || 'unknown',
+          enrollmentDate: e.date_inscr || e.enrollment_created_at,
+          score: e.score_given || e.enrollment_score || 0,
+          assignmentType: e.level || e.assignment_type,
+          courseId: e.course?.id || e.course_id
+        }));
+        
+        console.log(`✅ Direct API: Total enrollments processed: ${allEnrollments.length}`);
+        
+        return {
+          user: user,
+          allEnrollments: allEnrollments,
+          totalCount: allEnrollments.length,
+          pagesProcessed: 1,
+          method: 'direct_user_api'
+        };
+      }
+    } catch (directError) {
+      console.log(`⚠️ Direct user endpoint failed, trying course enrollments endpoint...`);
+    }
+    
+    // Fallback to original method with increased pages
     while (currentPage <= maxPages) {
       console.log(`📄 Fetching page ${currentPage}...`);
       
@@ -220,7 +258,7 @@ class EnhancedDoceboAPI {
       }
     }
     
-    // Format enrollments
+    // Format enrollments from course API
     const processedEnrollments = allEnrollments.map((e: any) => ({
       courseName: e.course_name || 'Unknown Course',
       courseType: e.course_type || 'unknown',
@@ -237,7 +275,8 @@ class EnhancedDoceboAPI {
       user: user,
       allEnrollments: processedEnrollments,
       totalCount: processedEnrollments.length,
-      pagesProcessed: currentPage - 1
+      pagesProcessed: currentPage - 1,
+      method: 'course_enrollments_api'
     };
   }
 
@@ -500,14 +539,27 @@ ${courseList}${courses.length > 20 ? `\n\n... and ${courses.length - 20} more co
         const enrollmentData = await api.getAllEnrollments(email, 10);
         const { user, allEnrollments, totalCount } = enrollmentData;
         
-        // Store in pagination cache
+        // Store in pagination cache with longer TTL
         const cacheKey = generateCacheKey();
-        paginationCache.set(cacheKey, {
+        const cacheData = {
           allEnrollments: allEnrollments,
           user: user,
           currentPage: 1,
-          timestamp: Date.now()
-        });
+          timestamp: Date.now(),
+          method: enrollmentData.method
+        };
+        
+        paginationCache.set(cacheKey, cacheData);
+        
+        // Set cache cleanup after 30 minutes instead of default
+        setTimeout(() => {
+          if (paginationCache.has(cacheKey)) {
+            console.log(`🧹 Cleaning up cache: ${cacheKey}`);
+            paginationCache.delete(cacheKey);
+          }
+        }, 30 * 60 * 1000); // 30 minutes
+        
+        console.log(`💾 Stored in cache: ${cacheKey} (${allEnrollments.length} enrollments)`);
         
         // Show first 20 results
         const displayResults = allEnrollments.slice(0, 20);
@@ -517,6 +569,7 @@ ${courseList}${courses.length > 20 ? `\n\n... and ${courses.length - 20} more co
           response: `📚 **${email}'s Courses** (Showing 1-${displayResults.length} of ${totalCount})
 
 👤 **User**: ${user.fullname}
+🔍 **Method**: ${enrollmentData.method || 'course_enrollments_api'}
 
 ${displayResults.map((course: any, i: number) => {
   let statusIcon = '📚';
@@ -532,11 +585,14 @@ ${hasMore ? `\n🔄 **Load More**: "Load more cache_${cacheKey}" (Show next 20)`
 
 💡 **Actions Available:**
 ${hasMore ? `- Type: "Load more cache_${cacheKey}" for next 20 results` : ''}
-- Type: "Export CSV cache_${cacheKey}" for complete spreadsheet`,
+- Type: "Export CSV cache_${cacheKey}" for complete spreadsheet
+
+**Cache ID**: ${cacheKey} (Valid for 30 minutes)`,
           success: true,
           totalCount: totalCount,
           hasMore: hasMore,
           cacheKey: cacheKey,
+          method: enrollmentData.method,
           timestamp: new Date().toISOString()
         });
         
