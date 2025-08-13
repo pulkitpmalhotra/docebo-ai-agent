@@ -618,7 +618,7 @@ ${options.dueDate ? `**Due Date**: ${options.dueDate}` : ''}
       console.log(`📊 First few enrollments:`, JSON.stringify(enrollments.slice(0, 3), null, 2));
       
       // Get debug info from the API call for display in response
-      const debugInfo = await this.getEnrollmentDebugInfo(user.user_id);
+      const debugInfo = await api.getEnrollmentDebugInfo(user.user_id);
       
       if (enrollments.length === 0) {
         return NextResponse.json({
