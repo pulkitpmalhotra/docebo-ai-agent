@@ -191,6 +191,27 @@ class ReliableDoceboAPI {
     }
 
     console.log(`🔍 Raw user data for ${email}:`, JSON.stringify(user, null, 2));
+    
+    // **DEBUG MODE** - Log all user fields that might contain branch/manager info
+    const debugFields = {
+      allFields: Object.keys(user),
+      branchFields: Object.keys(user).filter(k => k.toLowerCase().includes('branch') || k.toLowerCase().includes('office') || k.toLowerCase().includes('location')),
+      managerFields: Object.keys(user).filter(k => k.toLowerCase().includes('manager') || k.toLowerCase().includes('supervisor') || k.toLowerCase().includes('report')),
+      potentialBranchValues: {},
+      potentialManagerValues: {}
+    };
+    
+    // Extract potential branch values
+    debugFields.branchFields.forEach(field => {
+      debugFields.potentialBranchValues[field] = user[field];
+    });
+    
+    // Extract potential manager values  
+    debugFields.managerFields.forEach(field => {
+      debugFields.potentialManagerValues[field] = user[field];
+    });
+    
+    console.log(`🔍 DEBUG FIELDS ANALYSIS:`, JSON.stringify(debugFields, null, 2));
 
     // Try multiple API endpoints to get complete user data
     let additionalDetails = null;
