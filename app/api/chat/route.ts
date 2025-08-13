@@ -141,85 +141,26 @@ class FixedDoceboAPI {
     }
   }
 
-  // ALTERNATIVE: Get ALL enrollments and filter client-side (for better pagination)
-  async getUserEnrollmentsAlternative(userId: string): Promise<any[]> {
-    try {
-      console.log(`📚 Alternative approach: Getting ALL enrollments and filtering for user ${userId}`);
-      
-      let allUserEnrollments: any[] = [];
-      let currentPage = 1;
-      let hasMoreData = true;
-      const maxPages = 50; // Higher limit since we're filtering client-side
-      let totalProcessed = 0;
-      
-      while (hasMoreData && currentPage <= maxPages && allUserEnrollments.length < 100) {
-        console.log(`📚 Fetching page ${currentPage}...`);
-        
-        // Get ALL enrollments without user filter to ensure pagination works
-        const result = await this.apiRequest('/course/v1/courses/enrollments', 'GET', null, {
-          page_size: 200,
-          page: currentPage,
-          sort_attr: 'enrollment_created_at',
-          sort_dir: 'desc'
-        });
-        
-        const pageEnrollments = result.data?.items || [];
-        totalProcessed += pageEnrollments.length;
-        
-        console.log(`📚 Page ${currentPage}: ${pageEnrollments.length} total items, ${totalProcessed} processed so far`);
-        
-        // Filter to get only enrollments for our specific user
-        const filteredPageEnrollments = pageEnrollments.filter((enrollment: any) => {
-          const enrollmentUserId = enrollment.user_id;
-          const targetUserId = Number(userId);
-          return enrollmentUserId === targetUserId;
-        });
-        
-        console.log(`📚 Page ${currentPage}: Found ${filteredPageEnrollments.length} enrollments for user ${userId}`);
-        
-        // Add filtered enrollments to our collection
-        allUserEnrollments.push(...filteredPageEnrollments);
-        
-        // Check if we have more data
-        hasMoreData = result.data?.has_more_data === true;
-        
-        // Safety checks
-        if (pageEnrollments.length === 0) {
-          console.log(`📚 Page ${currentPage}: No items returned, stopping`);
-          hasMoreData = false;
-        }
-        
-        currentPage++;
-        
-        // Add delay to be respectful
-        if (hasMoreData) {
-          await new Promise(resolve => setTimeout(resolve, 200));
-        }
-      }
-      
-      console.log(`📚 ✅ Alternative method: Found ${allUserEnrollments.length} enrollments for user ${userId} across ${currentPage - 1} pages`);
-      
-      return allUserEnrollments;
-      
-    } catch (error) {
-      console.error('❌ Alternative user enrollments method failed:', error);
-      return [];
-    }
-  }
-
-  // FIXED: User enrollments - try both methods
+  // OPTIMIZED: User enrollments with faster pagination and timeout handling
   async getUserEnrollments(userId: string): Promise<any[]> {
     try {
       console.log(`📚 Getting enrollments for user ID: ${userId}`);
       
-      // First try the direct method with user_ids[] filter
       let allUserEnrollments: any[] = [];
       let currentPage = 1;
       let hasMoreData = true;
-      const maxPages = 10;
+      const maxPages = 50; // Increased limit but with timeout protection
+      const startTime = Date.now();
+      const timeoutMs = 25000; // 25 seconds to leave buffer for response
       
       while (hasMoreData && currentPage <= maxPages) {
-        console.log(`📚 Method 1 - Fetching page ${currentPage}...`);
+        // Check timeout
+        if (Date.now() - startTime > timeoutMs) {
+          console.log(`📚 ⏰ Timeout approaching, stopping at page ${currentPage} with ${allUserEnrollments.length} enrollments found`);
+          break;
+        }
+        
+        console.log(`📚 Fetching page ${currentPage}...`);
         
         const result = await this.apiRequest('/course/v1/courses/enrollments', 'GET', null, {
           'user_ids[]': userId,
@@ -228,14 +169,13 @@ class FixedDoceboAPI {
         });
         
         const pageEnrollments = result.data?.items || [];
-        console.log(`📚 Method 1 - Page ${currentPage}: ${pageEnrollments.length} items, has_more: ${result.data?.has_more_data}`);
         
         const filteredPageEnrollments = pageEnrollments.filter((enrollment: any) => {
           return enrollment.user_id === Number(userId);
         });
         
         allUserEnrollments.push(...filteredPageEnrollments);
-        console.log(`📚 Method 1 - Page ${currentPage}: ${filteredPageEnrollments.length} for user ${userId}, total so far: ${allUserEnrollments.length}`);
+        console.log(`📚 Page ${currentPage}: ${filteredPageEnrollments.length} enrollments found (total: ${allUserEnrollments.length})`);
         
         hasMoreData = result.data?.has_more_data === true;
         
@@ -245,23 +185,14 @@ class FixedDoceboAPI {
         
         currentPage++;
         
+        // Reduced delay for faster processing
         if (hasMoreData) {
-          await new Promise(resolve => setTimeout(resolve, 100));
+          await new Promise(resolve => setTimeout(resolve, 50));
         }
       }
       
-      console.log(`📚 ✅ Method 1 result: ${allUserEnrollments.length} enrollments`);
-      
-      // If Method 1 didn't get enough results, try the alternative method
-      if (allUserEnrollments.length < 10) {
-        console.log(`📚 🔄 Method 1 only found ${allUserEnrollments.length} enrollments. Trying alternative method...`);
-        const alternativeResults = await this.getUserEnrollmentsAlternative(userId);
-        
-        if (alternativeResults.length > allUserEnrollments.length) {
-          console.log(`📚 ✅ Alternative method found more results: ${alternativeResults.length} vs ${allUserEnrollments.length}`);
-          return alternativeResults;
-        }
-      }
+      const totalTime = Date.now() - startTime;
+      console.log(`📚 ✅ Found ${allUserEnrollments.length} enrollments across ${currentPage - 1} pages in ${totalTime}ms`);
       
       return allUserEnrollments;
       
@@ -269,6 +200,12 @@ class FixedDoceboAPI {
       console.error('❌ Get user enrollments failed:', error);
       return [];
     }
+  }
+
+  // Remove the alternative method to avoid timeouts
+  async getUserEnrollmentsAlternative(userId: string): Promise<any[]> {
+    // Removed to prevent timeouts - the main method should work
+    return [];
   }
 
   // Course enrollments with correct endpoint and parameters
