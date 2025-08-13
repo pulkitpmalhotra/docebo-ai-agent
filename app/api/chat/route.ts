@@ -165,7 +165,7 @@ class SimpleDoceboAPI {
 
     return {
       user: user,
-      enrollments: userEnrollments.map(e => ({
+      enrollments: userEnrollments.map((e: any) => ({
         courseName: e.course_name || 'Unknown Course',
         courseType: e.course_type || 'unknown',
         enrollmentStatus: e.enrollment_status || 'unknown',
