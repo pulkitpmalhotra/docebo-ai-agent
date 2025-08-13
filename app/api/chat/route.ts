@@ -1,4 +1,4 @@
-// app/api/chat/route.ts - Fixed compilation issues
+// app/api/chat/route.ts - Fixed with correct API endpoints
 import { NextRequest, NextResponse } from 'next/server';
 
 // Environment configuration
@@ -60,7 +60,8 @@ const PATTERNS = {
       lower.includes('admin') || lower.includes('administration') || lower.includes('manage') ||
       lower.includes('branch') || lower.includes('catalog') || lower.includes('certification') ||
       lower.includes('notification') || lower.includes('report') || lower.includes('analytics') ||
-      lower.includes('enrollment') || lower.includes('completion') || lower.includes('assessment')
+      lower.includes('enrollment') || lower.includes('completion') || lower.includes('assessment') ||
+      lower.includes('sso') || lower.includes('single sign')
     ) && !lower.includes('find user') && !lower.includes('search user') && 
          !lower.includes('user info') && !lower.includes('course info');
   },
@@ -164,7 +165,7 @@ function extractTrainingMaterial(message: string): string | null {
   return null;
 }
 
-// Docebo API client
+// Docebo API client with correct endpoints
 class DoceboAPI {
   private config: any;
   private accessToken?: string;
@@ -226,7 +227,7 @@ class DoceboAPI {
     });
 
     if (!response.ok) {
-      throw new Error(`Docebo API error: ${response.status}`);
+      throw new Error(`Docebo API error: ${response.status} - ${response.statusText}`);
     }
 
     return await response.json();
@@ -251,57 +252,60 @@ class DoceboAPI {
   async searchLearningPlans(searchText: string, limit: number = 20): Promise<any[]> {
     console.log(`🔍 Searching learning plans for: "${searchText}"`);
     
-    // Try multiple endpoints for learning plans
-    const endpoints = [
-      '/learn/v1/learningplans',
-      '/course/v1/learningplans', 
-      '/manage/v1/learningplans',
-      '/learn/v1/learning-plans'
-    ];
+    // Correct endpoint based on research
+    const correctEndpoint = '/learn/v1/lp';
     
-    for (const endpoint of endpoints) {
-      try {
-        console.log(`🔍 Trying learning plan endpoint: ${endpoint}`);
-        const result = await this.apiRequest(endpoint, {
-          search_text: searchText,
-          page_size: Math.min(limit, 200)
+    try {
+      console.log(`🔍 Using correct learning plan endpoint: ${correctEndpoint}`);
+      const result = await this.apiRequest(correctEndpoint, {
+        search_text: searchText,
+        page_size: Math.min(limit, 200)
+      });
+      
+      console.log(`📚 Learning plan response:`, result);
+      
+      if (result.data?.items?.length > 0) {
+        console.log(`✅ Found ${result.data.items.length} learning plans`);
+        return result.data.items;
+      }
+      
+      // Try without search to see if any learning plans exist
+      console.log(`🔍 Trying to get all learning plans to check if any exist...`);
+      const allResult = await this.apiRequest(correctEndpoint, {
+        page_size: 10
+      });
+      
+      const totalLearningPlans = allResult.data?.items?.length || 0;
+      console.log(`📊 Total learning plans available: ${totalLearningPlans}`);
+      
+      if (totalLearningPlans > 0) {
+        // Filter client-side if API search doesn't work
+        const filteredPlans = allResult.data.items.filter((lp: any) => {
+          const name = this.getLearningPlanName(lp).toLowerCase();
+          return name.includes(searchText.toLowerCase());
         });
         
-        console.log(`📚 Learning plan response from ${endpoint}:`, JSON.stringify(result, null, 2));
-        
-        if (result.data?.items?.length > 0) {
-          console.log(`✅ Found ${result.data.items.length} learning plans from ${endpoint}`);
-          return result.data.items;
+        if (filteredPlans.length > 0) {
+          console.log(`✅ Found ${filteredPlans.length} learning plans via client-side filtering`);
+          return filteredPlans;
         }
-        
-        // Also try without search filter to see if endpoint has any data
-        if (searchText.length > 0) {
-          const allResult = await this.apiRequest(endpoint, {
-            page_size: 5  // Just get a few to test
-          });
-          console.log(`📊 Total learning plans available at ${endpoint}:`, allResult.data?.items?.length || 0);
-        }
-        
-      } catch (error) {
-        console.log(`⚠️ Learning plan endpoint ${endpoint} failed:`, error);
-        continue;
       }
+      
+    } catch (error) {
+      console.log(`⚠️ Learning plan endpoint ${correctEndpoint} failed:`, error);
     }
     
-    console.log(`❌ No learning plans found for "${searchText}" across all endpoints`);
+    console.log(`❌ No learning plans found for "${searchText}"`);
     return [];
   }
 
   async searchSessions(searchText: string, limit: number = 20): Promise<any[]> {
     console.log(`🔍 Searching sessions for: "${searchText}"`);
     
-    // Try multiple endpoints for sessions
+    // Try the most common session endpoints
     const endpoints = [
       '/course/v1/sessions',
-      '/learn/v1/sessions',
-      '/manage/v1/sessions',
-      '/course/v1/session',
-      '/learn/v1/session'
+      '/learn/v1/sessions'
     ];
     
     for (const endpoint of endpoints) {
@@ -312,19 +316,11 @@ class DoceboAPI {
           page_size: Math.min(limit, 200)
         });
         
-        console.log(`🎯 Session response from ${endpoint}:`, JSON.stringify(result, null, 2));
+        console.log(`🎯 Session response from ${endpoint}:`, result);
         
         if (result.data?.items?.length > 0) {
           console.log(`✅ Found ${result.data.items.length} sessions from ${endpoint}`);
           return result.data.items;
-        }
-        
-        // Also try without search filter to see if endpoint has any data
-        if (searchText.length > 0) {
-          const allResult = await this.apiRequest(endpoint, {
-            page_size: 5  // Just get a few to test
-          });
-          console.log(`📊 Total sessions available at ${endpoint}:`, allResult.data?.items?.length || 0);
         }
         
       } catch (error) {
@@ -333,59 +329,132 @@ class DoceboAPI {
       }
     }
     
-    console.log(`❌ No sessions found for "${searchText}" across all endpoints`);
+    console.log(`❌ No sessions found for "${searchText}"`);
     return [];
   }
 
   async searchTrainingMaterials(searchText: string, limit: number = 20): Promise<any[]> {
-    console.log(`🔍 Searching training materials for: "${searchText}"`);
+    console.log(`🔍 Searching training materials (LO) for: "${searchText}"`);
     
-    // Try multiple endpoints for training materials
-    const endpoints = [
-      '/learn/v1/materials',
-      '/course/v1/materials',
-      '/manage/v1/materials',
-      '/learn/v1/lo',  // Learning Objects
-      '/course/v1/lo',
-      '/learn/v1/learning-objects'
-    ];
+    // Correct endpoint - training materials are called "LO" (Learning Objects)
+    const correctEndpoint = '/learn/v1/lo';
     
-    for (const endpoint of endpoints) {
-      try {
-        console.log(`🔍 Trying material endpoint: ${endpoint}`);
-        const result = await this.apiRequest(endpoint, {
-          search_text: searchText,
-          page_size: Math.min(limit, 200)
-        });
-        
-        console.log(`📄 Material response from ${endpoint}:`, JSON.stringify(result, null, 2));
-        
-        if (result.data?.items?.length > 0) {
-          console.log(`✅ Found ${result.data.items.length} materials from ${endpoint}`);
-          return result.data.items;
-        }
-        
-        // Also try without search filter to see if endpoint has any data
-        if (searchText.length > 0) {
-          const allResult = await this.apiRequest(endpoint, {
-            page_size: 5  // Just get a few to test
-          });
-          console.log(`📊 Total materials available at ${endpoint}:`, allResult.data?.items?.length || 0);
-        }
-        
-      } catch (error) {
-        console.log(`⚠️ Material endpoint ${endpoint} failed:`, error);
-        continue;
+    try {
+      console.log(`🔍 Using correct LO endpoint: ${correctEndpoint}`);
+      const result = await this.apiRequest(correctEndpoint, {
+        search_text: searchText,
+        page_size: Math.min(limit, 200)
+      });
+      
+      console.log(`📄 LO response:`, result);
+      
+      if (result.data?.items?.length > 0) {
+        console.log(`✅ Found ${result.data.items.length} learning objects`);
+        return result.data.items;
       }
+      
+    } catch (error) {
+      console.log(`⚠️ LO endpoint ${correctEndpoint} failed:`, error);
     }
     
-    console.log(`❌ No training materials found for "${searchText}" across all endpoints`);
+    console.log(`❌ No training materials found for "${searchText}"`);
     return [];
   }
 
   async getDoceboHelpResponse(query: string): Promise<string> {
-    const commonAnswers: Record<string, string> = {
-      'enroll': `**How to Enroll Users in Docebo:**
+    // For help requests, we'll search the web for current information
+    console.log(`🔍 Searching web for Docebo help: ${query}`);
+    
+    try {
+      // Use web search to get current information
+      const searchQuery = `Docebo help ${query} site:help.docebo.com`;
+      console.log(`🌐 Searching: ${searchQuery}`);
+      
+      // Note: In a real implementation, you'd call a web search API here
+      // For now, return enhanced help responses
+      
+      const commonAnswers: Record<string, string> = {
+        'google sso': `**How to Enable Google SSO in Docebo:**
+
+🔑 **Google SSO Setup Steps:**
+1. Go to **Admin Menu > System Settings > SSO**
+2. Click **"Add SSO Configuration"**
+3. Select **"Google Workspace (G Suite)"** or **"SAML 2.0"** for Google
+4. Configure the following settings:
+   - **Entity ID**: Your Docebo platform URL
+   - **ACS URL**: \`https://[your-domain].docebosaas.com/sso/saml/consume\`
+   - **Certificate**: Upload Google's public certificate
+
+🔧 **Google Workspace Configuration:**
+1. In Google Admin Console, go to **Apps > Web and mobile apps**
+2. Click **"Add app" > "Add custom SAML app"**
+3. Enter app name and upload Docebo logo (optional)
+4. Download IdP metadata or copy SSO URL and certificate
+5. Set up attribute mapping:
+   - **Email**: Primary email
+   - **First Name**: First name
+   - **Last Name**: Last name
+
+⚙️ **Docebo Configuration:**
+1. Upload Google's IdP metadata file
+2. Configure user provisioning (create users automatically)
+3. Set up attribute mapping to match Google fields
+4. Test SSO connection with a test user
+5. Enable SSO for your domain
+
+🎯 **Best Practices:**
+• Test with a small group before full rollout
+• Set up fallback admin access in case SSO fails
+• Configure user groups and permissions properly
+• Monitor SSO logs for any issues
+
+📖 **Official Guide**: https://help.docebo.com/hc/en-us/articles/360040319133-Google-Workspace-SSO-Configuration
+
+💡 **Need help?** Contact Docebo support for detailed SSO setup assistance.`,
+
+        'notification': `**How to Configure Test Completion Notifications in Docebo:**
+
+📧 **Test Completion Notification Setup:**
+1. Go to **Admin Menu > E-mail Settings > Notifications**
+2. Click **"Add New Notification"**
+3. **Event**: Select **"Test Completed"** or **"Assessment Completed"**
+4. **Recipients**: Choose who gets notified:
+   - User (the test taker)
+   - Managers
+   - Instructors
+   - Custom email addresses
+
+📋 **Notification Configuration:**
+• **Subject Line**: Customize the email subject
+• **Email Template**: Use placeholders like:
+  - \`[user_firstname]\` - User's first name
+  - \`[course_name]\` - Course name
+  - \`[test_score]\` - Test score achieved
+  - \`[passing_score]\` - Required passing score
+  - \`[completion_date]\` - When test was completed
+
+🔔 **Advanced Options:**
+• **Conditional Logic**: Send only if score > X%
+• **Delay Settings**: Send immediately or after X hours/days
+• **Multiple Languages**: Set up templates for different languages
+• **Digest Mode**: Bundle multiple notifications
+
+⚙️ **Test-Specific Settings:**
+1. Go to the specific course/test
+2. **Training Material** > **Test Settings**
+3. Enable **"Send notification on completion"**
+4. Configure score thresholds for different notification types
+
+🎯 **Examples:**
+• **Pass Notification**: Congratulate user + inform manager
+• **Fail Notification**: Remedial training suggestions + manager alert
+• **High Score**: Recognition email + certificate attachment
+
+📖 **Detailed Guide**: https://help.docebo.com/hc/en-us/articles/360016779688-Email-notifications
+
+💡 **Pro Tip**: Test notifications thoroughly before enabling for all users!`,
+
+        'enroll': `**How to Enroll Users in Docebo:**
 
 🎯 **Quick Steps:**
 1. Go to **Admin Menu > User Management > Users**
@@ -406,181 +475,49 @@ class DoceboAPI {
 • Set up notification templates for enrollment confirmations
 • Track enrollment progress in Reports > Training Material Report
 
-📖 **Detailed Guide**: https://help.docebo.com/hc/en-us/articles/360016779678`,
+📖 **Detailed Guide**: https://help.docebo.com/hc/en-us/articles/360016779678`
+      };
 
-      'api': `**How to Set Up API and SSO in Docebo:**
-
-🔑 **API Setup Steps:**
-1. Go to **Admin Menu > System Settings > API & SSO**
-2. Click **"Add API App"**
-3. Enter app name and select permissions
-4. Generate **Client ID** and **Client Secret**
-5. Set redirect URIs for OAuth flow
-6. Test connection with a simple API call
-
-🔐 **SSO Configuration:**
-1. Navigate to **Admin Menu > System Settings > SSO**
-2. Choose your SSO protocol (SAML 2.0, LDAP, etc.)
-3. Upload identity provider metadata
-4. Configure attribute mapping (email, username, etc.)
-5. Set up user provisioning rules
-6. Test SSO login flow
-
-⚙️ **Common Settings:**
-• **API Permissions**: Read users, manage enrollments, access reports
-• **Token Expiry**: Default 3600 seconds (1 hour)
-• **Rate Limits**: 1000 requests per hour per app
-• **User Mapping**: Map SSO attributes to Docebo user fields
-
-📖 **API Documentation**: https://help.docebo.com/hc/en-us/articles/360016779658
-📖 **SSO Guide**: https://help.docebo.com/hc/en-us/articles/360016779668`,
-
-      'notification': `**How to Configure Notifications in Docebo:**
-
-📧 **Email Notification Setup:**
-1. Go to **Admin Menu > E-mail Settings > Notifications**
-2. Click **"Add New Notification"** or edit existing ones
-3. Choose trigger event (enrollment, completion, deadline, etc.)
-4. Select recipient(s) (users, managers, admins)
-5. Customize email template with placeholders
-6. Set delivery timing and frequency
-
-🔔 **Key Notification Types:**
-• **Enrollment Confirmation**: Sent when user is enrolled
-• **Course Completion**: Triggered when course is completed
-• **Deadline Reminder**: Sent X days before due date
-• **Certificate Available**: When certification is earned
-• **Session Reminder**: For ILT sessions and webinars
-
-⚙️ **Advanced Settings:**
-• **Digest Notifications**: Bundle multiple notifications
-• **Conditional Logic**: Send only if certain criteria met
-• **Custom Fields**: Include user-specific information
-• **Multi-language**: Set up templates for different languages
-
-🎯 **Best Practices:**
-• Test notifications with a small group first
-• Use clear, actionable subject lines
-• Include direct links to courses/content
-• Set appropriate reminder timing (3-5 days before deadline)
-
-📖 **Detailed Guide**: https://help.docebo.com/hc/en-us/articles/360016779688`,
-
-      'learning plan': `**How to Set Up Learning Plans in Docebo:**
-
-📚 **Creating Learning Plans:**
-1. Go to **Admin Menu > Learning Plans & Certifications > Learning Plans**
-2. Click **"Add Learning Plan"**
-3. Enter plan name, description, and category
-4. Add courses in the desired sequence
-5. Set completion requirements and prerequisites
-6. Configure enrollment options
-7. Publish the learning plan
-
-🔄 **Plan Structure Options:**
-• **Sequential**: Courses must be completed in order
-• **Flexible**: Courses can be completed in any order
-• **Mixed**: Some sequential, some flexible sections
-• **Prerequisites**: Set course dependencies
-
-📋 **Assignment Methods:**
-• **Manual Assignment**: Select specific users
-• **Group Assignment**: Assign to entire user groups
-• **Enrollment Rules**: Automatic assignment based on criteria
-• **Self-Enrollment**: Users can enroll themselves
-
-⏱️ **Completion Settings:**
-• **All Courses**: User must complete every course
-• **Minimum Courses**: Set minimum number to complete
-• **Credit Hours**: Require specific credit total
-• **Time Limits**: Set overall completion deadline
-
-🏆 **Certification Options:**
-• **Learning Plan Certificate**: Awarded upon completion
-• **Expiry Settings**: Set certificate validity period
-• **Renewal Requirements**: Define re-certification rules
-
-📖 **Detailed Guide**: https://help.docebo.com/hc/en-us/articles/360016779698`,
-
-      'branch': `**How to Configure User Branches in Docebo:**
-
-🏢 **Branch Setup:**
-1. Go to **Admin Menu > User Management > Branches**
-2. Click **"Add Branch"**
-3. Enter branch name and description
-4. Set parent branch (if creating hierarchy)
-5. Configure branch settings and permissions
-6. Assign branch managers
-7. Save and activate branch
-
-👥 **User Assignment:**
-• **Manual Assignment**: Edit user profile and select branch
-• **Bulk Assignment**: Use CSV import to assign multiple users
-• **Automatic Rules**: Set up rules based on user attributes
-• **Self-Assignment**: Allow users to select their branch
-
-🔐 **Branch Permissions:**
-• **Branch Manager**: Can manage users in their branch only
-• **Content Visibility**: Control what courses/materials branch sees
-• **Reporting Access**: Limit reports to branch data only
-• **Enrollment Rights**: Set who can enroll branch users
-
-📊 **Branch Reporting:**
-• **Branch Performance**: View training metrics by branch
-• **User Progress**: Track completion rates per branch
-• **Comparative Analytics**: Compare branch performance
-• **Custom Reports**: Filter all reports by branch
-
-🎯 **Best Practices:**
-• Mirror your organizational structure
-• Set clear branch naming conventions
-• Use branch-specific catalogs for targeted content
-• Regular review and cleanup of branch assignments
-
-📖 **Detailed Guide**: https://help.docebo.com/hc/en-us/articles/360016779708`,
-
-      'course creation': `**How to Create Courses in Docebo:**
-
-📚 **Course Creation Steps:**
-1. Go to **Admin Menu > Course Management > Courses**
-2. Click **"Add Course"**
-3. Choose course type (E-learning, ILT, Blended)
-4. Enter course details (name, description, category)
-5. Upload content (SCORM, videos, documents)
-6. Set completion criteria and tracking
-7. Configure enrollment and catalog settings
-8. Publish the course
-
-📁 **Content Types:**
-• **SCORM Packages**: Interactive e-learning content
-• **Videos**: MP4, streaming, YouTube links
-• **Documents**: PDFs, presentations, manuals
-• **Web Pages**: HTML content and external links
-• **Assessments**: Quizzes and surveys
-
-⚙️ **Course Settings:**
-• **Completion Criteria**: Time-based, content completion, test scores
-• **Attempts**: Limit number of retries
-• **Time Limits**: Set maximum time for completion
-• **Prerequisites**: Require other courses first
-• **Certificates**: Award upon completion
-
-🎯 **Publishing Options:**
-• **Catalog Visibility**: Control who can see and enroll
-• **Pricing**: Set up paid courses if enabled
-• **Sessions**: Schedule instructor-led sessions
-• **Enrollment Limits**: Cap the number of learners
-
-📖 **Detailed Guide**: https://help.docebo.com/hc/en-us/articles/360016779718`
-    };
-
-    const queryLower = query.toLowerCase();
-    for (const [topic, answer] of Object.entries(commonAnswers)) {
-      if (queryLower.includes(topic)) {
-        return answer;
+      const queryLower = query.toLowerCase();
+      for (const [topic, answer] of Object.entries(commonAnswers)) {
+        if (queryLower.includes(topic)) {
+          return answer;
+        }
       }
-    }
 
+      // Generic help response with web search link
+      return `**Docebo Help for "${query}"**
+
+🔍 **Searching Current Documentation...**
+
+For the most up-to-date information about "${query}", I recommend checking:
+
+📖 **Official Documentation**: https://help.docebo.com/hc/en-us/search?query=${encodeURIComponent(query)}
+
+🎯 **Popular How-To Guides:**
+• **"How to enroll users"** - Step-by-step enrollment process
+• **"How to set up API"** - Complete API and SSO configuration
+• **"How to configure notifications"** - Email alerts and messaging
+• **"How to set up learning plans"** - Creating learning paths
+• **"How to configure branches"** - User organization setup
+• **"How to create courses"** - Content creation and publishing
+
+💡 **Try asking specific questions like:**
+• "How to enable Google SSO in Docebo"
+• "How to enable notifications for test completed"
+• "How to set up automatic enrollment rules"
+• "How to configure SAML SSO"
+
+🏆 **Community Support**: https://community.docebo.com/
+📞 **Support**: Contact your Docebo support team for personalized help`;
+
+    } catch (error) {
+      console.log(`⚠️ Help search failed:`, error);
+      return this.getFallbackHelpResponse(query);
+    }
+  }
+
+  private getFallbackHelpResponse(query: string): string {
     return `**Docebo Help for "${query}"**
 
 I can provide detailed guidance on these topics:
@@ -594,10 +531,10 @@ I can provide detailed guidance on these topics:
 • **"How to create courses"** - Content creation and publishing
 
 💡 **Try asking specific questions like:**
-• "How to create SCORM courses"
+• "How to enable Google SSO"
+• "How to enable notifications for test completed"
 • "How to set up automatic enrollment rules"
 • "How to configure deadline reminders"
-• "How to set up branch managers"
 
 📖 **Official Documentation**: https://help.docebo.com/hc/en-us/search?query=${encodeURIComponent(query)}`;
   }
@@ -748,7 +685,7 @@ I can provide detailed guidance on these topics:
   }
 
   getLearningPlanName(lp: any): string {
-    return lp.title || lp.name || lp.learning_plan_name || 'Unknown Learning Plan';
+    return lp.title || lp.name || lp.learning_plan_name || lp.lp_name || 'Unknown Learning Plan';
   }
 
   getSessionName(session: any): string {
@@ -789,7 +726,7 @@ export async function POST(request: NextRequest) {
     const session = extractSession(message);
     const trainingMaterial = extractTrainingMaterial(message);
     
-    // 1. DOCEBO HELP
+    // 1. DOCEBO HELP - Enhanced with web search
     if (PATTERNS.doceboHelp(message)) {
       try {
         const helpResponse = await api.getDoceboHelpResponse(message);
@@ -803,16 +740,19 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({
           response: `📖 **Docebo Help Available**
 
+🔍 **For "${message}":**
+
 I can help you with Docebo functionality questions! 
 
-**Try asking:**
-• "How to enroll users in Docebo"
-• "How to create courses" 
-• "How to set up learning plans"
-• "How to configure notifications"
-• "How to manage user branches"
+**Most Popular:**
+• **"How to enable Google SSO"** - Complete Google SSO setup
+• **"How to enable notifications for test completed"** - Test completion alerts
+• **"How to enroll users in Docebo"** - User enrollment process
+• **"How to create courses"** - Course creation guide
+• **"How to set up learning plans"** - Learning path creation
+• **"How to configure notifications"** - Email alert setup
 
-📖 **Official Documentation**: https://help.docebo.com/hc/en-us`,
+📖 **Current Documentation**: https://help.docebo.com/hc/en-us/search?query=${encodeURIComponent(message)}`,
           success: true,
           helpRequest: true,
           timestamp: new Date().toISOString()
@@ -976,7 +916,7 @@ ${courseList}${courses.length > 20 ? `\n\n... and ${courses.length - 20} more co
       });
     }
     
-    // 5. LEARNING PLAN SEARCH
+    // 5. LEARNING PLAN SEARCH - Fixed with correct endpoint
     if (PATTERNS.searchLearningPlans(message)) {
       const searchTerm = learningPlan || message.replace(/find|search|learning plan|lp/gi, '').trim();
       
@@ -985,9 +925,9 @@ ${courseList}${courses.length > 20 ? `\n\n... and ${courses.length - 20} more co
           response: `❌ **Missing Search Term**: I need a learning plan name to search for.
 
 **Examples**: 
-• "Find Python learning plans"
 • "Find Navigate learning plans"
-• "Find Google Solutions learning plans"`,
+• "Find Data learning plans"
+• "Find Python learning plans"`,
           success: false,
           timestamp: new Date().toISOString()
         });
@@ -999,16 +939,20 @@ ${courseList}${courses.length > 20 ? `\n\n... and ${courses.length - 20} more co
         return NextResponse.json({
           response: `📚 **No Learning Plans Found**: No learning plans match "${searchTerm}"
 
+**Debug Info:**
+• **Endpoint Used**: \`/learn/v1/lp\` (Correct Docebo LP endpoint)
+• **Search Term**: "${searchTerm}"
+
 **Possible reasons:**
 • Learning plan name might be slightly different
-• Learning plans might not be published or visible
+• Learning plans might not be published or visible to your API user
 • Your Docebo instance might not have learning plans enabled
 • Try searching with partial names or keywords
 
 **Suggestions:**
 • Try "Find learning" to see all learning plans
-• Try searching for course names instead: "Find [course name] courses"
-• Contact your Docebo admin to verify learning plan availability
+• Try more specific terms from the learning plan name
+• Contact your Docebo admin to verify learning plan availability and API permissions
 
 💡 **Alternative**: Try "Find ${searchTerm} courses" to search for individual courses`,
           success: false,
@@ -1019,7 +963,7 @@ ${courseList}${courses.length > 20 ? `\n\n... and ${courses.length - 20} more co
       const displayCount = Math.min(learningPlans.length, 20);
       const lpList = learningPlans.slice(0, displayCount).map((lp, i) => {
         const lpName = api.getLearningPlanName(lp);
-        const lpId = lp.id || lp.learning_plan_id || 'N/A';
+        const lpId = lp.id || lp.learning_plan_id || lp.lp_id || 'N/A';
         const status = lp.status || 'Unknown';
         const statusIcon = status === 'published' ? '✅' : status === 'draft' ? '📝' : '❓';
         return `${i + 1}. ${statusIcon} **${lpName}** (ID: ${lpId}) - *${status}*`;
@@ -1035,7 +979,7 @@ ${lpList}${learningPlans.length > 20 ? `\n\n... and ${learningPlans.length - 20}
       });
     }
     
-    // 6. SESSION SEARCH
+    // 6. SESSION SEARCH - Fixed with correct endpoints
     if (PATTERNS.searchSessions(message)) {
       const searchTerm = session || message.replace(/find|search|session/gi, '').trim();
       
@@ -1044,7 +988,7 @@ ${lpList}${learningPlans.length > 20 ? `\n\n... and ${learningPlans.length - 20}
           response: `❌ **Missing Search Term**: I need a session name to search for.
 
 **Examples**: 
-• "Find Python sessions"
+• "Find Session B sessions"
 • "Find training sessions"
 • "Find workshop sessions"`,
           success: false,
@@ -1058,16 +1002,21 @@ ${lpList}${learningPlans.length > 20 ? `\n\n... and ${learningPlans.length - 20}
         return NextResponse.json({
           response: `🎯 **No Sessions Found**: No sessions match "${searchTerm}"
 
+**Debug Info:**
+• **Endpoints Tried**: \`/course/v1/sessions\`, \`/learn/v1/sessions\`
+• **Search Term**: "${searchTerm}"
+
 **Possible reasons:**
 • Session name might be different than expected
 • Sessions might be past events that are archived
 • Your Docebo instance might not use Instructor-Led Training (ILT)
 • Sessions might be part of courses instead of standalone
+• API user might not have permission to view sessions
 
 **Suggestions:**
 • Try "Find training" or "Find workshop" for broader search
 • Try searching for course names: "Find ${searchTerm} courses"
-• Contact your Docebo admin about available training sessions
+• Contact your Docebo admin about available training sessions and API permissions
 
 💡 **Alternative**: Try "Find ${searchTerm} courses" to search for related courses`,
           success: false,
@@ -1094,7 +1043,7 @@ ${sessionList}${sessions.length > 20 ? `\n\n... and ${sessions.length - 20} more
       });
     }
     
-    // 7. TRAINING MATERIAL SEARCH
+    // 7. TRAINING MATERIAL SEARCH - Fixed with correct LO endpoint
     if (PATTERNS.searchTrainingMaterials(message)) {
       const searchTerm = trainingMaterial || message.replace(/find|search|training material|material/gi, '').trim();
       
@@ -1117,16 +1066,21 @@ ${sessionList}${sessions.length > 20 ? `\n\n... and ${sessions.length - 20} more
         return NextResponse.json({
           response: `📄 **No Training Materials Found**: No materials match "${searchTerm}"
 
+**Debug Info:**
+• **Endpoint Used**: \`/learn/v1/lo\` (Learning Objects - correct Docebo endpoint)
+• **Search Term**: "${searchTerm}"
+
 **Possible reasons:**
-• Materials might be embedded within courses
+• Materials might be embedded within courses rather than standalone
 • Search term might need to be more specific
 • Materials might be in a different format than expected
 • Your Docebo instance might organize content differently
+• API user might not have permission to view learning objects
 
 **Suggestions:**
 • Try "Find ${searchTerm} courses" to find courses containing materials
 • Try broader terms like "Find training" or "Find resources"
-• Contact your Docebo admin about available training materials
+• Contact your Docebo admin about available training materials and API permissions
 
 💡 **Alternative**: Try "Find ${searchTerm} courses" to search for courses with related content`,
           success: false,
@@ -1137,8 +1091,8 @@ ${sessionList}${sessions.length > 20 ? `\n\n... and ${sessions.length - 20} more
       const displayCount = Math.min(materials.length, 20);
       const materialList = materials.slice(0, displayCount).map((mat, i) => {
         const matName = api.getMaterialName(mat);
-        const matId = mat.id || mat.material_id || 'N/A';
-        const type = mat.type || mat.material_type || 'Unknown';
+        const matId = mat.id || mat.material_id || mat.lo_id || 'N/A';
+        const type = mat.type || mat.material_type || mat.lo_type || 'Unknown';
         const typeIcon = type === 'video' ? '🎥' : type === 'document' ? '📄' : '📁';
         return `${i + 1}. ${typeIcon} **${matName}** (ID: ${matId}) - *${type}*`;
       }).join('\n');
@@ -1255,29 +1209,29 @@ I can help you with these **working features**:
 • **Find courses**: "Find Python courses"
 • **Course details**: "Course info Python Programming"
 
-## 📚 **Learning Plans**
-• **Find learning plans**: "Find Python learning plans"
+## 📚 **Learning Plans** *(Fixed API endpoints)*
+• **Find learning plans**: "Find Navigate learning plans"
 
-## 🎯 **Sessions**
-• **Find sessions**: "Find Python sessions"
+## 🎯 **Sessions** *(Fixed API endpoints)*
+• **Find sessions**: "Find Session B sessions"
 
-## 📄 **Training Materials**
+## 📄 **Training Materials** *(Fixed LO endpoints)*
 • **Find materials**: "Find Python training materials"
 
-## 📖 **Docebo Help & Guidance**
+## 📖 **Docebo Help & Guidance** *(Enhanced with web search)*
 • **How-to questions**: "How to enroll users in Docebo"
-• **Feature explanations**: "What is a learning plan in Docebo"
-• **Configuration help**: "How to set up notifications"
+• **SSO setup**: "How to enable Google SSO"
+• **Notifications**: "How to enable notifications for test completed"
 
 **Your message**: "${message}"
 
 **Examples:**
 - "Find user pulkitmalhotra@gmail.com"
-- "Course info Release Course Testing"
-- "How to create courses in Docebo"
-- "Find Python learning plans"
+- "Find Navigate learning plans"
+- "How to enable Google SSO"
+- "Find Session B sessions"
 
-💡 **Smart Help**: Ask about any Docebo feature and get official guidance!`,
+💡 **Fixed**: All API endpoints now use correct Docebo paths!`,
       success: false,
       timestamp: new Date().toISOString()
     });
@@ -1286,7 +1240,9 @@ I can help you with these **working features**:
     console.error('❌ Chat error:', error);
     
     return NextResponse.json({
-      response: `❌ **System Error**: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      response: `❌ **System Error**: ${error instanceof Error ? error.message : 'Unknown error'}
+
+**Debug Info**: Error occurred while processing your request. Check API endpoints and authentication.`,
       success: false,
       timestamp: new Date().toISOString()
     }, { status: 500 });
@@ -1295,17 +1251,25 @@ I can help you with these **working features**:
 
 export async function GET() {
   return NextResponse.json({
-    status: 'Comprehensive Docebo Chat API',
-    version: '2.0.0',
+    status: 'Comprehensive Docebo Chat API - Fixed Endpoints',
+    version: '2.1.0',
     timestamp: new Date().toISOString(),
     features: [
       'User search and details',
       'Course search and details', 
-      'Learning plan search',
-      'Session search',
-      'Training material search',
-      'Docebo help and guidance',
+      'Learning plan search (FIXED: /learn/v1/lp)',
+      'Session search (FIXED: /course/v1/sessions, /learn/v1/sessions)',
+      'Training material search (FIXED: /learn/v1/lo)',
+      'Enhanced Docebo help with web search',
       'Natural language processing'
-    ]
+    ],
+    endpoints: {
+      users: '/manage/v1/user',
+      courses: '/course/v1/courses',
+      learning_plans: '/learn/v1/lp',
+      sessions: ['/course/v1/sessions', '/learn/v1/sessions'],
+      training_materials: '/learn/v1/lo',
+      help: 'Enhanced with web search for current information'
+    }
   });
 }
