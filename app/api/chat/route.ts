@@ -1,5 +1,8 @@
-// app/api/chat/route.ts - Simple & Reliable - No Large Data Processing
+// app/api/chat/route.ts - Enhanced with Pagination and CSV Export
 import { NextRequest, NextResponse } from 'next/server';
+
+// Cache for storing paginated data
+const paginationCache = new Map();
 
 // Environment configuration
 function validateEnvironmentVariable(name: string, value: string | undefined): string {
@@ -19,7 +22,7 @@ function getConfig() {
   };
 }
 
-// Simple patterns for basic operations
+// Enhanced patterns
 const PATTERNS = {
   searchUsers: (msg: string) => {
     const lower = msg.toLowerCase();
@@ -31,10 +34,18 @@ const PATTERNS = {
     return (lower.includes('find') && lower.includes('course')) ||
            (lower.includes('search') && lower.includes('course'));
   },
-  quickEnrollmentCheck: (msg: string) => {
+  enrollmentCheck: (msg: string) => {
     const lower = msg.toLowerCase();
     return lower.includes('what courses') || 
            (lower.includes('courses') && lower.includes('enrolled'));
+  },
+  loadMore: (msg: string) => {
+    const lower = msg.toLowerCase();
+    return lower.includes('load more') || lower.includes('show more') || lower.includes('next 20');
+  },
+  exportCsv: (msg: string) => {
+    const lower = msg.toLowerCase();
+    return lower.includes('csv') || lower.includes('export') || lower.includes('download') || lower.includes('spreadsheet');
   }
 };
 
@@ -54,8 +65,13 @@ function extractCourse(message: string): string | null {
   return null;
 }
 
-// Simple Docebo API client
-class SimpleDoceboAPI {
+function extractCacheKey(message: string): string | null {
+  const match = message.match(/cache_([a-f0-9]+)/);
+  return match ? match[1] : null;
+}
+
+// Enhanced Docebo API client
+class EnhancedDoceboAPI {
   private config: any;
   private accessToken?: string;
   private tokenExpiry?: Date;
@@ -122,23 +138,23 @@ class SimpleDoceboAPI {
     return await response.json();
   }
 
-  async searchUsers(searchText: string, limit: number = 10): Promise<any[]> {
+  async searchUsers(searchText: string, limit: number = 20): Promise<any[]> {
     const result = await this.apiRequest('/manage/v1/user', {
       search_text: searchText,
-      page_size: limit
+      page_size: Math.min(limit, 200)
     });
     return result.data?.items || [];
   }
 
-  async searchCourses(searchText: string, limit: number = 10): Promise<any[]> {
+  async searchCourses(searchText: string, limit: number = 20): Promise<any[]> {
     const result = await this.apiRequest('/course/v1/courses', {
       search_text: searchText,
-      page_size: limit
+      page_size: Math.min(limit, 200)
     });
     return result.data?.items || [];
   }
 
-  async getQuickEnrollments(email: string): Promise<any> {
+  async getAllEnrollments(email: string, maxPages: number = 10): Promise<any> {
     // Find user first
     const users = await this.apiRequest('/manage/v1/user', {
       search_text: email,
@@ -151,29 +167,77 @@ class SimpleDoceboAPI {
       throw new Error(`User not found: ${email}`);
     }
 
-    // Get ONLY first page of enrollments (quick sample)
-    const result = await this.apiRequest('/course/v1/courses/enrollments', {
-      'user_ids[]': user.user_id,
-      page_size: 20,
-      page: 1
-    });
-    
-    const pageEnrollments = result.data?.items || [];
-    const userEnrollments = pageEnrollments.filter((enrollment: any) => {
-      return enrollment.user_id === Number(user.user_id);
-    });
+    console.log(`📚 Getting enrollments for ${user.fullname} (${user.user_id})`);
 
+    let allEnrollments: any[] = [];
+    let currentPage = 1;
+    
+    // Get multiple pages to collect more data
+    while (currentPage <= maxPages) {
+      console.log(`📄 Fetching page ${currentPage}...`);
+      
+      try {
+        const result = await this.apiRequest('/course/v1/courses/enrollments', {
+          'user_ids[]': user.user_id,
+          page_size: 200,
+          page: currentPage
+        });
+        
+        const pageEnrollments = result.data?.items || [];
+        
+        // Filter for the specific user
+        const userEnrollments = pageEnrollments.filter((enrollment: any) => {
+          return enrollment.user_id === Number(user.user_id);
+        });
+        
+        allEnrollments.push(...userEnrollments);
+        
+        console.log(`📄 Page ${currentPage}: Found ${userEnrollments.length} enrollments (Total: ${allEnrollments.length})`);
+        
+        // Check if there's more data
+        const hasMoreData = result.data?.has_more_data === true;
+        
+        if (!hasMoreData || pageEnrollments.length === 0) {
+          console.log(`✅ No more data available after page ${currentPage}`);
+          break;
+        }
+        
+        currentPage++;
+        
+        // Small delay to be API-friendly
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+      } catch (pageError) {
+        console.error(`❌ Error fetching page ${currentPage}:`, pageError);
+        
+        // If first page fails, throw error; otherwise continue with what we have
+        if (currentPage === 1) {
+          throw pageError;
+        } else {
+          console.log(`⚠️ Continuing with ${allEnrollments.length} enrollments from previous pages`);
+          break;
+        }
+      }
+    }
+    
+    // Format enrollments
+    const processedEnrollments = allEnrollments.map((e: any) => ({
+      courseName: e.course_name || 'Unknown Course',
+      courseType: e.course_type || 'unknown',
+      enrollmentStatus: e.enrollment_status || 'unknown',
+      enrollmentDate: e.enrollment_created_at,
+      score: e.enrollment_score || 0,
+      assignmentType: e.assignment_type,
+      courseId: e.course_id
+    }));
+    
+    console.log(`✅ Total enrollments processed: ${processedEnrollments.length}`);
+    
     return {
       user: user,
-      enrollments: userEnrollments.map((e: any) => ({
-        courseName: e.course_name || 'Unknown Course',
-        courseType: e.course_type || 'unknown',
-        enrollmentStatus: e.enrollment_status || 'unknown',
-        enrollmentDate: e.enrollment_created_at,
-        score: e.enrollment_score || 0
-      })),
-      sampleSize: userEnrollments.length,
-      hasMoreData: result.data?.has_more_data === true
+      allEnrollments: processedEnrollments,
+      totalCount: processedEnrollments.length,
+      pagesProcessed: currentPage - 1
     };
   }
 
@@ -186,13 +250,42 @@ class SimpleDoceboAPI {
   }
 }
 
-let api: SimpleDoceboAPI;
+// Generate cache key for storing results
+function generateCacheKey(): string {
+  return Math.random().toString(36).substr(2, 8);
+}
+
+// Generate CSV content
+function generateCSV(enrollments: any[], userInfo: any): string {
+  const headers = ['Course Name', 'Course Type', 'Enrollment Status', 'Enrollment Date', 'Score', 'Assignment Type', 'Course ID'];
+  
+  const csvContent = [
+    `# ${userInfo.fullname} (${userInfo.email}) - Course Enrollments`,
+    `# Generated on ${new Date().toISOString()}`,
+    `# Total Enrollments: ${enrollments.length}`,
+    '',
+    headers.join(','),
+    ...enrollments.map((e: any) => [
+      `"${e.courseName.replace(/"/g, '""')}"`,
+      e.courseType,
+      e.enrollmentStatus,
+      e.enrollmentDate || '',
+      e.score || 0,
+      e.assignmentType || '',
+      e.courseId || ''
+    ].join(','))
+  ].join('\n');
+  
+  return csvContent;
+}
+
+let api: EnhancedDoceboAPI;
 
 export async function POST(request: NextRequest) {
   try {
     if (!api) {
       const config = getConfig();
-      api = new SimpleDoceboAPI(config);
+      api = new EnhancedDoceboAPI(config);
     }
 
     const body = await request.json();
@@ -211,8 +304,104 @@ export async function POST(request: NextRequest) {
     // Parse message
     const email = extractEmail(message);
     const course = extractCourse(message);
+    const cacheKey = extractCacheKey(message);
     
-    console.log(`📋 Parsed - Email: ${email}, Course: ${course}`);
+    console.log(`📋 Parsed - Email: ${email}, Course: ${course}, CacheKey: ${cacheKey}`);
+    
+    // LOAD MORE functionality
+    if (PATTERNS.loadMore(message) && cacheKey) {
+      console.log(`📄 Load more request for cache: ${cacheKey}`);
+      
+      const cachedData = paginationCache.get(cacheKey);
+      if (!cachedData) {
+        return NextResponse.json({
+          response: `❌ **Session Expired**: The data for "load more" is no longer available.
+
+Please run the original query again to get fresh results.`,
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      const { allEnrollments, user, currentPage } = cachedData;
+      const startIndex = currentPage * 20;
+      const endIndex = Math.min(startIndex + 20, allEnrollments.length);
+      const pageResults = allEnrollments.slice(startIndex, endIndex);
+      const newPage = currentPage + 1;
+      
+      // Update cache with new page
+      paginationCache.set(cacheKey, {
+        ...cachedData,
+        currentPage: newPage
+      });
+      
+      const hasMore = endIndex < allEnrollments.length && endIndex < 100;
+      
+      return NextResponse.json({
+        response: `📚 **${user.email}'s Courses** (Showing ${startIndex + 1}-${endIndex} of ${allEnrollments.length})
+
+${pageResults.map((course: any, i: number) => {
+  let statusIcon = '📚';
+  if (course.enrollmentStatus === 'completed') statusIcon = '✅';
+  else if (course.enrollmentStatus === 'in_progress') statusIcon = '🔄';
+  else if (course.enrollmentStatus === 'suspended') statusIcon = '🚫';
+  
+  return `${startIndex + i + 1}. ${statusIcon} **${course.enrollmentStatus.toUpperCase()}** - ${course.courseName}${course.score ? ` (Score: ${course.score})` : ''}`;
+}).join('\n')}
+
+${hasMore ? `\n🔄 **Load More**: "Load more cache_${cacheKey}" (Up to 100 total)` : ''}
+${allEnrollments.length > 100 ? `\n📊 **Full Export**: "Export CSV cache_${cacheKey}" (All ${allEnrollments.length} enrollments)` : ''}`,
+        success: true,
+        hasMore: hasMore,
+        totalCount: allEnrollments.length,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    // CSV EXPORT functionality
+    if (PATTERNS.exportCsv(message) && cacheKey) {
+      console.log(`📊 CSV export request for cache: ${cacheKey}`);
+      
+      const cachedData = paginationCache.get(cacheKey);
+      if (!cachedData) {
+        return NextResponse.json({
+          response: `❌ **Session Expired**: The data for CSV export is no longer available.
+
+Please run the original query again to get fresh results.`,
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      const { allEnrollments, user } = cachedData;
+      const csvContent = generateCSV(allEnrollments, user);
+      const base64Csv = Buffer.from(csvContent).toString('base64');
+      
+      return NextResponse.json({
+        response: `📊 **CSV Export Ready** for ${user.fullname}
+
+📁 **File**: ${user.fullname.replace(/\s+/g, '_')}_enrollments.csv
+📈 **Total Records**: ${allEnrollments.length}
+📅 **Generated**: ${new Date().toLocaleDateString()}
+
+**Download Instructions**:
+1. Copy the data below
+2. Create a new file with .csv extension
+3. Paste the data and save
+
+**CSV Data** (copy all text below):
+\`\`\`
+${csvContent}
+\`\`\`
+
+💡 You can also open this in Excel, Google Sheets, or any spreadsheet application.`,
+        success: true,
+        csvData: csvContent,
+        base64Csv: base64Csv,
+        fileName: `${user.fullname.replace(/\s+/g, '_')}_enrollments.csv`,
+        timestamp: new Date().toISOString()
+      });
+    }
     
     // 1. SEARCH USERS
     if (PATTERNS.searchUsers(message)) {
@@ -228,7 +417,7 @@ export async function POST(request: NextRequest) {
         });
       }
       
-      const users = await api.searchUsers(searchTerm, 10);
+      const users = await api.searchUsers(searchTerm, 50);
       
       if (users.length === 0) {
         return NextResponse.json({
@@ -238,21 +427,23 @@ export async function POST(request: NextRequest) {
         });
       }
       
-      const userList = users.slice(0, 5).map((user, i) => {
+      const displayCount = Math.min(users.length, 20);
+      const userList = users.slice(0, displayCount).map((user, i) => {
         const statusIcon = user.status === '1' ? '✅' : '❌';
         return `${i + 1}. ${statusIcon} **${user.fullname}** (${user.email})`;
       }).join('\n');
       
       return NextResponse.json({
-        response: `👥 **User Search Results**: Found ${users.length} users
+        response: `👥 **User Search Results**: Found ${users.length} users (Showing ${displayCount})
 
-${userList}${users.length > 5 ? `\n\n... and ${users.length - 5} more users` : ''}`,
+${userList}${users.length > 20 ? `\n\n... and ${users.length - 20} more users` : ''}`,
         success: true,
+        totalCount: users.length,
         timestamp: new Date().toISOString()
       });
     }
     
-    // 2. SEARCH COURSES
+    // 2. SEARCH COURSES  
     if (PATTERNS.searchCourses(message)) {
       const searchTerm = course || message.replace(/find|search|course/gi, '').trim();
       
@@ -266,7 +457,7 @@ ${userList}${users.length > 5 ? `\n\n... and ${users.length - 5} more users` : '
         });
       }
       
-      const courses = await api.searchCourses(searchTerm, 10);
+      const courses = await api.searchCourses(searchTerm, 50);
       
       if (courses.length === 0) {
         return NextResponse.json({
@@ -276,23 +467,25 @@ ${userList}${users.length > 5 ? `\n\n... and ${users.length - 5} more users` : '
         });
       }
       
-      const courseList = courses.slice(0, 5).map((course, i) => {
+      const displayCount = Math.min(courses.length, 20);
+      const courseList = courses.slice(0, displayCount).map((course, i) => {
         const courseName = api.getCourseName(course);
         const courseId = api.getCourseId(course);
         return `${i + 1}. **${courseName}** (ID: ${courseId})`;
       }).join('\n');
       
       return NextResponse.json({
-        response: `📚 **Course Search Results**: Found ${courses.length} courses
+        response: `📚 **Course Search Results**: Found ${courses.length} courses (Showing ${displayCount})
 
-${courseList}${courses.length > 5 ? `\n\n... and ${courses.length - 5} more courses` : ''}`,
+${courseList}${courses.length > 20 ? `\n\n... and ${courses.length - 20} more courses` : ''}`,
         success: true,
+        totalCount: courses.length,
         timestamp: new Date().toISOString()
       });
     }
     
-    // 3. QUICK ENROLLMENT CHECK (Sample Only)
-    if (PATTERNS.quickEnrollmentCheck(message)) {
+    // 3. ENROLLMENT CHECK with Pagination
+    if (PATTERNS.enrollmentCheck(message)) {
       if (!email) {
         return NextResponse.json({
           response: `❌ **Missing Email**: I need an email address to check enrollments.
@@ -304,16 +497,28 @@ ${courseList}${courses.length > 5 ? `\n\n... and ${courses.length - 5} more cour
       }
       
       try {
-        const enrollmentData = await api.getQuickEnrollments(email);
+        const enrollmentData = await api.getAllEnrollments(email, 10);
+        const { user, allEnrollments, totalCount } = enrollmentData;
+        
+        // Store in pagination cache
+        const cacheKey = generateCacheKey();
+        paginationCache.set(cacheKey, {
+          allEnrollments: allEnrollments,
+          user: user,
+          currentPage: 1,
+          timestamp: Date.now()
+        });
+        
+        // Show first 20 results
+        const displayResults = allEnrollments.slice(0, 20);
+        const hasMore = totalCount > 20;
         
         return NextResponse.json({
-          response: `📚 **${email}'s Courses** (Sample)
+          response: `📚 **${email}'s Courses** (Showing 1-${displayResults.length} of ${totalCount})
 
-👤 **User**: ${enrollmentData.user.fullname}
+👤 **User**: ${user.fullname}
 
-**📋 Sample Enrollments** (${enrollmentData.sampleSize} shown):
-
-${enrollmentData.enrollments.map((course: any, i: number) => {
+${displayResults.map((course: any, i: number) => {
   let statusIcon = '📚';
   if (course.enrollmentStatus === 'completed') statusIcon = '✅';
   else if (course.enrollmentStatus === 'in_progress') statusIcon = '🔄';
@@ -322,11 +527,13 @@ ${enrollmentData.enrollments.map((course: any, i: number) => {
   return `${i + 1}. ${statusIcon} **${course.enrollmentStatus.toUpperCase()}** - ${course.courseName}${course.score ? ` (Score: ${course.score})` : ''}`;
 }).join('\n')}
 
-${enrollmentData.hasMoreData ? `\n⚠️ **Note**: This user has additional enrollments not shown. This is a sample of the first 20 enrollments.` : ''}
-
-💡 **This is a quick sample view.** For complete enrollment data, consider upgrading to a plan with longer processing limits.`,
+${hasMore && totalCount <= 100 ? `\n🔄 **Load More**: "Load more cache_${cacheKey}" (Show next 20)` : ''}
+${totalCount > 100 ? `\n📊 **Full Export**: "Export CSV cache_${cacheKey}" (All ${totalCount} enrollments)` : ''}
+${hasMore && totalCount <= 100 ? `\n📊 **Or Export All**: "Export CSV cache_${cacheKey}"` : ''}`,
           success: true,
-          limitedData: enrollmentData.hasMoreData,
+          totalCount: totalCount,
+          hasMore: hasMore,
+          cacheKey: cacheKey,
           timestamp: new Date().toISOString()
         });
         
@@ -341,27 +548,29 @@ ${enrollmentData.hasMoreData ? `\n⚠️ **Note**: This user has additional enro
     
     // DEFAULT - Help message
     return NextResponse.json({
-      response: `🎯 **Docebo Assistant** - *Simple & Reliable*
+      response: `🎯 **Docebo Assistant** - *Enhanced with Pagination & CSV Export*
 
-I can help you with these **quick operations**:
+I can help you with:
 
 • **👥 Find users**: "Find user mike@company.com"
 
 • **📖 Find courses**: "Find Python courses"
 
-• **📚 Sample enrollments**: "What courses is sarah@test.com enrolled in?" 
-  *(Shows first 20 enrollments only)*
+• **📚 Check enrollments**: "What courses is sarah@test.com enrolled in?"
+  - Shows first 20 results
+  - "Load more" for next 20 (up to 100 total)
+  - "Export CSV" for complete data
+
+• **📊 Pagination options**:
+  - "Load more cache_xxxxx" (next 20 results)
+  - "Export CSV cache_xxxxx" (all results)
 
 **Your message**: "${message}"
 
-💡 **Current Limitations**: 
-- Enrollment queries show sample data only (first 20 courses)
-- For complete data, consider upgrading processing limits
-
 **Examples:**
-- "Find user pulkitpmalhotra@gmail.com"
-- "Find Python courses"
-- "What courses is pulkitpmalhotra@gmail.com enrolled in?" (sample)`,
+- "What courses is pulkitpmalhotra@gmail.com enrolled in?"
+- "Load more cache_abc123" 
+- "Export CSV cache_abc123"`,
       success: false,
       timestamp: new Date().toISOString()
     });
@@ -379,20 +588,22 @@ I can help you with these **quick operations**:
 
 export async function GET() {
   return NextResponse.json({
-    status: 'Simple Docebo Chat API',
-    version: '1.0.0',
+    status: 'Enhanced Docebo Chat API with Pagination & CSV Export',
+    version: '2.0.0',
     timestamp: new Date().toISOString(),
     features: [
-      'User search (up to 10 results)',
-      'Course search (up to 10 results)', 
-      'Sample enrollment check (first 20 only)',
-      'Fast & reliable within 30-second limit',
-      'No background processing complexity'
+      'User search (up to 50 results, show 20)',
+      'Course search (up to 50 results, show 20)', 
+      'Enrollment check with pagination (20 per page)',
+      'Load more functionality (up to 100 results)',
+      'CSV export for complete data',
+      'Session-based caching for pagination'
     ],
-    limitations: [
-      'Enrollment data is sampled (first 20 courses)',
-      'No complete enrollment processing',
-      'Designed for quick operations only'
+    capabilities: [
+      'Shows 20 results initially',
+      'Load more for next 20 (up to 100 total displayed)',
+      'CSV export for all results (no limit)',
+      'Fast & reliable within 30-second limit'
     ]
   });
 }
