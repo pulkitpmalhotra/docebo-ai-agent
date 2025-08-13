@@ -197,18 +197,18 @@ class ReliableDoceboAPI {
       allFields: Object.keys(user),
       branchFields: Object.keys(user).filter(k => k.toLowerCase().includes('branch') || k.toLowerCase().includes('office') || k.toLowerCase().includes('location')),
       managerFields: Object.keys(user).filter(k => k.toLowerCase().includes('manager') || k.toLowerCase().includes('supervisor') || k.toLowerCase().includes('report')),
-      potentialBranchValues: {},
-      potentialManagerValues: {}
+      potentialBranchValues: {} as Record<string, any>,
+      potentialManagerValues: {} as Record<string, any>
     };
     
     // Extract potential branch values
     debugFields.branchFields.forEach(field => {
-      debugFields.potentialBranchValues[field] = user[field];
+      debugFields.potentialBranchValues[field] = (user as any)[field];
     });
     
     // Extract potential manager values  
     debugFields.managerFields.forEach(field => {
-      debugFields.potentialManagerValues[field] = user[field];
+      debugFields.potentialManagerValues[field] = (user as any)[field];
     });
     
     console.log(`🔍 DEBUG FIELDS ANALYSIS:`, JSON.stringify(debugFields, null, 2));
