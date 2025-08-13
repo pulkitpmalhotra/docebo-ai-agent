@@ -256,7 +256,7 @@ This might indicate the background service is not responding. Try creating a new
       }
     }
     
-    // 2. USER COURSES - Use background processing for enrollment queries
+    // 2. USER COURSES - Use direct processing (no background jobs)
     if (PATTERNS.userCoursesBackground(message)) {
       if (!email) {
         return NextResponse.json({
@@ -268,53 +268,34 @@ This might indicate the background service is not responding. Try creating a new
         });
       }
       
-      console.log(`🚀 Background processing request for: ${email} - Forwarding to background API`);
+      console.log(`⚡ Direct processing request for: ${email} - Forwarding to direct API`);
       
       try {
-        // Forward to background processing API
-        const bgResponse = await fetch(`${request.nextUrl.origin}/api/chat-bg`, {
+        // Forward to direct processing API
+        const directResponse = await fetch(`${request.nextUrl.origin}/api/chat-direct`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ message })
         });
         
-        if (!bgResponse.ok) {
-          throw new Error(`Background API error: ${bgResponse.status}`);
+        if (!directResponse.ok) {
+          throw new Error(`Direct API error: ${directResponse.status}`);
         }
         
-        const bgData = await bgResponse.json();
+        const directData = await directResponse.json();
         
-        // If it's a background job, set up auto-polling
-        if (bgData.processing && bgData.jobId) {
-          console.log(`✅ Background job created: ${bgData.jobId}`);
-          
-          // Add auto-polling instructions
-          bgData.response += `
-
-🤖 **Auto-Status Check**: Check the status now by asking:
-
-"Check status of ${bgData.jobId}"
-
-💡 Processing should complete within 10-30 seconds.`;
-
-          bgData.autoPolling = {
-            enabled: true,
-            jobId: bgData.jobId,
-            delay: 5000, // 5 seconds
-            maxAttempts: 24 // 2 minutes total
-          };
-        }
+        console.log(`✅ Direct processing completed for: ${email}`);
+        return NextResponse.json(directData);
         
-        return NextResponse.json(bgData);
       } catch (fetchError) {
-        console.error(`❌ Background processing failed for: ${email}:`, fetchError);
+        console.error(`❌ Direct processing failed for: ${email}:`, fetchError);
         
         return NextResponse.json({
-          response: `❌ **Background Processing Failed**: ${email}
+          response: `❌ **Processing Failed**: ${email}
 
 Error: ${fetchError instanceof Error ? fetchError.message : 'Unknown error'}
 
-Please try again or contact support if the issue persists.`,
+Please try again. If you have many enrollments, this might take a moment.`,
           success: false,
           timestamp: new Date().toISOString()
         }, { status: 500 });
@@ -396,14 +377,12 @@ ${courseList}${courses.length > 5 ? `\n\n... and ${courses.length - 5} more cour
     
     // DEFAULT - Help message
     return NextResponse.json({
-      response: `🎯 **Docebo Assistant** - *Background Processing Enabled*
+      response: `🎯 **Docebo Assistant** - *Direct Processing*
 
 I can help you with:
 
 • **📚 Check user courses**: "What courses is sarah@test.com enrolled in?" 
-  *(Uses background processing for complete results)*
-
-• **📊 Check job status**: "Check status of job_12345"
+  *(Direct processing with 5-minute caching)*
 
 • **👥 Find users**: "Find user mike@company.com"
 
@@ -411,11 +390,10 @@ I can help you with:
 
 **Your message**: "${message}"
 
-💡 *Large data requests use background processing to get complete results.*
+💡 *All requests are processed directly for immediate results.*
 
 **Examples:**
 - "What courses is pulkitpmalhotra@gmail.com enrolled in?"
-- "Check status of job_1755050684020_89vaw5mqe"
 - "Find user sarah@test.com"
 - "Find Python courses"`,
       success: false,
@@ -435,14 +413,14 @@ I can help you with:
 
 export async function GET() {
   return NextResponse.json({
-    status: 'Docebo Chat API - With Background Processing',
-    version: '2.1.0',
+    status: 'Docebo Chat API - Direct Processing',
+    version: '3.0.0',
     timestamp: new Date().toISOString(),
     features: [
-      'Background processing for large data requests',
-      'Fixed routing to background API',
-      'Proper status check forwarding',
-      'No timeout limitations'
+      'Direct processing for immediate results',
+      '5-minute caching for repeated requests', 
+      'Multi-page enrollment fetching',
+      'No background job dependencies'
     ]
   });
 }
