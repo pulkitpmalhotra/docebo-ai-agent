@@ -393,74 +393,163 @@ class ReliableDoceboAPI {
   }
 
   async getCourseDetails(courseName: string): Promise<any> {
-    // Try exact search first
-    let courses = await this.apiRequest('/course/v1/courses', {
-      search_text: courseName,
-      page_size: 20
-    });
+    console.log(`🔍 Searching for course: ${courseName}`);
     
-    let course = courses.data?.items?.find((c: any) => {
-      const cName = (c.course_name || c.name || c.title || '').toLowerCase();
-      return cName === courseName.toLowerCase();
-    });
+    // Try multiple search approaches
+    let course = null;
+    let allCourseData = [];
     
-    // If no exact match, try partial match
-    if (!course) {
-      course = courses.data?.items?.find((c: any) => {
-        const cName = (c.course_name || c.name || c.title || '').toLowerCase();
-        return cName.includes(courseName.toLowerCase()) || courseName.toLowerCase().includes(cName);
-      });
-    }
-    
-    // If still no match, try searching with different endpoint
-    if (!course) {
-      courses = await this.apiRequest('/learn/v1/courses', {
+    // Method 1: /course/v1/courses
+    try {
+      const courses1 = await this.apiRequest('/course/v1/courses', {
         search_text: courseName,
         page_size: 20
       });
       
-      course = courses.data?.items?.find((c: any) => {
-        const cName = (c.course_name || c.name || c.title || '').toLowerCase();
-        return cName.includes(courseName.toLowerCase()) || courseName.toLowerCase().includes(cName);
+      console.log(`📚 Method 1 (/course/v1/courses) found ${courses1.data?.items?.length || 0} courses`);
+      if (courses1.data?.items?.length > 0) {
+        console.log(`📋 Sample course data:`, JSON.stringify(courses1.data.items[0], null, 2));
+        allCourseData.push(...courses1.data.items);
+      }
+    } catch (error) {
+      console.log(`⚠️ Method 1 failed:`, error);
+    }
+    
+    // Method 2: /learn/v1/courses  
+    try {
+      const courses2 = await this.apiRequest('/learn/v1/courses', {
+        search_text: courseName,
+        page_size: 20
       });
+      
+      console.log(`📚 Method 2 (/learn/v1/courses) found ${courses2.data?.items?.length || 0} courses`);
+      if (courses2.data?.items?.length > 0) {
+        console.log(`📋 Sample course data:`, JSON.stringify(courses2.data.items[0], null, 2));
+        allCourseData.push(...courses2.data.items);
+      }
+    } catch (error) {
+      console.log(`⚠️ Method 2 failed:`, error);
+    }
+    
+    // Method 3: /manage/v1/courses (if it exists)
+    try {
+      const courses3 = await this.apiRequest('/manage/v1/courses', {
+        search_text: courseName,
+        page_size: 20
+      });
+      
+      console.log(`📚 Method 3 (/manage/v1/courses) found ${courses3.data?.items?.length || 0} courses`);
+      if (courses3.data?.items?.length > 0) {
+        console.log(`📋 Sample course data:`, JSON.stringify(courses3.data.items[0], null, 2));
+        allCourseData.push(...courses3.data.items);
+      }
+    } catch (error) {
+      console.log(`⚠️ Method 3 failed:`, error);
+    }
+    
+    // Find best matching course from all results
+    for (const courseList of [allCourseData]) {
+      // Try exact match first
+      course = courseList.find((c: any) => {
+        const cName = (c.course_name || c.name || c.title || '').toLowerCase();
+        return cName === courseName.toLowerCase();
+      });
+      
+      // Then try partial match
+      if (!course) {
+        course = courseList.find((c: any) => {
+          const cName = (c.course_name || c.name || c.title || '').toLowerCase();
+          return cName.includes(courseName.toLowerCase()) || courseName.toLowerCase().includes(cName);
+        });
+      }
+      
+      if (course) break;
     }
     
     if (!course) {
-      throw new Error(`Course not found: ${courseName}`);
+      throw new Error(`Course not found: ${courseName}. Searched ${allCourseData.length} total courses.`);
     }
 
-    // Try to get more detailed course information
+    console.log(`✅ Found course:`, JSON.stringify(course, null, 2));
+
+    // Try to get detailed course information using course ID
     let detailedCourse = null;
-    try {
-      const courseId = course.id || course.course_id || course.idCourse;
-      detailedCourse = await this.apiRequest(`/course/v1/courses/${courseId}`);
-      console.log(`📋 Detailed course data:`, JSON.stringify(detailedCourse, null, 2));
-    } catch (error) {
-      console.log(`⚠️ Could not fetch detailed course info`);
+    const courseId = course.id || course.course_id || course.idCourse;
+    
+    if (courseId) {
+      // Try multiple endpoints for detailed info
+      const detailEndpoints = [
+        `/course/v1/courses/${courseId}`,
+        `/learn/v1/courses/${courseId}`,
+        `/manage/v1/courses/${courseId}`,
+        `/course/v1/courses/${courseId}/info`,
+        `/learn/v1/courses/${courseId}/info`
+      ];
+      
+      for (const endpoint of detailEndpoints) {
+        try {
+          console.log(`🔍 Trying detailed endpoint: ${endpoint}`);
+          detailedCourse = await this.apiRequest(endpoint);
+          console.log(`✅ Got detailed data from ${endpoint}:`, JSON.stringify(detailedCourse, null, 2));
+          break;
+        } catch (error) {
+          console.log(`⚠️ ${endpoint} failed:`, error);
+        }
+      }
     }
 
-    // Merge data from both sources
-    const mergedCourse = detailedCourse?.data || course;
+    // Extract all available fields
+    const extractField = (fieldName: string): string => {
+      const sources = [detailedCourse?.data, course];
+      const possibleKeys = [
+        fieldName,
+        fieldName.toLowerCase(),
+        fieldName.replace(/_/g, ''),
+        `course_${fieldName}`,
+        `${fieldName}_name`
+      ];
+      
+      for (const source of sources) {
+        if (!source) continue;
+        for (const key of possibleKeys) {
+          if (source[key] !== undefined && source[key] !== null && source[key] !== '') {
+            return String(source[key]);
+          }
+        }
+      }
+      return 'Not available';
+    };
+
+    // Get all available field names for debugging
+    const availableFields = new Set();
+    [course, detailedCourse?.data].forEach(obj => {
+      if (obj) Object.keys(obj).forEach(key => availableFields.add(key));
+    });
 
     return {
-      id: course.id || course.course_id || course.idCourse,
-      name: course.title || course.course_name || course.name,
-      description: mergedCourse.description || course.description || 'No description available',
-      type: mergedCourse.course_type || course.course_type || 'Not specified',
-      status: mergedCourse.status || course.status || 'Not specified',
-      language: mergedCourse.lang_code || course.lang_code || mergedCourse.language || 'Not specified',
-      credits: mergedCourse.credits || course.credits || 'Not specified',
-      duration: mergedCourse.mediumTime || course.mediumTime || mergedCourse.duration || 'Not specified',
-      category: mergedCourse.category || course.category || 'Not specified',
-      creationDate: mergedCourse.date_creation || course.date_creation || mergedCourse.created_at || 'Not available',
-      modificationDate: mergedCourse.date_modification || course.date_modification || mergedCourse.updated_at || 'Not available',
-      // Additional fields
-      code: mergedCourse.code || course.code || 'Not available',
-      level: mergedCourse.level || course.level || 'Not specified',
-      // Raw debug data
+      id: courseId || 'Not available',
+      name: course.title || course.course_name || course.name || 'Unknown Course',
+      description: extractField('description'),
+      type: extractField('course_type') || extractField('type'),
+      status: extractField('status'),
+      language: extractField('lang_code') || extractField('language'),
+      credits: extractField('credits'),
+      duration: extractField('mediumTime') || extractField('duration') || extractField('estimated_duration'),
+      category: extractField('category') || extractField('category_name'),
+      creationDate: extractField('date_creation') || extractField('created_at') || extractField('creation_date'),
+      modificationDate: extractField('date_modification') || extractField('updated_at') || extractField('modification_date'),
+      code: extractField('code') || extractField('course_code'),
+      level: extractField('level'),
+      price: extractField('price'),
+      instructor: extractField('instructor') || extractField('instructor_name'),
+      // Debug information
       debug: {
-        foundFields: Object.keys(course),
-        detailedFields: detailedCourse?.data ? Object.keys(detailedCourse.data) : []
+        foundFields: Array.from(availableFields).sort(),
+        courseId: courseId,
+        detailEndpointUsed: detailedCourse ? 'Success' : 'Failed',
+        totalFieldsAvailable: availableFields.size,
+        rawCourseKeys: Object.keys(course),
+        rawDetailedKeys: detailedCourse?.data ? Object.keys(detailedCourse.data) : []
       }
     };
   }
@@ -805,17 +894,26 @@ ${courseList}${courses.length > 20 ? `\n\n... and ${courses.length - 20} more co
           response: `📚 **Course Details**: ${courseDetails.name}
 
 🆔 **Course ID**: ${courseDetails.id}
-📖 **Type**: ${courseDetails.type || 'Not specified'}
-📊 **Status**: ${courseDetails.status || 'Not specified'}
-🌍 **Language**: ${courseDetails.language || 'Not specified'}
-🏆 **Credits**: ${courseDetails.credits || 'Not specified'}
-⏱️ **Duration**: ${courseDetails.duration ? `${courseDetails.duration} minutes` : 'Not specified'}
-📂 **Category**: ${courseDetails.category || 'Not specified'}
-📅 **Created**: ${courseDetails.creationDate || 'Not available'}
-📝 **Modified**: ${courseDetails.modificationDate || 'Not available'}
+📖 **Type**: ${courseDetails.type}
+📊 **Status**: ${courseDetails.status}
+🌍 **Language**: ${courseDetails.language}
+🏆 **Credits**: ${courseDetails.credits}
+⏱️ **Duration**: ${courseDetails.duration ? `${courseDetails.duration} minutes` : courseDetails.duration}
+📂 **Category**: ${courseDetails.category}
+💰 **Price**: ${courseDetails.price}
+👨‍🏫 **Instructor**: ${courseDetails.instructor}
+📝 **Code**: ${courseDetails.code}
+📊 **Level**: ${courseDetails.level}
+📅 **Created**: ${courseDetails.creationDate}
+📝 **Modified**: ${courseDetails.modificationDate}
 
 📋 **Description**: 
-${courseDetails.description || 'No description available'}`,
+${courseDetails.description}
+
+### 🔍 **Debug Info** (Temporary)
+**Total Fields Available**: ${courseDetails.debug?.totalFieldsAvailable || 0}
+**Available Fields**: ${courseDetails.debug?.foundFields?.slice(0, 10).join(', ') || 'None'}${courseDetails.debug?.foundFields?.length > 10 ? '...' : ''}
+**Detail API**: ${courseDetails.debug?.detailEndpointUsed || 'Unknown'}`,
           success: true,
           data: courseDetails,
           timestamp: new Date().toISOString()
