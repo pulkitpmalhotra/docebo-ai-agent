@@ -1,4 +1,36 @@
-'use client';
+const sendMessage = async (messageText: string) => {
+    if (!messageText.trim() || loading || !isMountedRef.current) return;
+
+    const userMessage: Message = {
+      id: `user-${Date.now()}`,
+      content: messageText.trim(),
+      type: 'user',
+      timestamp: new Date(),
+    };
+
+    if (isMountedRef.current) {
+      setMessages(prev => [...prev, userMessage]);
+      setLoading(true);
+      setInput('');
+    }
+
+    abortControllerRef.current = new AbortController();
+
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: messageText }),
+        signal: abortControllerRef.current.signal,
+      });
+
+      if (!isMountedRef.current) return;
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, User, Bot, UserPlus, Search, BookOpen, Users, CheckCircle, AlertCircle, Zap } from 'lucide-react';
