@@ -191,7 +191,7 @@ class FixedDoceboAPI {
         let shouldContinue = false;
         
         for (const result of results) {
-          if (result.error) {
+          if ('error' in result) {
             console.log(`📚 Page ${result.page}: Error - ${result.error}`);
             continue;
           }
