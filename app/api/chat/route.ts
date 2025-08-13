@@ -1,4 +1,4 @@
-// app/api/chat/route.ts - Updated to integrate with background processing
+// app/api/chat/route.ts - Fixed routing to background API
 import { NextRequest, NextResponse } from 'next/server';
 
 // Environment configuration
@@ -19,7 +19,7 @@ function getConfig() {
   };
 }
 
-// Enhanced patterns to detect background job requests
+// Enhanced patterns to detect requests
 const PATTERNS = {
   enroll: (msg: string) => {
     const lower = msg.toLowerCase();
@@ -29,17 +29,18 @@ const PATTERNS = {
            !lower.includes('who is enrolled');
   },
   
-  // NEW: Background processing pattern for user courses
+  // Background processing pattern for user courses
   userCoursesBackground: (msg: string) => {
     const lower = msg.toLowerCase();
     return lower.includes('what courses') || 
            (lower.includes('courses') && lower.includes('enrolled') && !lower.includes('who'));
   },
   
-  // NEW: Status check pattern
+  // Status check pattern - FIX: Make this more specific
   statusCheck: (msg: string) => {
     const lower = msg.toLowerCase();
-    return lower.includes('check status') || lower.includes('job_') || lower.includes('status of');
+    return (lower.includes('check status') || lower.includes('status of')) && 
+           lower.includes('job_');
   },
   
   courseUsers: (msg: string) => {
@@ -220,14 +221,39 @@ export async function POST(request: NextRequest) {
     
     // Route to appropriate handler
     
-    // 1. STATUS CHECK - Check if user is asking for job status
+    // 1. STATUS CHECK - FIXED: Forward to background API properly
     if (PATTERNS.statusCheck(message) && jobId) {
-      console.log(`📊 Status check request for job: ${jobId}`);
+      console.log(`📊 Status check request for job: ${jobId} - Forwarding to background API`);
       
-      const statusResponse = await fetch(`${request.nextUrl.origin}/api/chat-bg?jobId=${jobId}`);
-      const statusData = await statusResponse.json();
-      
-      return NextResponse.json(statusData);
+      try {
+        const statusResponse = await fetch(`${request.nextUrl.origin}/api/chat-bg?jobId=${jobId}`, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        });
+        
+        if (!statusResponse.ok) {
+          throw new Error(`Background API error: ${statusResponse.status}`);
+        }
+        
+        const statusData = await statusResponse.json();
+        console.log(`✅ Status check successful for job: ${jobId}`);
+        
+        return NextResponse.json(statusData);
+      } catch (fetchError) {
+        console.error(`❌ Status check failed for job: ${jobId}:`, fetchError);
+        
+        return NextResponse.json({
+          response: `❌ **Status Check Failed**: ${jobId}
+
+Error: ${fetchError instanceof Error ? fetchError.message : 'Unknown error'}
+
+This might indicate the background service is not responding. Try creating a new job.`,
+          success: false,
+          timestamp: new Date().toISOString()
+        }, { status: 500 });
+      }
     }
     
     // 2. USER COURSES - Use background processing for enrollment queries
@@ -242,58 +268,60 @@ export async function POST(request: NextRequest) {
         });
       }
       
-      console.log(`🚀 Background processing request for: ${email}`);
+      console.log(`🚀 Background processing request for: ${email} - Forwarding to background API`);
       
-      // Forward to background processing API
-      const bgResponse = await fetch(`${request.nextUrl.origin}/api/chat-bg`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message })
-      });
-      
-      const bgData = await bgResponse.json();
-      
-      // If it's a background job, set up auto-polling
-      if (bgData.processing && bgData.jobId) {
-        // Add auto-polling instructions
-        bgData.response += `
+      try {
+        // Forward to background processing API
+        const bgResponse = await fetch(`${request.nextUrl.origin}/api/chat-bg`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message })
+        });
+        
+        if (!bgResponse.ok) {
+          throw new Error(`Background API error: ${bgResponse.status}`);
+        }
+        
+        const bgData = await bgResponse.json();
+        
+        // If it's a background job, set up auto-polling
+        if (bgData.processing && bgData.jobId) {
+          console.log(`✅ Background job created: ${bgData.jobId}`);
+          
+          // Add auto-polling instructions
+          bgData.response += `
 
-🤖 **Auto-Status Check**: I'll automatically check the status in 10 seconds...
+🤖 **Auto-Status Check**: Check the status now by asking:
 
-💡 You can also manually ask: "Check status of ${bgData.jobId}"`;
+"Check status of ${bgData.jobId}"
 
-        bgData.autoPolling = {
-          enabled: true,
-          jobId: bgData.jobId,
-          delay: 10000, // 10 seconds
-          maxAttempts: 12 // 2 minutes total
-        };
-      }
-      
-      return NextResponse.json(bgData);
-    }
-    
-    // 3. ENROLLMENT - Quick operations (keep existing logic)
-    if (PATTERNS.enroll(message)) {
-      if (!email || !course) {
+💡 Processing should complete within 10-30 seconds.`;
+
+          bgData.autoPolling = {
+            enabled: true,
+            jobId: bgData.jobId,
+            delay: 5000, // 5 seconds
+            maxAttempts: 24 // 2 minutes total
+          };
+        }
+        
+        return NextResponse.json(bgData);
+      } catch (fetchError) {
+        console.error(`❌ Background processing failed for: ${email}:`, fetchError);
+        
         return NextResponse.json({
-          response: `❌ **Missing Information**: For enrollment, I need both an email address and course name.
+          response: `❌ **Background Processing Failed**: ${email}
 
-**Example**: "Enroll john@company.com in Python Programming"`,
+Error: ${fetchError instanceof Error ? fetchError.message : 'Unknown error'}
+
+Please try again or contact support if the issue persists.`,
           success: false,
           timestamp: new Date().toISOString()
-        });
+        }, { status: 500 });
       }
-      
-      // ... existing enrollment logic (shortened for brevity)
-      return NextResponse.json({
-        response: `⚡ **Quick Enrollment** - Feature available but implementation details omitted for brevity`,
-        success: true,
-        timestamp: new Date().toISOString()
-      });
     }
     
-    // 4. OTHER OPERATIONS - Keep existing patterns
+    // 3. SEARCH USERS - Quick operations
     if (PATTERNS.searchUsers(message)) {
       const searchTerm = email || message.replace(/find|user|search/gi, '').trim();
       
@@ -329,6 +357,43 @@ ${userList}${users.length > 5 ? `\n\n... and ${users.length - 5} more users` : '
       });
     }
     
+    // 4. SEARCH COURSES - Quick operations
+    if (PATTERNS.searchCourses(message)) {
+      const searchTerm = course || message.replace(/find|search|course/gi, '').trim();
+      
+      if (!searchTerm || searchTerm.length < 2) {
+        return NextResponse.json({
+          response: `❌ **Missing Search Term**: I need a course name to search for.`,
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      const courses = await api.searchCourses(searchTerm, 10);
+      
+      if (courses.length === 0) {
+        return NextResponse.json({
+          response: `📚 **No Courses Found**: No courses match "${searchTerm}"`,
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      const courseList = courses.slice(0, 5).map((course, i) => {
+        const courseName = api.getCourseName(course);
+        const courseId = api.getCourseId(course);
+        return `${i + 1}. ${courseName} (ID: ${courseId})`;
+      }).join('\n');
+      
+      return NextResponse.json({
+        response: `📚 **Course Search Results**: Found ${courses.length} courses
+
+${courseList}${courses.length > 5 ? `\n\n... and ${courses.length - 5} more courses` : ''}`,
+        success: true,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
     // DEFAULT - Help message
     return NextResponse.json({
       response: `🎯 **Docebo Assistant** - *Background Processing Enabled*
@@ -338,8 +403,6 @@ I can help you with:
 • **📚 Check user courses**: "What courses is sarah@test.com enrolled in?" 
   *(Uses background processing for complete results)*
 
-• **🎯 Enroll users**: "Enroll john@company.com in Python Programming"
-
 • **📊 Check job status**: "Check status of job_12345"
 
 • **👥 Find users**: "Find user mike@company.com"
@@ -348,7 +411,13 @@ I can help you with:
 
 **Your message**: "${message}"
 
-💡 *Large data requests now use background processing to avoid timeouts and get complete results.*`,
+💡 *Large data requests use background processing to get complete results.*
+
+**Examples:**
+- "What courses is pulkitpmalhotra@gmail.com enrolled in?"
+- "Check status of job_1755050684020_89vaw5mqe"
+- "Find user sarah@test.com"
+- "Find Python courses"`,
       success: false,
       timestamp: new Date().toISOString()
     });
@@ -367,12 +436,12 @@ I can help you with:
 export async function GET() {
   return NextResponse.json({
     status: 'Docebo Chat API - With Background Processing',
-    version: '2.0.0',
+    version: '2.1.0',
     timestamp: new Date().toISOString(),
     features: [
       'Background processing for large data requests',
-      'Auto-polling for job status',
-      'Caching for repeated requests',
+      'Fixed routing to background API',
+      'Proper status check forwarding',
       'No timeout limitations'
     ]
   });
