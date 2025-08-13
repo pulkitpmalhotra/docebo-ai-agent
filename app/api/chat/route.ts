@@ -172,33 +172,56 @@ class ReliableDoceboAPI {
       throw new Error(`User not found: ${email}`);
     }
 
-    // Log the raw user data for debugging
     console.log(`🔍 Raw user data for ${email}:`, JSON.stringify(user, null, 2));
 
-    // Try to get additional user details from user-specific endpoint
+    // Try multiple API endpoints to get complete user data
     let additionalDetails = null;
+    let branchDetails = null;
+    let groupDetails = null;
+    let userOrgDetails = null;
+
+    // Try user-specific endpoint
     try {
       additionalDetails = await this.apiRequest(`/manage/v1/user/${user.user_id}`);
-      console.log(`📋 Additional user details:`, JSON.stringify(additionalDetails, null, 2));
+      console.log(`📋 User-specific endpoint data:`, JSON.stringify(additionalDetails, null, 2));
     } catch (error) {
-      console.log(`⚠️ Could not fetch additional details for user ${user.user_id}`);
+      console.log(`⚠️ User-specific endpoint failed for ${user.user_id}:`, error);
     }
 
-    // Try to get user's organizational data (branches/groups)
-    let orgDetails = null;
+    // Try branches endpoint
     try {
-      orgDetails = await this.apiRequest(`/manage/v1/user/${user.user_id}/branches`);
-      console.log(`🏛️ User branches:`, JSON.stringify(orgDetails, null, 2));
+      branchDetails = await this.apiRequest(`/manage/v1/user/${user.user_id}/branches`);
+      console.log(`🏛️ User branches endpoint:`, JSON.stringify(branchDetails, null, 2));
     } catch (error) {
-      console.log(`⚠️ Could not fetch branch details for user ${user.user_id}`);
+      console.log(`⚠️ Branches endpoint failed for ${user.user_id}:`, error);
     }
 
-    let groupDetails = null;
+    // Try groups endpoint
     try {
       groupDetails = await this.apiRequest(`/manage/v1/user/${user.user_id}/groups`);
-      console.log(`👥 User groups:`, JSON.stringify(groupDetails, null, 2));
+      console.log(`👥 User groups endpoint:`, JSON.stringify(groupDetails, null, 2));
     } catch (error) {
-      console.log(`⚠️ Could not fetch group details for user ${user.user_id}`);
+      console.log(`⚠️ Groups endpoint failed for ${user.user_id}:`, error);
+    }
+
+    // Try organizational units endpoint
+    try {
+      userOrgDetails = await this.apiRequest(`/manage/v1/orgchart/user/${user.user_id}`);
+      console.log(`🏢 User org chart endpoint:`, JSON.stringify(userOrgDetails, null, 2));
+    } catch (error) {
+      console.log(`⚠️ Org chart endpoint failed for ${user.user_id}:`, error);
+    }
+
+    // Try alternative group/branch lookups
+    let alternativeGroups = null;
+    try {
+      // Sometimes groups are in a different endpoint
+      alternativeGroups = await this.apiRequest('/manage/v1/group', {
+        user_id: user.user_id
+      });
+      console.log(`👥 Alternative groups search:`, JSON.stringify(alternativeGroups, null, 2));
+    } catch (error) {
+      console.log(`⚠️ Alternative groups search failed:`, error);
     }
 
     // Merge data from all sources
@@ -235,59 +258,85 @@ class ReliableDoceboAPI {
       }
     };
 
-    // Extract branches from various possible sources
+    // Extract branches from all possible sources
     const extractBranches = (): string => {
       const sources = [
-        orgDetails?.data?.items,
+        branchDetails?.data?.items,
+        branchDetails?.data,
+        userOrgDetails?.data?.branches,
         mergedUser.branches,
         user.branches,
         mergedUser.branch,
-        user.branch
+        user.branch,
+        user.branch_name,
+        mergedUser.branch_name
       ];
+      
+      console.log(`🏛️ Checking branch sources:`, sources.map(s => s ? (Array.isArray(s) ? `Array(${s.length})` : 'Object') : 'null'));
       
       for (const source of sources) {
         if (Array.isArray(source) && source.length > 0) {
-          return source.map((b: any) => {
+          const result = source.map((b: any) => {
             if (typeof b === 'string') return b;
-            return b.name || b.branch_name || b.title || JSON.stringify(b);
+            return b.name || b.branch_name || b.title || b.description || JSON.stringify(b);
           }).join(', ');
+          console.log(`🏛️ Found branches from array:`, result);
+          return result;
         }
         if (source && typeof source === 'object' && !Array.isArray(source)) {
-          return source.name || source.branch_name || source.title || JSON.stringify(source);
+          const result = source.name || source.branch_name || source.title || JSON.stringify(source);
+          console.log(`🏛️ Found branches from object:`, result);
+          return result;
         }
         if (typeof source === 'string' && source.trim()) {
+          console.log(`🏛️ Found branches from string:`, source);
           return source;
         }
       }
       return 'None assigned';
     };
 
-    // Extract groups from various possible sources  
+    // Extract groups from all possible sources  
     const extractGroups = (): string => {
       const sources = [
         groupDetails?.data?.items,
+        groupDetails?.data,
+        alternativeGroups?.data?.items,
+        userOrgDetails?.data?.groups,
         mergedUser.groups,
         user.groups,
         mergedUser.group,
-        user.group
+        user.group,
+        user.group_name,
+        mergedUser.group_name
       ];
+      
+      console.log(`👥 Checking group sources:`, sources.map(s => s ? (Array.isArray(s) ? `Array(${s.length})` : 'Object') : 'null'));
       
       for (const source of sources) {
         if (Array.isArray(source) && source.length > 0) {
-          return source.map((g: any) => {
+          const result = source.map((g: any) => {
             if (typeof g === 'string') return g;
-            return g.name || g.group_name || g.title || JSON.stringify(g);
+            return g.name || g.group_name || g.title || g.description || JSON.stringify(g);
           }).join(', ');
+          console.log(`👥 Found groups from array:`, result);
+          return result;
         }
         if (source && typeof source === 'object' && !Array.isArray(source)) {
-          return source.name || source.group_name || source.title || JSON.stringify(source);
+          const result = source.name || source.group_name || source.title || JSON.stringify(source);
+          console.log(`👥 Found groups from object:`, result);
+          return result;
         }
         if (typeof source === 'string' && source.trim()) {
+          console.log(`👥 Found groups from string:`, source);
           return source;
         }
       }
       return 'None assigned';
     };
+
+    const branches = extractBranches();
+    const groups = extractGroups();
 
     return {
       id: user.user_id || user.id,
@@ -298,8 +347,8 @@ class ReliableDoceboAPI {
       level: getUserLevel(user.level || mergedUser.level),
       
       // Use improved extraction methods
-      branches: extractBranches(),
-      groups: extractGroups(),
+      branches: branches,
+      groups: groups,
       
       // Try multiple date field formats
       creationDate: user.register_date || user.creation_date || user.created_at || mergedUser.register_date || 'Not available',
@@ -309,14 +358,20 @@ class ReliableDoceboAPI {
       language: user.language || user.lang_code || mergedUser.language || 'Not specified',
       
       // Additional fields that might be available
-      department: user.department || mergedUser.department || 'Not specified',
+      department: user.department || mergedUser.department || userOrgDetails?.data?.department || 'Not specified',
       
-      // Raw data for debugging (remove this later)
+      // Enhanced debug info to see all available data
       debug: {
         userFields: Object.keys(user),
         additionalFields: additionalDetails?.data ? Object.keys(additionalDetails.data) : [],
-        branchData: orgDetails?.data ? 'Available' : 'Not available',
-        groupData: groupDetails?.data ? 'Available' : 'Not available'
+        branchApiCalled: branchDetails ? 'Success' : 'Failed',
+        groupApiCalled: groupDetails ? 'Success' : 'Failed',
+        orgChartApiCalled: userOrgDetails ? 'Success' : 'Failed',
+        alternativeGroupsApiCalled: alternativeGroups ? 'Success' : 'Failed',
+        rawBranchData: branchDetails?.data || null,
+        rawGroupData: groupDetails?.data || null,
+        rawOrgData: userOrgDetails?.data || null,
+        rawAlternativeGroups: alternativeGroups?.data || null
       }
     };
   }
