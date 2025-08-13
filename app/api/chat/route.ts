@@ -85,9 +85,19 @@ function extractSearchCacheKey(message: string): string | null {
 }
 
 function extractCourse(message: string): string | null {
+  // First try quoted matches
   const quotedMatch = message.match(/"([^"]+)"/);
   if (quotedMatch) return quotedMatch[1];
   
+  // Try bracketed matches (for course names in brackets)
+  const bracketMatch = message.match(/\[([^\]]+)\]/);
+  if (bracketMatch) return bracketMatch[1];
+  
+  // Try "course info" pattern
+  const courseInfoMatch = message.match(/course info\s+(.+)/i);
+  if (courseInfoMatch) return courseInfoMatch[1].trim();
+  
+  // Try "find" pattern
   const courseMatch = message.match(/find\s+(.+?)\s+course/i);
   if (courseMatch) return courseMatch[1].trim();
   
@@ -635,15 +645,36 @@ class ReliableDoceboAPI {
         for (const key of allKeys) {
           const value = source[key];
           if (value !== undefined && value !== null && value !== '') {
-            // Handle object values (like category)
+            // Handle object values (like category or user objects)
             if (typeof value === 'object' && value.name) {
               return String(value.name);
             }
             if (typeof value === 'object' && value.title) {
               return String(value.title);
             }
+            if (typeof value === 'object' && value.fullname) {
+              return String(value.fullname);
+            }
+            if (typeof value === 'object' && value.username) {
+              return String(value.username);
+            }
+            if (typeof value === 'object' && value.id) {
+              // For user objects, try to get name or fallback to ID
+              const userName = value.fullname || value.name || value.username || `User ID: ${value.id}`;
+              return String(userName);
+            }
             if (typeof value === 'object') {
-              return JSON.stringify(value);
+              // Try to extract meaningful info from object
+              const objStr = JSON.stringify(value);
+              if (objStr.includes('fullname')) {
+                try {
+                  const parsed = JSON.parse(objStr);
+                  return parsed.fullname || parsed.name || parsed.username || objStr;
+                } catch {
+                  return objStr;
+                }
+              }
+              return objStr;
             }
             return String(value);
           }
