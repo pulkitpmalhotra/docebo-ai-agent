@@ -554,10 +554,20 @@ class ReliableDoceboAPI {
       level: extractField('level', ['difficulty_level', 'course_level']),
       price: extractField('price', ['cost', 'fee']),
       instructor: extractField('instructor', ['instructor_name', 'author', 'creator']),
+      enrollments: extractField('enrollments', ['enrolled_count', 'enrolled_users', 'user_count']),
+      rating: (() => {
+        const rating = extractField('rating', ['average_rating', 'score']);
+        try {
+          const ratingObj = JSON.parse(rating);
+          if (ratingObj.enabled === false) return 'Not enabled';
+          return rating;
+        } catch {
+          return rating;
+        }
+      })(),
       // Additional fields that might be interesting
       certificate: extractField('certificate', ['has_certificate', 'certification']),
-      enrollments: extractField('enrollments', ['enrolled_users', 'user_count']),
-      rating: extractField('rating', ['average_rating', 'score']),
+      modificationDate: extractField('modified', ['last_update', 'updated_on', 'date_modification', 'modification_date']),
       // Debug information  
       debug: {
         foundFields: Array.from(availableFields).sort(),
@@ -921,22 +931,14 @@ ${courseList}${courses.length > 20 ? `\n\n... and ${courses.length - 20} more co
 🏆 **Credits**: ${courseDetails.credits}
 ⏱️ **Duration**: ${courseDetails.duration !== 'Not available' ? `${courseDetails.duration} minutes` : courseDetails.duration}
 📂 **Category**: ${courseDetails.category}
-📊 **Level**: ${courseDetails.level}
-💰 **Price**: ${courseDetails.price}
-👨‍🏫 **Instructor**: ${courseDetails.instructor}
-🏆 **Certificate**: ${courseDetails.certificate}
-👥 **Enrollments**: ${courseDetails.enrollments}
+👥 **Enrolled**: ${courseDetails.enrollments}
 ⭐ **Rating**: ${courseDetails.rating}
+🏆 **Certificate**: ${courseDetails.certificate}
 📅 **Created**: ${courseDetails.creationDate}
-📝 **Modified**: ${courseDetails.modificationDate}
+📝 **Last Updated**: ${courseDetails.modificationDate}
 
 📋 **Description**: 
-${courseDetails.description}
-
-### 🔍 **Debug Info** (Temporary - Remove after field mapping is complete)
-**Total Fields**: ${courseDetails.debug?.totalFieldsAvailable || 0}
-**Sample Raw Data**: ${JSON.stringify(courseDetails.debug?.sampleData || {}, null, 2)}
-**All Available Fields**: ${courseDetails.debug?.foundFields?.join(', ') || 'None'}`,
+${courseDetails.description}`,
           success: true,
           data: courseDetails,
           timestamp: new Date().toISOString()
