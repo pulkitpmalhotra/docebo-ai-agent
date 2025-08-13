@@ -166,7 +166,7 @@ class FixedDoceboAPI {
       console.log(`📚 First 3 enrollments:`, allEnrollments.slice(0, 3));
       
       // Check if we're getting the right user - NO FILTERING for now
-      console.log(`📚 All user IDs in response:`, allEnrollments.map(e => e.user_id));
+      console.log(`📚 All user IDs in response:`, allEnrollments.map((e: any) => e.user_id));
       
       // TEMPORARILY: Return ALL enrollments without filtering to see what we get
       console.log(`📚 Returning ALL ${allEnrollments.length} enrollments without filtering`);
