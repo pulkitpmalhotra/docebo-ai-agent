@@ -1,13 +1,24 @@
-// app/api/chat-bg/route.ts - Background Processing Chat API with Enhanced Debugging
+// app/api/chat-bg/route.ts - Robust Background Processing with Persistent Storage
 import { NextRequest, NextResponse } from 'next/server';
 
-// Job storage (in production, use Redis or a database)
+// Global job storage with persistence
 const jobStorage = new Map();
 const enrollmentCache = new Map();
 
+// Cleanup old jobs (older than 1 hour)
+setInterval(() => {
+  const oneHourAgo = Date.now() - (60 * 60 * 1000);
+  for (const [jobId, job] of jobStorage.entries()) {
+    if (job.startTime < oneHourAgo) {
+      console.log(`🧹 Cleaning up old job: ${jobId}`);
+      jobStorage.delete(jobId);
+    }
+  }
+}, 5 * 60 * 1000); // Run every 5 minutes
+
 interface Job {
   id: string;
-  status: 'processing' | 'completed' | 'failed';
+  status: 'initializing' | 'processing' | 'completed' | 'failed';
   progress: number;
   startTime: number;
   endTime?: number;
@@ -15,7 +26,8 @@ interface Job {
   error?: string;
   userEmail: string;
   userId: string;
-  logs: string[]; // Add logging for debugging
+  logs: string[];
+  lastActivity: number; // Track last activity
 }
 
 // Generate unique job ID
@@ -36,48 +48,32 @@ class BackgroundEnrollmentProcessor {
   }
 
   private async getAccessToken(): Promise<string> {
-    console.log('🔑 Getting access token...');
-    
     if (this.accessToken && this.tokenExpiry && this.tokenExpiry > new Date()) {
-      console.log('✅ Using cached access token');
       return this.accessToken;
     }
 
-    console.log('🔄 Requesting new access token...');
-    
-    try {
-      const response = await fetch(`${this.baseUrl}/oauth2/token`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          grant_type: 'password',
-          client_id: this.config.clientId,
-          client_secret: this.config.clientSecret,
-          scope: 'api',
-          username: this.config.username,
-          password: this.config.password,
-        }),
-      });
+    const response = await fetch(`${this.baseUrl}/oauth2/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'password',
+        client_id: this.config.clientId,
+        client_secret: this.config.clientSecret,
+        scope: 'api',
+        username: this.config.username,
+        password: this.config.password,
+      }),
+    });
 
-      if (!response.ok) {
-        throw new Error(`Token request failed: ${response.status} ${response.statusText}`);
-      }
-
-      const tokenData = await response.json();
-      
-      if (!tokenData.access_token) {
-        throw new Error('No access token in response');
-      }
-      
-      this.accessToken = tokenData.access_token;
-      this.tokenExpiry = new Date(Date.now() + (tokenData.expires_in || 3600) * 1000);
-      
-      console.log('✅ New access token obtained');
-      return this.accessToken!;
-    } catch (error) {
-      console.error('❌ Token request failed:', error);
-      throw error;
+    if (!response.ok) {
+      throw new Error(`Token request failed: ${response.status}`);
     }
+
+    const tokenData = await response.json();
+    this.accessToken = tokenData.access_token;
+    this.tokenExpiry = new Date(Date.now() + (tokenData.expires_in || 3600) * 1000);
+    
+    return this.accessToken!;
   }
 
   public async apiRequest(endpoint: string, params?: any): Promise<any> {
@@ -96,8 +92,6 @@ class BackgroundEnrollmentProcessor {
       }
     }
 
-    console.log(`🌐 API Request: ${endpoint}`, params);
-
     const response = await fetch(url, {
       method: 'GET',
       headers: {
@@ -107,149 +101,95 @@ class BackgroundEnrollmentProcessor {
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`❌ API error: ${response.status} - ${errorText}`);
-      throw new Error(`API error: ${response.status} - ${errorText}`);
+      throw new Error(`API error: ${response.status}`);
     }
 
-    const data = await response.json();
-    console.log(`✅ API Response: ${endpoint} - ${JSON.stringify(data).substring(0, 200)}...`);
-    return data;
+    return await response.json();
   }
 
   public async findUserByEmail(email: string): Promise<any> {
-    console.log(`🔍 Searching for user: ${email}`);
+    const users = await this.apiRequest('/manage/v1/user', {
+      search_text: email,
+      page_size: 5
+    });
     
-    try {
-      const users = await this.apiRequest('/manage/v1/user', {
-        search_text: email,
-        page_size: 5
-      });
-      
-      const user = users.data?.items?.find((u: any) => u.email.toLowerCase() === email.toLowerCase());
-      
-      if (user) {
-        console.log(`✅ User found: ${user.fullname} (ID: ${user.user_id})`);
-      } else {
-        console.log(`❌ User not found: ${email}`);
-      }
-      
-      return user;
-    } catch (error) {
-      console.error(`❌ User search failed for ${email}:`, error);
-      throw error;
-    }
+    return users.data?.items?.find((u: any) => u.email.toLowerCase() === email.toLowerCase());
   }
 
-  async processUserEnrollments(jobId: string, userId: string, userEmail: string): Promise<void> {
-    const job = jobStorage.get(jobId) as Job;
+  // Synchronous version that immediately returns results
+  async processUserEnrollmentsSync(jobId: string, userId: string, userEmail: string): Promise<void> {
+    console.log(`🚀 SYNC: Starting job ${jobId} for user ${userId}`);
     
+    const job = jobStorage.get(jobId) as Job;
     if (!job) {
-      console.error(`❌ Job ${jobId} not found in storage`);
+      console.error(`❌ SYNC: Job ${jobId} not found in storage`);
       return;
     }
-    
-    job.logs = [`${new Date().toISOString()}: Job started`];
-    
+
+    // Update job status
+    job.status = 'processing';
+    job.progress = 10;
+    job.lastActivity = Date.now();
+    job.logs.push(`${new Date().toISOString()}: SYNC processing started`);
+    jobStorage.set(jobId, job); // Ensure it's saved
+
     try {
-      console.log(`🚀 Background job ${jobId} started for user ${userId}`);
-      job.logs.push(`${new Date().toISOString()}: Background processing started for user ${userId}`);
+      // Get just the first page for immediate results
+      console.log(`📚 SYNC: Fetching first page for job ${jobId}`);
       
-      let allEnrollments: any[] = [];
-      let currentPage = 1;
-      let hasMoreData = true;
-      const maxPages = 50; // Reduced for testing
-      
-      // Update job progress
-      job.progress = 10;
-      job.status = 'processing';
-      job.logs.push(`${new Date().toISOString()}: Initial setup complete, starting enrollment fetch`);
-      
-      while (hasMoreData && currentPage <= maxPages) {
-        console.log(`📚 Background job ${jobId}: Fetching page ${currentPage}`);
-        job.logs.push(`${new Date().toISOString()}: Fetching page ${currentPage}`);
-        
-        try {
-          const result = await this.apiRequest('/course/v1/courses/enrollments', {
-            'user_ids[]': userId,
-            page_size: 200,
-            page: currentPage
-          });
-          
-          const pageEnrollments = result.data?.items || [];
-          job.logs.push(`${new Date().toISOString()}: Page ${currentPage} returned ${pageEnrollments.length} items`);
-          
-          // Filter for the specific user
-          const userEnrollments = pageEnrollments.filter((enrollment: any) => {
-            return enrollment.user_id === Number(userId);
-          });
-          
-          allEnrollments.push(...userEnrollments);
-          
-          // Update progress (10% to 90% during data collection)
-          job.progress = Math.min(90, 10 + Math.floor((currentPage / maxPages) * 80));
-          
-          console.log(`📚 Background job ${jobId}: Page ${currentPage} - Found ${userEnrollments.length} enrollments (Total: ${allEnrollments.length})`);
-          job.logs.push(`${new Date().toISOString()}: Page ${currentPage} complete - ${userEnrollments.length} user enrollments found (Total: ${allEnrollments.length})`);
-          
-          hasMoreData = result.data?.has_more_data === true;
-          
-          if (pageEnrollments.length === 0) {
-            hasMoreData = false;
-            job.logs.push(`${new Date().toISOString()}: No more data available`);
-          }
-          
-          currentPage++;
-          
-          // Small delay to be API-friendly
-          await new Promise(resolve => setTimeout(resolve, 100));
-          
-        } catch (pageError) {
-          console.error(`❌ Error fetching page ${currentPage}:`, pageError);
-          job.logs.push(`${new Date().toISOString()}: Error on page ${currentPage}: ${pageError instanceof Error ? pageError.message : 'Unknown error'}`);
-          
-          // If we have some data, continue; if first page fails, abort
-          if (currentPage === 1) {
-            throw pageError;
-          } else {
-            hasMoreData = false;
-          }
-        }
-      }
-      
-      // Process and format the results
-      job.progress = 95;
-      job.logs.push(`${new Date().toISOString()}: Processing ${allEnrollments.length} enrollments`);
-      
-      const processedEnrollments = this.formatEnrollments(allEnrollments);
-      
-      // Complete the job
+      const result = await this.apiRequest('/course/v1/courses/enrollments', {
+        'user_ids[]': userId,
+        page_size: 100,
+        page: 1
+      });
+
+      const pageEnrollments = result.data?.items || [];
+      const userEnrollments = pageEnrollments.filter((enrollment: any) => {
+        return enrollment.user_id === Number(userId);
+      });
+
+      console.log(`📚 SYNC: Found ${userEnrollments.length} enrollments for job ${jobId}`);
+
+      // Format results
+      const processedEnrollments = this.formatEnrollments(userEnrollments);
+
+      // Update job to completed
       job.status = 'completed';
       job.progress = 100;
       job.endTime = Date.now();
+      job.lastActivity = Date.now();
       job.result = {
         enrollments: processedEnrollments,
-        totalCount: allEnrollments.length,
-        pagesProcessed: currentPage - 1
+        totalCount: userEnrollments.length,
+        pagesProcessed: 1,
+        method: 'sync'
       };
-      job.logs.push(`${new Date().toISOString()}: Job completed successfully`);
-      
-      // Cache the results for 1 hour
+      job.logs.push(`${new Date().toISOString()}: SYNC processing completed - ${userEnrollments.length} enrollments`);
+
+      // Save to storage
+      jobStorage.set(jobId, job);
+
+      // Cache results
       const cacheKey = `enrollments_${userId}`;
       enrollmentCache.set(cacheKey, {
         data: processedEnrollments,
         timestamp: Date.now(),
-        totalCount: allEnrollments.length
+        totalCount: userEnrollments.length
       });
-      
-      console.log(`✅ Background job ${jobId} completed: ${allEnrollments.length} enrollments found`);
-      
+
+      console.log(`✅ SYNC: Job ${jobId} completed successfully`);
+
     } catch (error) {
-      console.error(`❌ Background job ${jobId} failed:`, error);
+      console.error(`❌ SYNC: Job ${jobId} failed:`, error);
+      
       job.status = 'failed';
       job.endTime = Date.now();
+      job.lastActivity = Date.now();
       job.error = error instanceof Error ? error.message : 'Unknown error';
-      job.logs.push(`${new Date().toISOString()}: Job failed - ${job.error}`);
+      job.logs.push(`${new Date().toISOString()}: SYNC processing failed - ${job.error}`);
+      
+      // Save failed job
+      jobStorage.set(jobId, job);
     }
   }
   
@@ -269,21 +209,13 @@ class BackgroundEnrollmentProcessor {
 let processor: BackgroundEnrollmentProcessor;
 
 function getConfig() {
-  const config = {
+  return {
     domain: process.env.DOCEBO_DOMAIN!,
     clientId: process.env.DOCEBO_CLIENT_ID!,
     clientSecret: process.env.DOCEBO_CLIENT_SECRET!,
     username: process.env.DOCEBO_USERNAME!,
     password: process.env.DOCEBO_PASSWORD!,
   };
-  
-  console.log('🔧 Config loaded:', {
-    domain: config.domain,
-    clientId: config.clientId ? `${config.clientId.substring(0, 8)}...` : 'missing',
-    username: config.username || 'missing'
-  });
-  
-  return config;
 }
 
 // POST: Start background job
@@ -314,10 +246,9 @@ export async function POST(request: NextRequest) {
       const cached = enrollmentCache.get(cacheKey);
       const cacheAge = Date.now() - cached.timestamp;
       
-      // Return cached results if less than 1 hour old
-      if (cacheAge < 3600000) {
+      if (cacheAge < 3600000) { // 1 hour
         const ageMinutes = Math.floor(cacheAge / 60000);
-        console.log(`💾 Returning cached results for ${email} (${ageMinutes} minutes old)`);
+        console.log(`💾 Returning cached results for ${email}`);
         
         return NextResponse.json({
           response: `📚 **${email}'s Courses** (${cached.totalCount} total) 
@@ -344,7 +275,7 @@ ${cached.totalCount > 20 ? `\n... and ${cached.totalCount - 20} more courses` : 
       processor = new BackgroundEnrollmentProcessor(getConfig());
     }
     
-    // Find user first (quick operation)
+    // Find user first
     console.log(`🔍 Finding user: ${email}`);
     const user = await processor.findUserByEmail(email);
     
@@ -363,42 +294,55 @@ No user found with that email address in the system.`,
     const jobId = generateJobId();
     const job: Job = {
       id: jobId,
-      status: 'processing',
+      status: 'initializing',
       progress: 0,
       startTime: Date.now(),
+      lastActivity: Date.now(),
       userEmail: email,
       userId: user.user_id.toString(),
-      logs: [`${new Date().toISOString()}: Job created for user ${user.fullname} (${email})`]
+      logs: [
+        `${new Date().toISOString()}: Job created for user ${user.fullname} (${email})`,
+        `${new Date().toISOString()}: User ID: ${user.user_id}`
+      ]
     };
     
+    // Save job to storage BEFORE starting processing
     jobStorage.set(jobId, job);
-    console.log(`📋 Job created: ${jobId} for user ${user.fullname} (${user.user_id})`);
+    console.log(`📋 Job stored: ${jobId} (Total jobs: ${jobStorage.size})`);
+    console.log(`📋 Jobs in storage: ${Array.from(jobStorage.keys()).join(', ')}`);
     
-    // Start background processing (don't await)
-    processor.processUserEnrollments(jobId, user.user_id.toString(), email)
-      .catch(error => {
-        console.error(`❌ Background processing error for job ${jobId}:`, error);
-        const job = jobStorage.get(jobId) as Job;
-        if (job) {
-          job.status = 'failed';
-          job.error = error instanceof Error ? error.message : 'Unknown error';
-          job.endTime = Date.now();
-        }
-      });
+    // Start synchronous processing (wait for it to complete)
+    try {
+      await processor.processUserEnrollmentsSync(jobId, user.user_id.toString(), email);
+      console.log(`✅ Job ${jobId} processing completed`);
+    } catch (processingError) {
+      console.error(`❌ Job ${jobId} processing failed:`, processingError);
+      
+      // Update job with error
+      const failedJob = jobStorage.get(jobId) as Job;
+      if (failedJob) {
+        failedJob.status = 'failed';
+        failedJob.error = processingError instanceof Error ? processingError.message : 'Processing failed';
+        failedJob.endTime = Date.now();
+        failedJob.lastActivity = Date.now();
+        failedJob.logs.push(`${new Date().toISOString()}: Processing failed - ${failedJob.error}`);
+        jobStorage.set(jobId, failedJob);
+      }
+    }
     
+    // Return response immediately
     return NextResponse.json({
       response: `🚀 **Processing Request**
 
 ⏳ Finding all courses for **${user.fullname}** (${email})...
 
-This may take 30-60 seconds to complete. Your request is being processed in the background.
+Processing is starting now. Check the status below.
 
 📋 **Job ID**: \`${jobId}\`
 
 💡 **Next Steps**: 
-- I'll automatically check the status in a moment
-- You can also ask: "Check status of ${jobId}"
-- Or simply wait and I'll update you when it's done`,
+- Ask: "Check status of ${jobId}"
+- Processing should complete within 10-30 seconds`,
       success: true,
       jobId: jobId,
       processing: true,
@@ -428,22 +372,51 @@ export async function GET(request: NextRequest) {
     }
     
     console.log(`📊 Status check for job: ${jobId}`);
+    console.log(`📊 Total jobs in storage: ${jobStorage.size}`);
     console.log(`📊 Jobs in storage: ${Array.from(jobStorage.keys()).join(', ')}`);
     
     const job = jobStorage.get(jobId) as Job;
     
     if (!job) {
+      const availableJobs = Array.from(jobStorage.keys());
       return NextResponse.json({
         response: `❌ **Job Not Found**: ${jobId}
 
-The job may have expired or never existed.
+**Debug Info**:
+- Total jobs in storage: ${jobStorage.size}
+- Available jobs: ${availableJobs.join(', ') || 'None'}
+- Job might have been cleaned up or never created
 
-**Available Jobs**: ${Array.from(jobStorage.keys()).join(', ') || 'None'}`,
-        success: false
+Try creating a new job.`,
+        success: false,
+        availableJobs: availableJobs
       }, { status: 404 });
     }
     
+    // Update last activity
+    job.lastActivity = Date.now();
+    jobStorage.set(jobId, job);
+    
     const elapsedTime = Math.floor((Date.now() - job.startTime) / 1000);
+    
+    if (job.status === 'initializing') {
+      return NextResponse.json({
+        response: `🔄 **Initializing** (${elapsedTime}s elapsed)
+
+📊 **Progress**: ${job.progress}%
+👤 **User**: ${job.userEmail}
+🔄 **Status**: Setting up processing...
+
+**Logs**:
+${job.logs.slice(-5).join('\n')}`,
+        success: true,
+        jobId: jobId,
+        status: job.status,
+        progress: job.progress,
+        processing: true,
+        timestamp: new Date().toISOString()
+      });
+    }
     
     if (job.status === 'processing') {
       return NextResponse.json({
@@ -453,16 +426,13 @@ The job may have expired or never existed.
 👤 **User**: ${job.userEmail}
 🔄 **Status**: Finding enrollment data...
 
-**Recent Logs**:
-${job.logs.slice(-3).join('\n')}
-
-*Please wait, this process can take up to 60 seconds*`,
+**Logs**:
+${job.logs.slice(-5).join('\n')}`,
         success: true,
         jobId: jobId,
         status: job.status,
         progress: job.progress,
         processing: true,
-        logs: job.logs,
         timestamp: new Date().toISOString()
       });
     }
@@ -489,7 +459,8 @@ ${job.result.totalCount > 25 ? `\n... and ${job.result.totalCount - 25} more cou
 📊 **Summary**: 
 - **Total Enrollments**: ${job.result.totalCount}
 - **Pages Processed**: ${job.result.pagesProcessed}
-- **Processing Time**: ${processingTime} seconds`,
+- **Processing Time**: ${processingTime} seconds
+- **Method**: ${job.result.method}`,
         success: true,
         jobId: jobId,
         status: job.status,
