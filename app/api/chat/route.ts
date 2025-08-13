@@ -272,25 +272,33 @@ class ReliableDoceboAPI {
         mergedUser.branch_name
       ];
       
-      console.log(`🏛️ Checking branch sources:`, sources.map(s => s ? (Array.isArray(s) ? `Array(${s.length})` : 'Object') : 'null'));
+      console.log(`🏛️ Checking branch sources:`, sources.map(s => s ? (Array.isArray(s) ? `Array(${s.length})` : typeof s) : 'null'));
       
       for (const source of sources) {
-        if (Array.isArray(source) && source.length > 0) {
-          const result = source.map((b: any) => {
-            if (typeof b === 'string') return b;
-            return b.name || b.branch_name || b.title || b.description || JSON.stringify(b);
-          }).join(', ');
-          console.log(`🏛️ Found branches from array:`, result);
-          return result;
-        }
-        if (source && typeof source === 'object' && !Array.isArray(source)) {
-          const result = source.name || source.branch_name || source.title || JSON.stringify(source);
-          console.log(`🏛️ Found branches from object:`, result);
-          return result;
-        }
-        if (typeof source === 'string' && source.trim()) {
-          console.log(`🏛️ Found branches from string:`, source);
-          return source;
+        try {
+          if (Array.isArray(source) && source.length > 0) {
+            const result = source.map((b: any) => {
+              if (typeof b === 'string') return b;
+              if (b && typeof b === 'object') {
+                return b.name || b.branch_name || b.title || b.description || JSON.stringify(b);
+              }
+              return String(b);
+            }).filter(Boolean).join(', ');
+            console.log(`🏛️ Found branches from array:`, result);
+            return result;
+          }
+          if (source && typeof source === 'object' && !Array.isArray(source)) {
+            const result = source.name || source.branch_name || source.title || JSON.stringify(source);
+            console.log(`🏛️ Found branches from object:`, result);
+            return result;
+          }
+          if (typeof source === 'string' && source.trim()) {
+            console.log(`🏛️ Found branches from string:`, source);
+            return source;
+          }
+        } catch (error) {
+          console.log(`⚠️ Error processing branch source:`, error);
+          continue;
         }
       }
       return 'None assigned';
@@ -311,25 +319,33 @@ class ReliableDoceboAPI {
         mergedUser.group_name
       ];
       
-      console.log(`👥 Checking group sources:`, sources.map(s => s ? (Array.isArray(s) ? `Array(${s.length})` : 'Object') : 'null'));
+      console.log(`👥 Checking group sources:`, sources.map(s => s ? (Array.isArray(s) ? `Array(${s.length})` : typeof s) : 'null'));
       
       for (const source of sources) {
-        if (Array.isArray(source) && source.length > 0) {
-          const result = source.map((g: any) => {
-            if (typeof g === 'string') return g;
-            return g.name || g.group_name || g.title || g.description || JSON.stringify(g);
-          }).join(', ');
-          console.log(`👥 Found groups from array:`, result);
-          return result;
-        }
-        if (source && typeof source === 'object' && !Array.isArray(source)) {
-          const result = source.name || source.group_name || source.title || JSON.stringify(source);
-          console.log(`👥 Found groups from object:`, result);
-          return result;
-        }
-        if (typeof source === 'string' && source.trim()) {
-          console.log(`👥 Found groups from string:`, source);
-          return source;
+        try {
+          if (Array.isArray(source) && source.length > 0) {
+            const result = source.map((g: any) => {
+              if (typeof g === 'string') return g;
+              if (g && typeof g === 'object') {
+                return g.name || g.group_name || g.title || g.description || JSON.stringify(g);
+              }
+              return String(g);
+            }).filter(Boolean).join(', ');
+            console.log(`👥 Found groups from array:`, result);
+            return result;
+          }
+          if (source && typeof source === 'object' && !Array.isArray(source)) {
+            const result = source.name || source.group_name || source.title || JSON.stringify(source);
+            console.log(`👥 Found groups from object:`, result);
+            return result;
+          }
+          if (typeof source === 'string' && source.trim()) {
+            console.log(`👥 Found groups from string:`, source);
+            return source;
+          }
+        } catch (error) {
+          console.log(`⚠️ Error processing group source:`, error);
+          continue;
         }
       }
       return 'None assigned';
@@ -377,15 +393,37 @@ class ReliableDoceboAPI {
   }
 
   async getCourseDetails(courseName: string): Promise<any> {
-    const courses = await this.apiRequest('/course/v1/courses', {
+    // Try exact search first
+    let courses = await this.apiRequest('/course/v1/courses', {
       search_text: courseName,
-      page_size: 10
+      page_size: 20
     });
     
-    const course = courses.data?.items?.find((c: any) => 
-      c.course_name?.toLowerCase().includes(courseName.toLowerCase()) ||
-      c.name?.toLowerCase().includes(courseName.toLowerCase())
-    );
+    let course = courses.data?.items?.find((c: any) => {
+      const cName = (c.course_name || c.name || c.title || '').toLowerCase();
+      return cName === courseName.toLowerCase();
+    });
+    
+    // If no exact match, try partial match
+    if (!course) {
+      course = courses.data?.items?.find((c: any) => {
+        const cName = (c.course_name || c.name || c.title || '').toLowerCase();
+        return cName.includes(courseName.toLowerCase()) || courseName.toLowerCase().includes(cName);
+      });
+    }
+    
+    // If still no match, try searching with different endpoint
+    if (!course) {
+      courses = await this.apiRequest('/learn/v1/courses', {
+        search_text: courseName,
+        page_size: 20
+      });
+      
+      course = courses.data?.items?.find((c: any) => {
+        const cName = (c.course_name || c.name || c.title || '').toLowerCase();
+        return cName.includes(courseName.toLowerCase()) || courseName.toLowerCase().includes(cName);
+      });
+    }
     
     if (!course) {
       throw new Error(`Course not found: ${courseName}`);
