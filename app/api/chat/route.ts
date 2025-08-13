@@ -328,123 +328,84 @@ class ReliableDoceboAPI {
 
     // Extract branches from all possible sources with enhanced logic
     const extractBranches = (): string => {
-      const sources = [
-        branchDetails?.data?.items,
-        branchDetails?.data,
-        branchListDetails?.data?.items,
-        userOrgDetails?.data?.branches,
-        mergedUser.branches,
-        user.branches,
-        mergedUser.branch,
-        user.branch,
-        user.branch_name,
-        mergedUser.branch_name,
-        user.branch_id,
-        mergedUser.branch_id
-      ];
+      // Check if branches array exists and has data
+      const branches = mergedUser.branches || user.branches || [];
+      if (branches.length > 0) {
+        const branchNames = branches.map((b: any) => b.name || b.branch_name || b.title || JSON.stringify(b)).join(', ');
+        console.log(`🏛️ Found branches from branches array:`, branchNames);
+        return branchNames;
+      }
       
-      console.log(`🏛️ Checking branch sources:`, sources.map(s => s ? (Array.isArray(s) ? `Array(${s.length})` : typeof s) : 'null'));
+      // Check custom fields for organizational information
+      const additionalFields = mergedUser.additional_fields || [];
+      const orgFields = [];
       
-      // Try to find branches in the data
-      for (const source of sources) {
-        try {
-          if (Array.isArray(source) && source.length > 0) {
-            const result = source.map((b: any) => {
-              if (typeof b === 'string') return b;
-              if (b && typeof b === 'object') {
-                return b.name || b.branch_name || b.title || b.description || b.code || JSON.stringify(b);
-              }
-              return String(b);
-            }).filter(Boolean).join(', ');
-            console.log(`🏛️ Found branches from array:`, result);
-            if (result && result !== 'null' && result !== 'undefined') return result;
-          }
-          if (source && typeof source === 'object' && !Array.isArray(source)) {
-            const result = source.name || source.branch_name || source.title || source.code || JSON.stringify(source);
-            console.log(`🏛️ Found branches from object:`, result);
-            if (result && result !== 'null' && result !== 'undefined') return result;
-          }
-          if (typeof source === 'string' && source.trim() && source !== 'null' && source !== 'undefined') {
-            console.log(`🏛️ Found branches from string:`, source);
-            return source;
-          }
-          if (typeof source === 'number' && source > 0) {
-            // If we have a branch ID, try to look it up in all branches
-            if (allBranches?.data?.items) {
-              const branch = allBranches.data.items.find((b: any) => b.id === source || b.branch_id === source);
-              if (branch) {
-                const branchName = branch.name || branch.branch_name || branch.title || `Branch ${source}`;
-                console.log(`🏛️ Found branch by ID ${source}:`, branchName);
-                return branchName;
-              }
-            }
-            return `Branch ID: ${source}`;
-          }
-        } catch (error) {
-          console.log(`⚠️ Error processing branch source:`, error);
-          continue;
+      // Look for organization-related fields
+      for (const field of additionalFields) {
+        if (field.title === 'Organization Name' && field.value) {
+          orgFields.push(`Organization: ${field.value}`);
+        }
+        if (field.title === 'Team' && field.value) {
+          orgFields.push(`Team: ${field.value}`);
+        }
+        if (field.title === 'Job Role' && field.value) {
+          orgFields.push(`Role: ${field.value}`);
         }
       }
       
-      // Last resort: check if user object has any field that might indicate branch
-      const userFieldsToCheck = Object.keys(user).filter(key => 
-        key.toLowerCase().includes('branch') || 
-        key.toLowerCase().includes('office') || 
-        key.toLowerCase().includes('location')
-      );
+      if (orgFields.length > 0) {
+        const orgInfo = orgFields.join(' | ');
+        console.log(`🏛️ Found organizational info from custom fields:`, orgInfo);
+        return orgInfo;
+      }
       
-      for (const field of userFieldsToCheck) {
-        const value = user[field];
-        if (value && typeof value === 'string' && value.trim()) {
-          console.log(`🏛️ Found branch in user field ${field}:`, value);
-          return value;
-        }
+      // Fallback to direct field values if custom fields not available
+      const fallbackFields = [
+        user.field_4, // Organization Name (GBO)
+        user.field_5, // Team (Go to Market Operations)
+        user.field_1  // Job Role
+      ].filter(Boolean);
+      
+      if (fallbackFields.length > 0) {
+        const fallbackInfo = fallbackFields.join(' | ');
+        console.log(`🏛️ Found organizational info from direct fields:`, fallbackInfo);
+        return fallbackInfo;
       }
       
       return 'None assigned';
     };
 
-    // Extract direct manager information
+    // Extract direct manager information with enhanced logic
     const extractManager = (): string => {
-      const sources = [
-        managerDetails?.data,
-        userOrgDetails?.data?.manager,
-        mergedUser.manager,
-        user.manager,
-        mergedUser.supervisor,
-        user.supervisor,
-        mergedUser.manager_id,
-        user.manager_id,
-        mergedUser.reports_to,
-        user.reports_to
-      ];
-      
-      console.log(`👔 Checking manager sources:`, sources.map(s => s ? (typeof s === 'object' ? 'Object' : typeof s) : 'null'));
-      
-      for (const source of sources) {
-        try {
-          if (source && typeof source === 'object') {
-            // Manager object with details
-            const managerName = source.fullname || source.name || 
-                              `${source.firstname || ''} ${source.lastname || ''}`.trim() ||
-                              source.email || source.username;
-            if (managerName && managerName.trim()) {
-              console.log(`👔 Found manager from object:`, managerName);
-              return managerName;
-            }
-          }
-          if (typeof source === 'string' && source.trim()) {
-            console.log(`👔 Found manager from string:`, source);
-            return source;
-          }
-          if (typeof source === 'number' && source > 0) {
-            console.log(`👔 Found manager ID:`, source);
-            return `Manager ID: ${source}`;
-          }
-        } catch (error) {
-          console.log(`⚠️ Error processing manager source:`, error);
-          continue;
+      // Check managers array first (most reliable)
+      const managers = user.managers || mergedUser.managers || [];
+      if (managers.length > 0) {
+        // Find direct manager (type_id 1) or take first manager
+        const directManager = managers.find((m: any) => m.manager_type_id === 1) || managers[0];
+        if (directManager && directManager.manager_name) {
+          console.log(`👔 Found direct manager from managers array:`, directManager.manager_name);
+          return directManager.manager_name;
         }
+      }
+      
+      // Check manager_names object
+      const managerNames = user.manager_names || mergedUser.manager_names || {};
+      if (managerNames['1'] && managerNames['1'].manager_name) {
+        console.log(`👔 Found manager from manager_names object:`, managerNames['1'].manager_name);
+        return managerNames['1'].manager_name;
+      }
+      
+      // Check individual manager fields from detailed user data
+      const managerFields = [
+        mergedUser.manager_first_name && mergedUser.manager_last_name ? 
+          `${mergedUser.manager_first_name} ${mergedUser.manager_last_name}` : null,
+        mergedUser.manager_name,
+        user.manager_name
+      ].filter(Boolean);
+      
+      if (managerFields.length > 0) {
+        console.log(`👔 Found manager from individual fields:`, managerFields[0]);
+        return managerFields[0];
       }
       
       return 'Not assigned';
