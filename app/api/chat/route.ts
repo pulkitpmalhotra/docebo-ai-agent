@@ -1,12 +1,4 @@
-function extractCourse(message: string): string | null {
-  const quotedMatch = message.match(/"([^"]+)"/);
-  if (quotedMatch) return quotedMatch[1];
-  
-  const courseMatch = message.match(/find\s+(.+?)\s+course/i);
-  if (courseMatch) return courseMatch[1].trim();
-  
-  return null;
-}// app/api/chat/route.ts - Clean & Reliable - Working Features Only
+// app/api/chat/route.ts - Clean & Reliable - Working Features Only
 import { NextRequest, NextResponse } from 'next/server';
 
 // Environment configuration
@@ -34,6 +26,7 @@ const searchCache = new Map();
 function generateSearchCacheKey(): string {
   return `search_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
 }
+
 const PATTERNS = {
   searchUsers: (msg: string) => {
     const lower = msg.toLowerCase();
@@ -90,6 +83,8 @@ function extractSearchCacheKey(message: string): string | null {
   const match = message.match(/search_([a-f0-9A-F_]+)/);
   return match ? match[1] : null;
 }
+
+function extractCourse(message: string): string | null {
   const quotedMatch = message.match(/"([^"]+)"/);
   if (quotedMatch) return quotedMatch[1];
   
@@ -701,7 +696,8 @@ ${userList}
         });
       }
     }
-    // 1. FLEXIBLE USER QUESTIONS (Check this first before other patterns)
+    
+    // 2. FLEXIBLE USER QUESTIONS (Check this first before other patterns)
     if (PATTERNS.userQuestion(message)) {
       console.log(`💬 User question detected: ${message}`);
       
@@ -774,7 +770,7 @@ ${answer}
       }
     }
     
-    // 2. USER SEARCH (Enhanced with auto user details for email searches)
+    // 3. USER SEARCH (Enhanced with auto user details for email searches)
     if (PATTERNS.searchUsers(message)) {
       const searchTerm = email || message.replace(/find|user|search/gi, '').trim();
       
@@ -895,7 +891,7 @@ ${userList}${users.length > 20 ? `\n\n... and ${users.length - 20} more users` :
       }
     }
     
-    // 3. COURSE SEARCH  
+    // 4. COURSE SEARCH  
     if (PATTERNS.searchCourses(message)) {
       const searchTerm = course || message.replace(/find|search|course/gi, '').trim();
       
@@ -940,7 +936,7 @@ ${courseList}${courses.length > 20 ? `\n\n... and ${courses.length - 20} more co
       });
     }
     
-    // 4. USER DETAILS
+    // 5. USER DETAILS
     if (PATTERNS.getUserInfo(message)) {
       if (!email) {
         return NextResponse.json({
@@ -984,7 +980,7 @@ ${courseList}${courses.length > 20 ? `\n\n... and ${courses.length - 20} more co
       }
     }
     
-    // 5. COURSE DETAILS
+    // 6. COURSE DETAILS
     if (PATTERNS.getCourseInfo(message)) {
       const courseName = course || message.replace(/course info|course details|tell me about course/gi, '').trim();
       
@@ -1034,76 +1030,7 @@ ${courseDetails.description}`,
       }
     }
     
-    // 5. FLEXIBLE USER QUESTIONS
-    if (PATTERNS.userQuestion(message)) {
-      if (!email) {
-        return NextResponse.json({
-          response: `❌ **Missing Email**: I need an email address to answer questions about a user.
-
-**Examples**: 
-- "What is john@company.com's last login?"
-- "When did sarah@test.com join?"
-- "Is mike@company.com active?"`,
-          success: false,
-          timestamp: new Date().toISOString()
-        });
-      }
-      
-      try {
-        const userDetails = await api.getUserDetails(email);
-        const question = message.toLowerCase();
-        
-        let answer = '';
-        
-        if (question.includes('last login') || question.includes('last access')) {
-          answer = `🔐 **Last Access**: ${userDetails.lastAccess}`;
-        } else if (question.includes('when') && (question.includes('join') || question.includes('creat'))) {
-          answer = `📅 **Account Created**: ${userDetails.creationDate}`;
-        } else if (question.includes('status') || question.includes('active') || question.includes('inactive')) {
-          answer = `📊 **Status**: ${userDetails.status}`;
-        } else if (question.includes('level') || question.includes('role') || question.includes('permission')) {
-          answer = `🏢 **Level**: ${userDetails.level}`;
-        } else if (question.includes('branch') || question.includes('department')) {
-          answer = `🏛️ **Branches**: ${userDetails.branches}\n🏛️ **Department**: ${userDetails.department}`;
-        } else if (question.includes('group')) {
-          answer = `👥 **Groups**: ${userDetails.groups}`;
-        } else if (question.includes('language') || question.includes('timezone')) {
-          answer = `🌍 **Language**: ${userDetails.language}\n🕐 **Timezone**: ${userDetails.timezone}`;
-        } else if (question.includes('email') || question.includes('contact')) {
-          answer = `📧 **Email**: ${userDetails.email}\n👤 **Username**: ${userDetails.username}`;
-        } else {
-          // General fallback - provide relevant info based on keywords
-          answer = `👤 **${userDetails.fullname}** - Quick Info:
-📊 **Status**: ${userDetails.status}
-🏢 **Level**: ${userDetails.level}
-📅 **Created**: ${userDetails.creationDate}
-🔐 **Last Access**: ${userDetails.lastAccess}`;
-        }
-        
-        return NextResponse.json({
-          response: `💬 **Question About**: ${userDetails.fullname}
-
-${answer}
-
-💡 **More Questions**: 
-- "What is ${email}'s status?"
-- "When did ${email} last login?"
-- "What level is ${email}?"
-- "What groups is ${email} in?"`,
-          success: true,
-          userDetails: userDetails,
-          questionAnswered: true,
-          timestamp: new Date().toISOString()
-        });
-        
-      } catch (error) {
-        return NextResponse.json({
-          response: `❌ **Error**: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          success: false,
-          timestamp: new Date().toISOString()
-        });
-      }
-    }
+    // FALLBACK: Help message
     return NextResponse.json({
       response: `🎯 **Docebo Assistant** - *Reliable & Fast*
 
