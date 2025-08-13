@@ -99,7 +99,12 @@ class DebugDoceboAPI {
 
     console.log(`✅ User found: ${user.fullname} (ID: ${user.user_id})`);
 
-    let debugInfo = {
+    let debugInfo: {
+      user: any;
+      pages: any[];
+      totalEnrollments: number;
+      apiResponses: any[];
+    } = {
       user: user,
       pages: [],
       totalEnrollments: 0,
