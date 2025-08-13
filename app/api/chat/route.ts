@@ -6,6 +6,25 @@ function validateEnvironmentVariable(name: string, value: string | undefined): s
   if (!value || value.trim() === '') {
     throw new Error(`Missing required environment variable: ${name}`);
   }
+
+  // Add debug method to get enrollment info for response
+  async getEnrollmentDebugInfo(userId: string): Promise<string> {
+    try {
+      const result = await this.apiRequest('/course/v1/courses/enrollments', 'GET', null, {
+        'user_ids[]': userId,
+        page_size: 500
+      });
+      
+      const allEnrollments = result.data?.items || [];
+      const uniqueUserIds = [...new Set(allEnrollments.map((e: any) => e.user_id))];
+      const targetUserId = Number(userId);
+      const filteredCount = allEnrollments.filter((e: any) => e.user_id === targetUserId).length;
+      
+      return `Raw API returned ${allEnrollments.length} items, ${uniqueUserIds.length} unique users [${uniqueUserIds.slice(0, 5).join(', ')}], ${filteredCount} for user ${userId}`;
+    } catch (error) {
+      return `Debug failed: ${error}`;
+    }
+  }
   return value.trim();
 }
 
@@ -598,6 +617,9 @@ ${options.dueDate ? `**Due Date**: ${options.dueDate}` : ''}
       console.log(`📊 Raw enrollments returned: ${enrollments.length}`);
       console.log(`📊 First few enrollments:`, JSON.stringify(enrollments.slice(0, 3), null, 2));
       
+      // Get debug info from the API call for display in response
+      const debugInfo = await this.getEnrollmentDebugInfo(user.user_id);
+      
       if (enrollments.length === 0) {
         return NextResponse.json({
           response: `📚 **No Enrollments Found**
@@ -650,7 +672,8 @@ ${courseList}${enrollments.length > displayLimit ? `\n\n... and ${enrollments.le
 - User ID: ${user.user_id}
 - Endpoint: \`/course/v1/courses/enrollments?user_ids[]=${user.user_id}\`
 - Total Enrollments Found: ${enrollments.length}
-- Showing: ${displayLimit}`,
+- Showing: ${displayLimit}
+- API Debug: ${debugInfo}`,
         success: true,
         timestamp: new Date().toISOString()
       });
