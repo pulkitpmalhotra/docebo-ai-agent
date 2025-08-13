@@ -6,25 +6,6 @@ function validateEnvironmentVariable(name: string, value: string | undefined): s
   if (!value || value.trim() === '') {
     throw new Error(`Missing required environment variable: ${name}`);
   }
-
-  // Add debug method to get enrollment info for response
-  async getEnrollmentDebugInfo(userId: string): Promise<string> {
-    try {
-      const result = await this.apiRequest('/course/v1/courses/enrollments', 'GET', null, {
-        'user_ids[]': userId,
-        page_size: 500
-      });
-      
-      const allEnrollments = result.data?.items || [];
-      const uniqueUserIds = [...new Set(allEnrollments.map((e: any) => e.user_id))];
-      const targetUserId = Number(userId);
-      const filteredCount = allEnrollments.filter((e: any) => e.user_id === targetUserId).length;
-      
-      return `Raw API returned ${allEnrollments.length} items, ${uniqueUserIds.length} unique users [${uniqueUserIds.slice(0, 5).join(', ')}], ${filteredCount} for user ${userId}`;
-    } catch (error) {
-      return `Debug failed: ${error}`;
-    }
-  }
   return value.trim();
 }
 
@@ -160,7 +141,7 @@ class FixedDoceboAPI {
     }
   }
 
-  // FIXED: User enrollments using the CORRECT endpoint only
+  // FIXED: User enrollments using the CORRECT endpoint with proper filtering
   async getUserEnrollments(userId: string): Promise<any[]> {
     try {
       console.log(`📚 Getting enrollments for user ID: ${userId}`);
@@ -187,7 +168,7 @@ class FixedDoceboAPI {
         const matches = enrollmentUserId === targetUserId;
         
         if (!matches) {
-          console.log(`📚 Filtered out: user ${enrollmentUserId} (course: ${enrollment.course_name})`);
+          console.log(`📚 Filtered out: user ${enrollmentUserId} (course: ${enrollment.course_name || 'Unknown'})`);
         }
         
         return matches;
@@ -615,7 +596,6 @@ ${options.dueDate ? `**Due Date**: ${options.dueDate}` : ''}
       const enrollments = await api.getUserEnrollments(user.user_id);
       
       console.log(`📊 Raw enrollments returned: ${enrollments.length}`);
-      console.log(`📊 First few enrollments:`, JSON.stringify(enrollments.slice(0, 3), null, 2));
       
       if (enrollments.length === 0) {
         return NextResponse.json({
@@ -629,8 +609,8 @@ ${user.fullname} (${user.email}) is not enrolled in any courses.
         });
       }
       
-      // Show MORE courses - let's show up to 20 instead of 10
-      const displayLimit = Math.min(20, enrollments.length);
+      // Show MORE courses - let's show up to 25 instead of 10
+      const displayLimit = Math.min(25, enrollments.length);
       const courseList = enrollments.slice(0, displayLimit).map((e, i) => {
         // Clean up course name and remove all HTML entities and formatting
         let courseName = e.course_name || 'Unknown Course';
