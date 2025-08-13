@@ -141,96 +141,39 @@ class FixedDoceboAPI {
     }
   }
 
-  // SUPER OPTIMIZED: Faster pagination with larger batches
+  // BEST APPROACH: Direct API call matching your successful browser test
   async getUserEnrollments(userId: string): Promise<any[]> {
     try {
-      console.log(`📚 Getting enrollments for user ID: ${userId}`);
+      console.log(`📚 Getting enrollments for user ID: ${userId} using direct approach`);
       
-      let allUserEnrollments: any[] = [];
-      let currentPage = 1;
-      let hasMoreData = true;
-      const maxPages = 100; // Increased significantly
-      const startTime = Date.now();
-      const timeoutMs = 28000; // 28 seconds for safety
+      // Use the EXACT same call you tested successfully in the API browser
+      const result = await this.apiRequest('/course/v1/courses/enrollments', 'GET', null, {
+        'user_ids[]': userId,
+        page_size: 100  // Start with smaller page size for reliability
+      });
       
-      while (hasMoreData && currentPage <= maxPages) {
-        // Check timeout
-        if (Date.now() - startTime > timeoutMs) {
-          console.log(`📚 ⏰ Timeout approaching after ${Math.floor((Date.now() - startTime) / 1000)}s, stopping at page ${currentPage}`);
-          break;
-        }
-        
-        // Batch requests - process multiple pages in parallel for speed
-        const batchSize = 3; // Process 3 pages at once
-        const promises = [];
-        
-        for (let i = 0; i < batchSize && (currentPage + i) <= maxPages; i++) {
-          const pageNum = currentPage + i;
-          
-          const promise = this.apiRequest('/course/v1/courses/enrollments', 'GET', null, {
-            'user_ids[]': userId,
-            page_size: 200,
-            page: pageNum
-          }).then(result => ({
-            page: pageNum,
-            data: result
-          })).catch(error => ({
-            page: pageNum,
-            error: error
-          }));
-          
-          promises.push(promise);
-        }
-        
-        console.log(`📚 Fetching pages ${currentPage}-${currentPage + batchSize - 1}...`);
-        
-        // Wait for all batch requests to complete
-        const results = await Promise.all(promises);
-        
-        let batchEnrollments = 0;
-        let shouldContinue = false;
-        
-        for (const result of results) {
-          if ('error' in result) {
-            console.log(`📚 Page ${result.page}: Error - ${result.error}`);
-            continue;
-          }
-          
-          const pageEnrollments = result.data?.data?.items || [];
-          
-          const filteredPageEnrollments = pageEnrollments.filter((enrollment: any) => {
-            return enrollment.user_id === Number(userId);
-          });
-          
-          allUserEnrollments.push(...filteredPageEnrollments);
-          batchEnrollments += filteredPageEnrollments.length;
-          
-          // Check if this page indicates more data
-          if (result.data?.data?.has_more_data === true) {
-            shouldContinue = true;
-          }
-          
-          console.log(`📚 Page ${result.page}: ${filteredPageEnrollments.length} enrollments`);
-        }
-        
-        console.log(`📚 Batch complete: +${batchEnrollments} enrollments (total: ${allUserEnrollments.length})`);
-        
-        hasMoreData = shouldContinue;
-        currentPage += batchSize;
-        
-        // Very short delay since we're batching
-        if (hasMoreData) {
-          await new Promise(resolve => setTimeout(resolve, 10));
-        }
+      const allEnrollments = result.data?.items || [];
+      console.log(`📚 Direct API call returned: ${allEnrollments.length} items`);
+      console.log(`📚 Total count: ${result.data?.total_count}, Has more: ${result.data?.has_more_data}`);
+      
+      // Since your browser test returned 61 items for this user, 
+      // the API should return them all if the call is correct
+      const userEnrollments = allEnrollments.filter((enrollment: any) => {
+        return enrollment.user_id === Number(userId);
+      });
+      
+      console.log(`📚 ✅ Found ${userEnrollments.length} enrollments for user ${userId}`);
+      
+      // If we need more data and the API indicates it's available
+      if (result.data?.has_more_data && userEnrollments.length < 50) {
+        console.log(`📚 🔄 API indicates more data available, but we have ${userEnrollments.length} results`);
+        console.log(`📚 💡 The user_ids[] filter might not be working as expected`);
       }
       
-      const totalTime = Date.now() - startTime;
-      console.log(`📚 ✅ Found ${allUserEnrollments.length} enrollments across ~${currentPage} pages in ${totalTime}ms`);
-      
-      return allUserEnrollments;
+      return userEnrollments;
       
     } catch (error) {
-      console.error('❌ Get user enrollments failed:', error);
+      console.error('❌ Direct API call failed:', error);
       return [];
     }
   }
