@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, User, Bot, UserPlus, Search, BookOpen, Users, CheckCircle, AlertCircle, Zap } from 'lucide-react';
+import { Send, User, Bot, Search, BookOpen, Users, CheckCircle, AlertCircle, Zap } from 'lucide-react';
 
 interface Message {
   id: string;
@@ -34,39 +34,46 @@ export default function DoceboChat() {
   // Quick actions defined inside component to avoid hydration issues
   const quickActions: QuickAction[] = [
     {
-      id: 'enroll_user',
-      title: 'Enroll User',
-      icon: <UserPlus className="w-5 h-5" />,
-      example: 'Enroll john@company.com in Python Programming',
-      description: 'Add a single user to a course'
-    },
-    {
-      id: 'get_user_courses', 
-      title: 'User Courses',
-      icon: <User className="w-5 h-5" />,
-      example: 'What courses is sarah@test.com enrolled in?',
-      description: 'See all courses for a user'
-    },
-    {
-      id: 'get_course_users',
-      title: 'Course Enrollments', 
-      icon: <Users className="w-5 h-5" />,
-      example: 'Who is enrolled in Excel Training?',
-      description: 'See who is taking a course'
-    },
-    {
       id: 'find_user',
       title: 'Find User',
-      icon: <Search className="w-5 h-5" />,
+      icon: <User className="w-5 h-5" />,
       example: 'Find user mike@company.com',
-      description: 'Look up user details'
+      description: 'Look up user details and information'
     },
     {
-      id: 'find_course',
+      id: 'find_course', 
       title: 'Find Course',
       icon: <BookOpen className="w-5 h-5" />,
       example: 'Find Python courses',
-      description: 'Search for courses'
+      description: 'Search for courses by name or keyword'
+    },
+    {
+      id: 'find_learning_plan',
+      title: 'Find Learning Plans',
+      icon: <Users className="w-5 h-5" />,
+      example: 'Find Python learning plans',
+      description: 'Search for learning paths and programs'
+    },
+    {
+      id: 'find_session',
+      title: 'Find Sessions',
+      icon: <CheckCircle className="w-5 h-5" />,
+      example: 'Find Python sessions',
+      description: 'Look up training sessions and workshops'
+    },
+    {
+      id: 'find_material',
+      title: 'Find Materials',
+      icon: <Search className="w-5 h-5" />,
+      example: 'Find Python training materials',
+      description: 'Search for training resources and documents'
+    },
+    {
+      id: 'docebo_help',
+      title: 'Docebo Help',
+      icon: <AlertCircle className="w-5 h-5" />,
+      example: 'How to enroll users in Docebo',
+      description: 'Get help with Docebo functionality'
     }
   ];
 
@@ -78,7 +85,7 @@ export default function DoceboChat() {
     // Initialize messages only on client side to avoid hydration mismatch
     setMessages([{
       id: 'welcome',
-      content: 'Welcome to Docebo Assistant - Phase 1 MVP\n\nI help you manage Docebo enrollments with natural language commands.\n\nClick any action below or type directly:',
+      content: 'Welcome to Docebo Assistant - Comprehensive Learning Management\n\nI help you manage and understand Docebo with natural language commands.\n\nClick any action below or type directly:',
       type: 'assistant',
       timestamp: new Date()
     }]);
@@ -233,7 +240,7 @@ export default function DoceboChat() {
         {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-gray-800 mb-2">Docebo Assistant</h1>
-          <p className="text-gray-600 mb-4">Phase 1 MVP - Natural Language Enrollment Management</p>
+          <p className="text-gray-600 mb-4">Comprehensive Learning Management & Help System</p>
           <div className="flex items-center justify-center gap-2">
             <Zap className="w-4 h-4 text-green-500" />
             <span className="text-sm text-green-600">Live & Ready</span>
@@ -259,7 +266,7 @@ export default function DoceboChat() {
                 </div>
                 <p className="text-xs text-gray-600 mb-2">{action.description}</p>
                 <p className="text-xs text-blue-600 bg-blue-50 p-2 rounded">
-                  {action.example.length > 50 ? `${action.example.substring(0, 50)}...` : action.example}
+                  {action.example.length > 40 ? `${action.example.substring(0, 40)}...` : action.example}
                 </p>
               </button>
             ))}
@@ -353,7 +360,7 @@ export default function DoceboChat() {
                   }
                 }}
                 onKeyPress={handleKeyPress}
-                placeholder="Type your command... (e.g., 'Enroll john@company.com in Python')"
+                placeholder="Type your command... (e.g., 'Find user mike@company.com' or 'How to enroll users')"
                 className="flex-1 p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled={loading}
                 maxLength={500}
@@ -370,7 +377,7 @@ export default function DoceboChat() {
             
             <div className="mt-3 text-xs text-gray-500">
               <strong>Examples: </strong>
-              "Enroll sarah@test.com in Excel Training" • "Who is enrolled in Python?" • "Find user mike@company.com"
+              "Find user mike@company.com" • "Find Python courses" • "Learning plan info Advanced Programming" • "How to enroll users in Docebo"
             </div>
           </div>
         </div>
@@ -378,26 +385,26 @@ export default function DoceboChat() {
         {/* Benefits */}
         <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
           <div className="text-xs text-gray-500">
-            <CheckCircle className="w-4 h-4 text-green-500 mx-auto mb-1" />
-            Direct Actions
+            <Search className="w-4 h-4 text-blue-500 mx-auto mb-1" />
+            Smart Search
           </div>
           <div className="text-xs text-gray-500">
-            <Zap className="w-4 h-4 text-blue-500 mx-auto mb-1" />
+            <Zap className="w-4 h-4 text-green-500 mx-auto mb-1" />
             Instant Results
           </div>
           <div className="text-xs text-gray-500">
-            <UserPlus className="w-4 h-4 text-purple-500 mx-auto mb-1" />
-            Real Enrollments
+            <BookOpen className="w-4 h-4 text-purple-500 mx-auto mb-1" />
+            All Content Types
           </div>
           <div className="text-xs text-gray-500">
-            <Search className="w-4 h-4 text-orange-500 mx-auto mb-1" />
-            Live Data
+            <AlertCircle className="w-4 h-4 text-orange-500 mx-auto mb-1" />
+            Help & Guidance
           </div>
         </div>
 
         {/* Footer */}
         <div className="text-center text-xs text-gray-400 mt-8">
-          Docebo Assistant - Phase 1 MVP • Direct API Connection • Natural Language Processing
+          Docebo Assistant - Comprehensive Learning Management • Data Search • Official Help Integration
         </div>
       </div>
     </div>
