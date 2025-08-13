@@ -1,4 +1,4 @@
-// app/api/chat/route.ts - Fixed routing to background API
+// app/api/chat/route.ts - Simple & Reliable - No Large Data Processing
 import { NextRequest, NextResponse } from 'next/server';
 
 // Environment configuration
@@ -19,34 +19,8 @@ function getConfig() {
   };
 }
 
-// Enhanced patterns to detect requests
+// Simple patterns for basic operations
 const PATTERNS = {
-  enroll: (msg: string) => {
-    const lower = msg.toLowerCase();
-    return (lower.includes('enroll ') || lower.includes('add ')) && 
-           !lower.includes('unenroll') && 
-           !lower.includes('what courses') &&
-           !lower.includes('who is enrolled');
-  },
-  
-  // Background processing pattern for user courses
-  userCoursesBackground: (msg: string) => {
-    const lower = msg.toLowerCase();
-    return lower.includes('what courses') || 
-           (lower.includes('courses') && lower.includes('enrolled') && !lower.includes('who'));
-  },
-  
-  // Status check pattern - FIX: Make this more specific
-  statusCheck: (msg: string) => {
-    const lower = msg.toLowerCase();
-    return (lower.includes('check status') || lower.includes('status of')) && 
-           lower.includes('job_');
-  },
-  
-  courseUsers: (msg: string) => {
-    const lower = msg.toLowerCase();
-    return lower.includes('who is enrolled') || lower.includes('who enrolled');
-  },
   searchUsers: (msg: string) => {
     const lower = msg.toLowerCase();
     return (lower.includes('find user') || lower.includes('search user')) && 
@@ -56,6 +30,11 @@ const PATTERNS = {
     const lower = msg.toLowerCase();
     return (lower.includes('find') && lower.includes('course')) ||
            (lower.includes('search') && lower.includes('course'));
+  },
+  quickEnrollmentCheck: (msg: string) => {
+    const lower = msg.toLowerCase();
+    return lower.includes('what courses') || 
+           (lower.includes('courses') && lower.includes('enrolled'));
   }
 };
 
@@ -65,32 +44,17 @@ function extractEmail(message: string): string | null {
   return match ? match[0] : null;
 }
 
-function extractJobId(message: string): string | null {
-  const match = message.match(/job_[a-zA-Z0-9_]+/);
-  return match ? match[0] : null;
-}
-
 function extractCourse(message: string): string | null {
   const quotedMatch = message.match(/"([^"]+)"/);
   if (quotedMatch) return quotedMatch[1];
   
-  const inMatch = message.match(/\bin\s+(.+?)(?:\s+(?:as|due|level)\s|$)/i);
-  if (inMatch) {
-    let course = inMatch[1].trim();
-    course = course.replace(/[.!?]+$/, '');
-    return course;
-  }
-  
-  const enrolledMatch = message.match(/enrolled\s+in\s+(.+?)(?:\?|$)/i);
-  if (enrolledMatch) return enrolledMatch[1].trim();
-  
-  const findMatch = message.match(/find\s+(.+?)\s+course/i);
-  if (findMatch) return findMatch[1].trim();
+  const courseMatch = message.match(/find\s+(.+?)\s+course/i);
+  if (courseMatch) return courseMatch[1].trim();
   
   return null;
 }
 
-// Simple API client for non-background operations
+// Simple Docebo API client
 class SimpleDoceboAPI {
   private config: any;
   private accessToken?: string;
@@ -127,7 +91,7 @@ class SimpleDoceboAPI {
     return this.accessToken!;
   }
 
-  private async apiRequest(endpoint: string, method: 'GET' | 'POST' = 'GET', body?: any, params?: any): Promise<any> {
+  private async apiRequest(endpoint: string, params?: any): Promise<any> {
     const token = await this.getAccessToken();
     
     let url = `${this.baseUrl}${endpoint}`;
@@ -143,19 +107,12 @@ class SimpleDoceboAPI {
       }
     }
 
-    const headers: Record<string, string> = {
-      'Authorization': `Bearer ${token}`,
-      'Accept': 'application/json',
-    };
-
-    if (method !== 'GET' && body) {
-      headers['Content-Type'] = 'application/json';
-    }
-
     const response = await fetch(url, {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : undefined,
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/json',
+      },
     });
 
     if (!response.ok) {
@@ -165,20 +122,59 @@ class SimpleDoceboAPI {
     return await response.json();
   }
 
-  async searchUsers(searchText: string, limit: number = 25): Promise<any[]> {
-    const result = await this.apiRequest('/manage/v1/user', 'GET', null, {
+  async searchUsers(searchText: string, limit: number = 10): Promise<any[]> {
+    const result = await this.apiRequest('/manage/v1/user', {
       search_text: searchText,
       page_size: limit
     });
     return result.data?.items || [];
   }
 
-  async searchCourses(searchText: string, limit: number = 25): Promise<any[]> {
-    const result = await this.apiRequest('/course/v1/courses', 'GET', null, {
+  async searchCourses(searchText: string, limit: number = 10): Promise<any[]> {
+    const result = await this.apiRequest('/course/v1/courses', {
       search_text: searchText,
       page_size: limit
     });
     return result.data?.items || [];
+  }
+
+  async getQuickEnrollments(email: string): Promise<any> {
+    // Find user first
+    const users = await this.apiRequest('/manage/v1/user', {
+      search_text: email,
+      page_size: 5
+    });
+    
+    const user = users.data?.items?.find((u: any) => u.email.toLowerCase() === email.toLowerCase());
+    
+    if (!user) {
+      throw new Error(`User not found: ${email}`);
+    }
+
+    // Get ONLY first page of enrollments (quick sample)
+    const result = await this.apiRequest('/course/v1/courses/enrollments', {
+      'user_ids[]': user.user_id,
+      page_size: 20,
+      page: 1
+    });
+    
+    const pageEnrollments = result.data?.items || [];
+    const userEnrollments = pageEnrollments.filter((enrollment: any) => {
+      return enrollment.user_id === Number(user.user_id);
+    });
+
+    return {
+      user: user,
+      enrollments: userEnrollments.map(e => ({
+        courseName: e.course_name || 'Unknown Course',
+        courseType: e.course_type || 'unknown',
+        enrollmentStatus: e.enrollment_status || 'unknown',
+        enrollmentDate: e.enrollment_created_at,
+        score: e.enrollment_score || 0
+      })),
+      sampleSize: userEnrollments.length,
+      hasMoreData: result.data?.has_more_data === true
+    };
   }
 
   getCourseId(course: any): number | null {
@@ -215,100 +211,18 @@ export async function POST(request: NextRequest) {
     // Parse message
     const email = extractEmail(message);
     const course = extractCourse(message);
-    const jobId = extractJobId(message);
     
-    console.log(`📋 Parsed - Email: ${email}, Course: ${course}, JobId: ${jobId}`);
+    console.log(`📋 Parsed - Email: ${email}, Course: ${course}`);
     
-    // Route to appropriate handler
-    
-    // 1. STATUS CHECK - FIXED: Forward to background API properly
-    if (PATTERNS.statusCheck(message) && jobId) {
-      console.log(`📊 Status check request for job: ${jobId} - Forwarding to background API`);
-      
-      try {
-        const statusResponse = await fetch(`${request.nextUrl.origin}/api/chat-bg?jobId=${jobId}`, {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        });
-        
-        if (!statusResponse.ok) {
-          throw new Error(`Background API error: ${statusResponse.status}`);
-        }
-        
-        const statusData = await statusResponse.json();
-        console.log(`✅ Status check successful for job: ${jobId}`);
-        
-        return NextResponse.json(statusData);
-      } catch (fetchError) {
-        console.error(`❌ Status check failed for job: ${jobId}:`, fetchError);
-        
-        return NextResponse.json({
-          response: `❌ **Status Check Failed**: ${jobId}
-
-Error: ${fetchError instanceof Error ? fetchError.message : 'Unknown error'}
-
-This might indicate the background service is not responding. Try creating a new job.`,
-          success: false,
-          timestamp: new Date().toISOString()
-        }, { status: 500 });
-      }
-    }
-    
-    // 2. USER COURSES - Use direct processing (no background jobs)
-    if (PATTERNS.userCoursesBackground(message)) {
-      if (!email) {
-        return NextResponse.json({
-          response: `❌ **Missing Email**: I need an email address to check enrollments.
-
-**Example**: "What courses is john@company.com enrolled in?"`,
-          success: false,
-          timestamp: new Date().toISOString()
-        });
-      }
-      
-      console.log(`⚡ Direct processing request for: ${email} - Forwarding to direct API`);
-      
-      try {
-        // Forward to direct processing API
-        const directResponse = await fetch(`${request.nextUrl.origin}/api/chat-direct`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message })
-        });
-        
-        if (!directResponse.ok) {
-          throw new Error(`Direct API error: ${directResponse.status}`);
-        }
-        
-        const directData = await directResponse.json();
-        
-        console.log(`✅ Direct processing completed for: ${email}`);
-        return NextResponse.json(directData);
-        
-      } catch (fetchError) {
-        console.error(`❌ Direct processing failed for: ${email}:`, fetchError);
-        
-        return NextResponse.json({
-          response: `❌ **Processing Failed**: ${email}
-
-Error: ${fetchError instanceof Error ? fetchError.message : 'Unknown error'}
-
-Please try again. If you have many enrollments, this might take a moment.`,
-          success: false,
-          timestamp: new Date().toISOString()
-        }, { status: 500 });
-      }
-    }
-    
-    // 3. SEARCH USERS - Quick operations
+    // 1. SEARCH USERS
     if (PATTERNS.searchUsers(message)) {
       const searchTerm = email || message.replace(/find|user|search/gi, '').trim();
       
       if (!searchTerm || searchTerm.length < 2) {
         return NextResponse.json({
-          response: `❌ **Missing Search Term**: I need a name or email to search for.`,
+          response: `❌ **Missing Search Term**: I need a name or email to search for.
+
+**Example**: "Find user mike@company.com"`,
           success: false,
           timestamp: new Date().toISOString()
         });
@@ -326,7 +240,7 @@ Please try again. If you have many enrollments, this might take a moment.`,
       
       const userList = users.slice(0, 5).map((user, i) => {
         const statusIcon = user.status === '1' ? '✅' : '❌';
-        return `${i + 1}. ${statusIcon} ${user.fullname} (${user.email})`;
+        return `${i + 1}. ${statusIcon} **${user.fullname}** (${user.email})`;
       }).join('\n');
       
       return NextResponse.json({
@@ -338,13 +252,15 @@ ${userList}${users.length > 5 ? `\n\n... and ${users.length - 5} more users` : '
       });
     }
     
-    // 4. SEARCH COURSES - Quick operations
+    // 2. SEARCH COURSES
     if (PATTERNS.searchCourses(message)) {
       const searchTerm = course || message.replace(/find|search|course/gi, '').trim();
       
       if (!searchTerm || searchTerm.length < 2) {
         return NextResponse.json({
-          response: `❌ **Missing Search Term**: I need a course name to search for.`,
+          response: `❌ **Missing Search Term**: I need a course name to search for.
+
+**Example**: "Find Python courses"`,
           success: false,
           timestamp: new Date().toISOString()
         });
@@ -363,7 +279,7 @@ ${userList}${users.length > 5 ? `\n\n... and ${users.length - 5} more users` : '
       const courseList = courses.slice(0, 5).map((course, i) => {
         const courseName = api.getCourseName(course);
         const courseId = api.getCourseId(course);
-        return `${i + 1}. ${courseName} (ID: ${courseId})`;
+        return `${i + 1}. **${courseName}** (ID: ${courseId})`;
       }).join('\n');
       
       return NextResponse.json({
@@ -375,27 +291,77 @@ ${courseList}${courses.length > 5 ? `\n\n... and ${courses.length - 5} more cour
       });
     }
     
+    // 3. QUICK ENROLLMENT CHECK (Sample Only)
+    if (PATTERNS.quickEnrollmentCheck(message)) {
+      if (!email) {
+        return NextResponse.json({
+          response: `❌ **Missing Email**: I need an email address to check enrollments.
+
+**Example**: "What courses is john@company.com enrolled in?"`,
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      try {
+        const enrollmentData = await api.getQuickEnrollments(email);
+        
+        return NextResponse.json({
+          response: `📚 **${email}'s Courses** (Sample)
+
+👤 **User**: ${enrollmentData.user.fullname}
+
+**📋 Sample Enrollments** (${enrollmentData.sampleSize} shown):
+
+${enrollmentData.enrollments.map((course: any, i: number) => {
+  let statusIcon = '📚';
+  if (course.enrollmentStatus === 'completed') statusIcon = '✅';
+  else if (course.enrollmentStatus === 'in_progress') statusIcon = '🔄';
+  else if (course.enrollmentStatus === 'suspended') statusIcon = '🚫';
+  
+  return `${i + 1}. ${statusIcon} **${course.enrollmentStatus.toUpperCase()}** - ${course.courseName}${course.score ? ` (Score: ${course.score})` : ''}`;
+}).join('\n')}
+
+${enrollmentData.hasMoreData ? `\n⚠️ **Note**: This user has additional enrollments not shown. This is a sample of the first 20 enrollments.` : ''}
+
+💡 **This is a quick sample view.** For complete enrollment data, consider upgrading to a plan with longer processing limits.`,
+          success: true,
+          limitedData: enrollmentData.hasMoreData,
+          timestamp: new Date().toISOString()
+        });
+        
+      } catch (error) {
+        return NextResponse.json({
+          response: `❌ **Error**: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+    }
+    
     // DEFAULT - Help message
     return NextResponse.json({
-      response: `🎯 **Docebo Assistant** - *Direct Processing*
+      response: `🎯 **Docebo Assistant** - *Simple & Reliable*
 
-I can help you with:
-
-• **📚 Check user courses**: "What courses is sarah@test.com enrolled in?" 
-  *(Direct processing with 5-minute caching)*
+I can help you with these **quick operations**:
 
 • **👥 Find users**: "Find user mike@company.com"
 
 • **📖 Find courses**: "Find Python courses"
 
+• **📚 Sample enrollments**: "What courses is sarah@test.com enrolled in?" 
+  *(Shows first 20 enrollments only)*
+
 **Your message**: "${message}"
 
-💡 *All requests are processed directly for immediate results.*
+💡 **Current Limitations**: 
+- Enrollment queries show sample data only (first 20 courses)
+- For complete data, consider upgrading processing limits
 
 **Examples:**
-- "What courses is pulkitpmalhotra@gmail.com enrolled in?"
-- "Find user sarah@test.com"
-- "Find Python courses"`,
+- "Find user pulkitpmalhotra@gmail.com"
+- "Find Python courses"
+- "What courses is pulkitpmalhotra@gmail.com enrolled in?" (sample)`,
       success: false,
       timestamp: new Date().toISOString()
     });
@@ -413,14 +379,20 @@ I can help you with:
 
 export async function GET() {
   return NextResponse.json({
-    status: 'Docebo Chat API - Direct Processing',
-    version: '3.0.0',
+    status: 'Simple Docebo Chat API',
+    version: '1.0.0',
     timestamp: new Date().toISOString(),
     features: [
-      'Direct processing for immediate results',
-      '5-minute caching for repeated requests', 
-      'Multi-page enrollment fetching',
-      'No background job dependencies'
+      'User search (up to 10 results)',
+      'Course search (up to 10 results)', 
+      'Sample enrollment check (first 20 only)',
+      'Fast & reliable within 30-second limit',
+      'No background processing complexity'
+    ],
+    limitations: [
+      'Enrollment data is sampled (first 20 courses)',
+      'No complete enrollment processing',
+      'Designed for quick operations only'
     ]
   });
 }
