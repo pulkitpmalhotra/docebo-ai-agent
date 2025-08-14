@@ -113,6 +113,38 @@ class IntentAnalyzer {
         confidence: 0.8
       },
       
+      // Session search patterns
+      {
+        intent: 'search_sessions_in_course',
+        patterns: [
+          /(?:search for sessions|find sessions|sessions in course|look for sessions)/i,
+          /(?:sessions).+(?:in course|course)/i,
+          /(?:course).+(?:sessions)/i
+        ],
+        extractEntities: () => ({
+          courseId: courseId,
+          courseName: courseName || this.extractCourseFromSessionQuery(message),
+          sessionFilter: this.extractSessionFilter(message)
+        }),
+        confidence: 0.8
+      },
+      
+      // Material search patterns
+      {
+        intent: 'search_materials_in_course',
+        patterns: [
+          /(?:search for materials|find materials|materials in course|training materials)/i,
+          /(?:materials).+(?:in course|course)/i,
+          /(?:course).+(?:materials)/i
+        ],
+        extractEntities: () => ({
+          courseId: courseId,
+          courseName: courseName || this.extractCourseFromMaterialQuery(message),
+          materialFilter: this.extractMaterialFilter(message)
+        }),
+        confidence: 0.8
+      },
+      
       // User enrollment patterns
       {
         intent: 'get_user_enrollments',
@@ -225,9 +257,42 @@ class IntentAnalyzer {
     return null;
   }
   
-  static extractAfterPattern(message: string, pattern: RegExp): string | null {
-    const match = message.match(pattern);
-    return match && match[1] ? match[1].trim() : null;
+  static extractCourseFromSessionQuery(message: string): string | null {
+    const patterns = [
+      /sessions in course\s+(.+)/i,
+      /in course\s+(.+?)(?:\s+sessions)?$/i,
+      /course\s+(.+?)\s+sessions/i
+    ];
+    
+    for (const pattern of patterns) {
+      const match = message.match(pattern);
+      if (match && match[1]) return match[1].trim();
+    }
+    return null;
+  }
+  
+  static extractCourseFromMaterialQuery(message: string): string | null {
+    const patterns = [
+      /materials in course\s+(.+)/i,
+      /in course\s+(.+?)(?:\s+materials)?$/i,
+      /course\s+(.+?)\s+materials/i
+    ];
+    
+    for (const pattern of patterns) {
+      const match = message.match(pattern);
+      if (match && match[1]) return match[1].trim();
+    }
+    return null;
+  }
+  
+  static extractSessionFilter(message: string): string | null {
+    const match = message.match(/(?:search for|find)\s+(.+?)\s+sessions/i);
+    return match && match[1] && match[1] !== 'for' ? match[1].trim() : null;
+  }
+  
+  static extractMaterialFilter(message: string): string | null {
+    const match = message.match(/(?:search for|find)\s+(.+?)\s+(?:materials|training materials)/i);
+    return match && match[1] && match[1] !== 'for' ? match[1].trim() : null;
   }
 }
 
@@ -456,8 +521,150 @@ class DoceboAPI {
     };
   }
 
-  getCourseName(course: any): string {
-    return course.title || course.course_name || course.name || 'Unknown Course';
+  async searchSessionsInCourse(courseIdentifier: string, sessionFilter?: string): Promise<any> {
+    const course = await this.findCourseByIdentifier(courseIdentifier);
+    const courseId = course.id || course.course_id;
+    
+    const sessionEndpoints = [
+      `/course/v1/courses/${courseId}/sessions`,
+      `/learn/v1/courses/${courseId}/sessions`,
+      `/course/v1/sessions?course_id=${courseId}`,
+      `/learn/v1/sessions?course_id=${courseId}`
+    ];
+    
+    for (const endpoint of sessionEndpoints) {
+      try {
+        const result = await this.apiRequest(endpoint);
+        if (result.data?.items?.length > 0) {
+          let sessions = result.data.items;
+          
+          if (sessionFilter) {
+            sessions = sessions.filter((s: any) => {
+              const sessionName = this.getSessionName(s).toLowerCase();
+              return sessionName.includes(sessionFilter.toLowerCase());
+            });
+          }
+          
+          return {
+            course: course,
+            sessions: sessions,
+            totalSessions: sessions.length,
+            endpoint: endpoint
+          };
+        }
+      } catch (error) {
+        continue;
+      }
+    }
+    
+    return {
+      course: course,
+      sessions: [],
+      totalSessions: 0,
+      endpoint: 'none_available'
+    };
+  }
+
+  async searchMaterialsInCourse(courseIdentifier: string, materialFilter?: string): Promise<any> {
+    const course = await this.findCourseByIdentifier(courseIdentifier);
+    const courseId = course.id || course.course_id;
+    
+    const materialEndpoints = [
+      `/course/v1/courses/${courseId}/lo`,
+      `/learn/v1/courses/${courseId}/lo`,
+      `/course/v1/courses/${courseId}/materials`,
+      `/learn/v1/courses/${courseId}/materials`
+    ];
+    
+    for (const endpoint of materialEndpoints) {
+      try {
+        const result = await this.apiRequest(endpoint);
+        if (result.data?.items?.length > 0) {
+          let materials = result.data.items;
+          
+          if (materialFilter) {
+            materials = materials.filter((m: any) => {
+              const materialName = this.getMaterialName(m).toLowerCase();
+              return materialName.includes(materialFilter.toLowerCase());
+            });
+          }
+          
+          return {
+            course: course,
+            materials: materials,
+            totalMaterials: materials.length,
+            endpoint: endpoint
+          };
+        }
+      } catch (error) {
+        continue;
+      }
+    }
+    
+    return {
+      course: course,
+      materials: [],
+      totalMaterials: 0,
+      endpoint: 'none_available'
+    };
+  }
+
+  async getUserCourseEnrollments(userId: string): Promise<any> {
+    console.log(`📚 Getting course enrollments for user: ${userId}`);
+    
+    const endpoints = [
+      `/course/v1/courses/enrollments?user_id=${userId}`,
+      `/learn/v1/enrollments?id_user=${userId}`,
+      `/course/v1/courses/enrollments?id_user=${userId}`
+    ];
+    
+    for (const endpoint of endpoints) {
+      try {
+        console.log(`🔍 Trying course enrollment endpoint: ${endpoint}`);
+        const result = await this.apiRequest(endpoint);
+        
+        if (result.data?.items?.length > 0) {
+          console.log(`✅ Found ${result.data.items.length} course enrollments from ${endpoint}`);
+          
+          const userEnrollments = result.data.items.filter((enrollment: any) => {
+            return enrollment.user_id?.toString() === userId.toString() || 
+                   enrollment.id_user?.toString() === userId.toString();
+          });
+          
+          return {
+            enrollments: userEnrollments,
+            totalCount: userEnrollments.length,
+            endpoint: endpoint,
+            success: true
+          };
+        }
+      } catch (error) {
+        console.log(`❌ Course enrollment endpoint ${endpoint} failed:`, error);
+        continue;
+      }
+    }
+    
+    return {
+      enrollments: [],
+      totalCount: 0,
+      endpoint: 'none_available',
+      success: false
+    };
+  }
+
+  formatCourseEnrollment(enrollment: any): any {
+    return {
+      courseId: enrollment.course_id || enrollment.id_course,
+      courseName: enrollment.course_name || enrollment.name || 'Unknown Course',
+      enrollmentStatus: enrollment.status || enrollment.enrollment_status || 'Unknown',
+      enrollmentDate: enrollment.enrollment_date || enrollment.enrolled_at || enrollment.date_enrolled,
+      completionDate: enrollment.completion_date || enrollment.completed_at || enrollment.date_completed,
+      progress: enrollment.progress || enrollment.completion_percentage || 0,
+      score: enrollment.score || enrollment.final_score || null,
+      timeSpent: enrollment.time_spent || enrollment.total_time || null,
+      lastAccess: enrollment.last_access || enrollment.last_access_date || null,
+      dueDate: enrollment.due_date || enrollment.deadline || null
+    };
   }
 
   getLearningPlanName(lp: any): string {
@@ -785,6 +992,137 @@ ${planList}${learningPlans.length > 10 ? `\n\n... and ${learningPlans.length - 1
   }
 }
 
+async function handleSessionSearch(entities: any) {
+  const courseIdentifier = entities.courseId || entities.courseName;
+  const sessionFilter = entities.sessionFilter;
+  
+  if (!courseIdentifier) {
+    return NextResponse.json({
+      response: `❌ **Missing Course**: I need a course name or ID to search for sessions.
+
+**Examples:**
+• "Search for sessions in course id 944"
+• "Search for sessions in course Python Programming"
+• "Find Day 1 sessions in course Working with Data in Python"`,
+      success: false,
+      timestamp: new Date().toISOString()
+    });
+  }
+  
+  try {
+    const result = await api.searchSessionsInCourse(courseIdentifier, sessionFilter);
+    
+    if (result.totalSessions === 0) {
+      return NextResponse.json({
+        response: `🎯 **No Sessions Found**: Course "${api.getCourseName(result.course)}" has no sessions${sessionFilter ? ` matching "${sessionFilter}"` : ''}
+
+**Course Details:**
+• **Name**: ${api.getCourseName(result.course)}
+• **ID**: ${result.course.id || result.course.course_id}`,
+        success: false,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    const sessionList = result.sessions.slice(0, 10).map((session: any, i: number) => {
+      const sessionName = api.getSessionName(session);
+      const sessionId = session.id || session.session_id || 'N/A';
+      const instructor = session.instructor || 'Not assigned';
+      const startDate = session.start_date || session.date_begin || 'Not scheduled';
+      
+      return `${i + 1}. **${sessionName}** (ID: ${sessionId})
+   👨‍🏫 ${instructor} | 📅 ${startDate}`;
+    }).join('\n\n');
+    
+    return NextResponse.json({
+      response: `🎯 **Sessions in Course**: ${api.getCourseName(result.course)}
+
+📚 **Course ID**: ${result.course.id || result.course.course_id}
+${sessionFilter ? `🔍 **Filter**: "${sessionFilter}"\n` : ''}
+📊 **Total Sessions**: ${result.totalSessions}
+
+${sessionList}${result.totalSessions > 10 ? `\n\n... and ${result.totalSessions - 10} more sessions` : ''}`,
+      success: true,
+      totalCount: result.totalSessions,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    return NextResponse.json({
+      response: `❌ **Error**: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      success: false,
+      timestamp: new Date().toISOString()
+    });
+  }
+}
+
+async function handleMaterialSearch(entities: any) {
+  const courseIdentifier = entities.courseId || entities.courseName;
+  const materialFilter = entities.materialFilter;
+  
+  if (!courseIdentifier) {
+    return NextResponse.json({
+      response: `❌ **Missing Course**: I need a course name or ID to search for materials.
+
+**Examples:**
+• "Search for materials in course id 944"
+• "Search for materials in course Python Programming"
+• "Find Python materials in course Working with Data in Python"`,
+      success: false,
+      timestamp: new Date().toISOString()
+    });
+  }
+  
+  try {
+    const result = await api.searchMaterialsInCourse(courseIdentifier, materialFilter);
+    
+    if (result.totalMaterials === 0) {
+      return NextResponse.json({
+        response: `📖 **No Materials Found**: Course "${api.getCourseName(result.course)}" has no training materials${materialFilter ? ` matching "${materialFilter}"` : ''}
+
+**Course Details:**
+• **Name**: ${api.getCourseName(result.course)}
+• **ID**: ${result.course.id || result.course.course_id}`,
+        success: false,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    const materialList = result.materials.slice(0, 10).map((material: any, i: number) => {
+      const materialName = api.getMaterialName(material);
+      const materialId = material.id || material.material_id || 'N/A';
+      const type = material.type || material.material_type || 'Unknown';
+      
+      const typeIcon = type.toLowerCase() === 'video' ? '🎥' : 
+                      type.toLowerCase() === 'pdf' ? '📄' : 
+                      type.toLowerCase() === 'scorm' ? '📦' : '📖';
+      
+      return `${i + 1}. ${typeIcon} **${materialName}** (ID: ${materialId})
+   📁 Type: ${type}`;
+    }).join('\n\n');
+    
+    return NextResponse.json({
+      response: `📖 **Materials in Course**: ${api.getCourseName(result.course)}
+
+📚 **Course ID**: ${result.course.id || result.course.course_id}
+${materialFilter ? `🔍 **Filter**: "${materialFilter}"\n` : ''}
+📊 **Total Materials**: ${result.totalMaterials}
+
+${materialList}${result.totalMaterials > 10 ? `\n\n... and ${result.totalMaterials - 10} more materials` : ''}`,
+      success: true,
+      totalCount: result.totalMaterials,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    return NextResponse.json({
+      response: `❌ **Error**: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      success: false,
+      timestamp: new Date().toISOString()
+    });
+  }
+}
+
 async function handleUserEnrollments(entities: any) {
   const identifier = entities.email || entities.userId;
   
@@ -803,22 +1141,55 @@ async function handleUserEnrollments(entities: any) {
   
   try {
     const userDetails = await api.getUserDetails(identifier);
+    const userId = userDetails.id;
+    
+    // Get course enrollments
+    const courseResult = await api.getUserCourseEnrollments(userId);
+    
+    if (!courseResult.success || courseResult.totalCount === 0) {
+      return NextResponse.json({
+        response: `📊 **User Enrollments**: ${userDetails.fullname}
+
+👥 **User**: ${userDetails.email}
+🆔 **User ID**: ${userId}
+
+📚 **No Course Enrollments Found**
+
+This user is not currently enrolled in any courses, or the enrollment data is not accessible through the API.
+
+**API Endpoint Tested**: ${courseResult.endpoint}`,
+        success: true,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    // Format course enrollments
+    const formattedCourses = courseResult.enrollments.slice(0, 20).map((enrollment: any, i: number) => {
+      const formatted = api.formatCourseEnrollment(enrollment);
+      const statusIcon = formatted.enrollmentStatus === 'completed' ? '✅' : 
+                        formatted.enrollmentStatus === 'in_progress' ? '🔄' : 
+                        formatted.enrollmentStatus === 'not_started' ? '⏳' : '📚';
+      
+      const progressText = formatted.progress ? ` (${formatted.progress}%)` : '';
+      const scoreText = formatted.score ? ` | Score: ${formatted.score}` : '';
+      
+      return `${i + 1}. ${statusIcon} **${formatted.courseName}**${progressText}${scoreText}
+   📅 Enrolled: ${formatted.enrollmentDate || 'Unknown'}`;
+    }).join('\n\n');
     
     return NextResponse.json({
       response: `📊 **User Enrollments**: ${userDetails.fullname}
 
 👥 **User**: ${userDetails.email}
-🆔 **User ID**: ${userDetails.id}
+🆔 **User ID**: ${userId}
 
-📚 **Enrollment data retrieval is being implemented**
+📚 **Course Enrollments** (${courseResult.totalCount} total):
 
-This feature will show:
-- Course enrollments with progress
-- Learning plan enrollments
-- Completion status and scores
+${formattedCourses}${courseResult.totalCount > 20 ? `\n\n... and ${courseResult.totalCount - 20} more courses` : ''}
 
-**Current Status**: User found and verified`,
+**API Endpoint Used**: ${courseResult.endpoint}`,
       success: true,
+      data: courseResult,
       timestamp: new Date().toISOString()
     });
     
@@ -828,6 +1199,7 @@ This feature will show:
 
 **Suggestions:**
 • Verify the user email/ID is correct
+• Check if enrollment API endpoints are accessible
 • Try: "Find user ${identifier}" to confirm user exists`,
       success: false,
       timestamp: new Date().toISOString()
@@ -892,6 +1264,12 @@ export async function POST(request: NextRequest) {
           
         case 'get_learning_plan_info':
           return await handleLearningPlanInfo(analysis.entities);
+          
+        case 'search_sessions_in_course':
+          return await handleSessionSearch(analysis.entities);
+          
+        case 'search_materials_in_course':
+          return await handleMaterialSearch(analysis.entities);
           
         case 'search_users':
           return await handleUserSearch(analysis.entities);
