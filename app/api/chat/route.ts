@@ -1208,15 +1208,32 @@ async function handleUserEnrollments(entities: any) {
     if (enrollmentData.courses.success && enrollmentData.totalCourses > 0) {
       console.log(`📚 Processing ${enrollmentData.totalCourses} course enrollments`);
       
-      const formattedCourses = enrollmentData.courses.enrollments.slice(0, 8).map((enrollment: any, i: number) => {
+      const formattedCourses = enrollmentData.courses.enrollments.slice(0, 100).map((enrollment: any, i: number) => {
         const formatted = api.formatCourseEnrollment(enrollment);
-        const statusIcon = formatted.enrollmentStatus === 'completed' ? '✅' : 
-                          formatted.enrollmentStatus === 'in_progress' ? '🔄' : 
-                          formatted.enrollmentStatus === 'not_started' ? '⏳' : 
-                          formatted.enrollmentStatus === 'enrolled' ? '📚' : '❓';
         
-        const progressText = formatted.progress > 0 ? ` (${formatted.progress}% complete)` : '';
-        const scoreText = formatted.score ? ` | 🎯 Score: ${formatted.score}` : '';
+        // Status with appropriate icons
+        let statusIcon = '📚';
+        let statusText = '';
+        
+        if (formatted.enrollmentStatus === 'completed') {
+          statusIcon = '✅';
+          statusText = 'Completed';
+        } else if (formatted.enrollmentStatus === 'in_progress' || formatted.enrollmentStatus === 'in-progress') {
+          statusIcon = '🔄';
+          statusText = 'In Progress';
+        } else if (formatted.enrollmentStatus === 'not_started' || formatted.enrollmentStatus === 'not-started') {
+          statusIcon = '⏳';
+          statusText = 'Not Started';
+        } else if (formatted.enrollmentStatus === 'enrolled') {
+          statusIcon = '📚';
+          statusText = 'Enrolled';
+        } else {
+          statusIcon = '❓';
+          statusText = formatted.enrollmentStatus || 'Unknown';
+        }
+        
+        const progressText = formatted.progress > 0 ? ` (${formatted.progress}%)` : '';
+        const scoreText = formatted.score ? ` | 🎯 ${formatted.score}` : '';
         
         // Format date nicely
         let dateText = '';
@@ -1235,27 +1252,45 @@ async function handleUserEnrollments(entities: any) {
           dateText = 'Date not available';
         }
         
-        return `${i + 1}. ${statusIcon} **${formatted.courseName}**${progressText}${scoreText}
+        return `${i + 1}. ${statusIcon} **${formatted.courseName}** - *${statusText}*${progressText}${scoreText}
    📅 Enrolled: ${dateText}${formatted.completionDate ? ` | ✅ Completed: ${formatted.completionDate}` : ''}`;
       }).join('\n\n');
       
       courseSection = `📚 **Courses** (${enrollmentData.totalCourses} total)
 
-${formattedCourses}${enrollmentData.totalCourses > 8 ? `\n\n✨ **Plus ${enrollmentData.totalCourses - 8} more courses!** Great learning progress! 🎉` : ''}`;
+${formattedCourses}`;
     }
     
     let learningPlanSection = '';
     if (enrollmentData.learningPlans.success && enrollmentData.totalLearningPlans > 0) {
       console.log(`📋 Processing ${enrollmentData.totalLearningPlans} learning plan enrollments`);
       
-      const formattedPlans = enrollmentData.learningPlans.enrollments.slice(0, 5).map((enrollment: any, i: number) => {
+      const formattedPlans = enrollmentData.learningPlans.enrollments.slice(0, 100).map((enrollment: any, i: number) => {
         const formatted = api.formatLearningPlanEnrollment(enrollment);
-        const statusIcon = formatted.enrollmentStatus === 'completed' ? '✅' : 
-                          formatted.enrollmentStatus === 'in_progress' ? '🔄' : 
-                          formatted.enrollmentStatus === 'not_started' ? '⏳' : '📋';
         
-        const progressText = formatted.progress > 0 ? ` (${formatted.progress}% complete)` : '';
-        const coursesText = formatted.totalCourses > 0 ? ` | 📚 ${formatted.completedCourses}/${formatted.totalCourses} courses done` : '';
+        // Status with appropriate icons
+        let statusIcon = '📋';
+        let statusText = '';
+        
+        if (formatted.enrollmentStatus === 'completed') {
+          statusIcon = '✅';
+          statusText = 'Completed';
+        } else if (formatted.enrollmentStatus === 'in_progress' || formatted.enrollmentStatus === 'in-progress') {
+          statusIcon = '🔄';
+          statusText = 'In Progress';
+        } else if (formatted.enrollmentStatus === 'not_started' || formatted.enrollmentStatus === 'not-started') {
+          statusIcon = '⏳';
+          statusText = 'Not Started';
+        } else if (formatted.enrollmentStatus === 'enrolled') {
+          statusIcon = '📋';
+          statusText = 'Enrolled';
+        } else {
+          statusIcon = '❓';
+          statusText = formatted.enrollmentStatus || 'Unknown';
+        }
+        
+        const progressText = formatted.progress > 0 ? ` (${formatted.progress}%)` : '';
+        const coursesText = formatted.totalCourses > 0 ? ` | 📚 ${formatted.completedCourses}/${formatted.totalCourses} courses` : '';
         
         // Format date nicely
         let dateText = '';
@@ -1274,13 +1309,13 @@ ${formattedCourses}${enrollmentData.totalCourses > 8 ? `\n\n✨ **Plus ${enrollm
           dateText = 'Date not available';
         }
         
-        return `${i + 1}. ${statusIcon} **${formatted.learningPlanName}**${progressText}${coursesText}
-   📅 Started: ${dateText}`;
+        return `${i + 1}. ${statusIcon} **${formatted.learningPlanName}** - *${statusText}*${progressText}${coursesText}
+   📅 Enrolled: ${dateText}`;
       }).join('\n\n');
       
       learningPlanSection = `🎯 **Learning Plans** (${enrollmentData.totalLearningPlans} total)
 
-${formattedPlans}${enrollmentData.totalLearningPlans > 5 ? `\n\n✨ **Plus ${enrollmentData.totalLearningPlans - 5} more learning paths!**` : ''}`;
+${formattedPlans}`;
     } else {
       // Try to provide helpful info about why no learning plans were found
       learningPlanSection = `🎯 **Learning Plans**
@@ -1312,14 +1347,68 @@ It looks like ${userDetails.fullname.split(' ')[0]} isn't enrolled in any course
       });
     }
     
-    // Calculate some friendly stats
-    const completedCourses = enrollmentData.courses.enrollments?.filter((e: any) => 
-      api.formatCourseEnrollment(e).enrollmentStatus === 'completed'
-    ).length || 0;
+    // Calculate comprehensive stats for courses
+    const courseStats = {
+      completed: 0,
+      inProgress: 0,
+      notStarted: 0,
+      enrolled: 0,
+      unknown: 0
+    };
     
-    const inProgressCourses = enrollmentData.courses.enrollments?.filter((e: any) => 
-      api.formatCourseEnrollment(e).enrollmentStatus === 'in_progress'
-    ).length || 0;
+    enrollmentData.courses.enrollments?.forEach((e: any) => {
+      const status = api.formatCourseEnrollment(e).enrollmentStatus;
+      if (status === 'completed') courseStats.completed++;
+      else if (status === 'in_progress' || status === 'in-progress') courseStats.inProgress++;
+      else if (status === 'not_started' || status === 'not-started') courseStats.notStarted++;
+      else if (status === 'enrolled') courseStats.enrolled++;
+      else courseStats.unknown++;
+    });
+    
+    // Calculate comprehensive stats for learning plans
+    const lpStats = {
+      completed: 0,
+      inProgress: 0,
+      notStarted: 0,
+      enrolled: 0,
+      unknown: 0
+    };
+    
+    enrollmentData.learningPlans.enrollments?.forEach((e: any) => {
+      const status = api.formatLearningPlanEnrollment(e).enrollmentStatus;
+      if (status === 'completed') lpStats.completed++;
+      else if (status === 'in_progress' || status === 'in-progress') lpStats.inProgress++;
+      else if (status === 'not_started' || status === 'not-started') lpStats.notStarted++;
+      else if (status === 'enrolled') lpStats.enrolled++;
+      else lpStats.unknown++;
+    });
+    
+    // Build comprehensive stats display
+    let courseStatsText = '';
+    if (enrollmentData.totalCourses > 0) {
+      const statParts = [];
+      if (courseStats.completed > 0) statParts.push(`${courseStats.completed} completed`);
+      if (courseStats.inProgress > 0) statParts.push(`${courseStats.inProgress} in progress`);
+      if (courseStats.notStarted > 0) statParts.push(`${courseStats.notStarted} not started`);
+      if (courseStats.enrolled > 0) statParts.push(`${courseStats.enrolled} enrolled`);
+      if (courseStats.unknown > 0) statParts.push(`${courseStats.unknown} other status`);
+      courseStatsText = `**${enrollmentData.totalCourses} courses total** (${statParts.join(', ')})`;
+    } else {
+      courseStatsText = '**0 courses**';
+    }
+    
+    let lpStatsText = '';
+    if (enrollmentData.totalLearningPlans > 0) {
+      const statParts = [];
+      if (lpStats.completed > 0) statParts.push(`${lpStats.completed} completed`);
+      if (lpStats.inProgress > 0) statParts.push(`${lpStats.inProgress} in progress`);
+      if (lpStats.notStarted > 0) statParts.push(`${lpStats.notStarted} not started`);
+      if (lpStats.enrolled > 0) statParts.push(`${lpStats.enrolled} enrolled`);
+      if (lpStats.unknown > 0) statParts.push(`${lpStats.unknown} other status`);
+      lpStatsText = `**${enrollmentData.totalLearningPlans} learning plans** (${statParts.join(', ')})`;
+    } else {
+      lpStatsText = '**0 learning plans**';
+    }
     
     return NextResponse.json({
       response: `📊 **${userDetails.fullname}'s Learning Journey**
@@ -1329,8 +1418,8 @@ It looks like ${userDetails.fullname.split(' ')[0]} isn't enrolled in any course
 ${sections}
 
 🎉 **Quick Stats:**
-• 📚 **${enrollmentData.totalCourses} courses total** (${completedCourses} completed, ${inProgressCourses} in progress)
-• 🎯 **${enrollmentData.totalLearningPlans} learning plans**
+• 📚 ${courseStatsText}
+• 🎯 ${lpStatsText}
 • 🏆 **Status**: ${userDetails.status} ${userDetails.level}
 
 *Keep up the great work! 🌟*`,
