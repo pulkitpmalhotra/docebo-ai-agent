@@ -1064,6 +1064,7 @@ ${userList}${users.length > 100 ? `\n\n... and ${users.length - 100} more users`
   }
 }
 
+// Fixed handleCourseSearch function with correct syntax
 async function handleCourseSearch(entities: any) {
   const searchTerm = entities.searchTerm;
   
@@ -1081,7 +1082,7 @@ async function handleCourseSearch(entities: any) {
   }
   
   try {
-    const courses = await api.searchCourses(searchTerm, 100);
+    const courses = await api.searchCourses(searchTerm, 20);
     
     if (courses.length === 0) {
       return NextResponse.json({
@@ -1091,23 +1092,40 @@ async function handleCourseSearch(entities: any) {
       });
     }
     
-    const courseList = courses.slice(0, 100).map((course, i) => {
+    // Enhanced course list with enrollment data (similar to learning plan format)
+    const courseList = courses.slice(0, 15).map((course, i) => {
       const courseName = api.getCourseName(course);
       const courseId = course.id || course.course_id || 'N/A';
+      
+      // Status with icon (similar to learning plan)
       const status = course.status || course.course_status || 'Unknown';
-      const statusIcon = status === 'published' ? '✅' : '❌';
+      const statusText = status === 'published' ? 'Published ✅' : 
+                        status === 'draft' ? 'Draft 📝' : 
+                        status === 'suspended' ? 'Suspended 🚫' : 
+                        `${status} ❓`;
+      
+      // Enrollment count (similar to learning plan enrollment count)
       const enrollmentCount = course.enrolled_count !== undefined ? course.enrolled_count : 0;
-    return `${i + 1}. **${courseName}** (ID: ${courseId})
+      
+      // Additional useful info
+      const courseType = course.type || course.course_type || 'Unknown';
+      
+      // Format similar to learning plan search results
+      return `${i + 1}. **${courseName}** (ID: ${courseId})
    📊 ${statusText} | 👥 ${enrollmentCount} enrollments | 🔗 ${courseType}`;
+    }).join('\n\n');
     
     return NextResponse.json({
       response: `📚 **Course Search Results**: Found ${courses.length} courses
 
-${courseList}${courses.length > 100 ? `\n\n... and ${courses.length - 100} more courses` : ''}`,
+${courseList}${courses.length > 15 ? `\n\n... and ${courses.length - 15} more courses` : ''}
+
+**Search Term**: "${searchTerm}"`,
       success: true,
       totalCount: courses.length,
       timestamp: new Date().toISOString()
-    });
+    }); // <- This closing brace was missing!
+    
   } catch (error) {
     return NextResponse.json({
       response: `❌ **Error**: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -1116,7 +1134,6 @@ ${courseList}${courses.length > 100 ? `\n\n... and ${courses.length - 100} more 
     });
   }
 }
-
 async function handleLearningPlanSearch(entities: any) {
   const searchTerm = entities.searchTerm;
   
