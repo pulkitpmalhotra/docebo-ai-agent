@@ -648,7 +648,7 @@ class DoceboAPI {
 let api: DoceboAPI;
 // Part 3: Handler Functions
 
-// Debug version - let's see what fields are actually available
+// Final optimized handleCourseInfo function
 async function handleCourseInfo(entities: any) {
   const identifier = entities.courseId || entities.courseName;
   
@@ -670,61 +670,70 @@ async function handleCourseInfo(entities: any) {
     const courseName = api.getCourseName(course);
     const courseId = course.id || course.course_id || course.idCourse;
     
-    // DEBUG: Let's see all available fields
-    console.log('🔍 DEBUG: Course object keys:', Object.keys(course));
-    console.log('🔍 DEBUG: Course object:', JSON.stringify(course, null, 2));
-    
-    // Enhanced field mapping with better property access
-    const status = course.status || course.course_status || 'Unknown';
-    const statusIcon = status === 'published' ? '✅' : status === 'draft' ? '📝' : status === 'suspended' ? '🚫' : '❓';
+    // Status mapping
+    const status = course.status || 'Unknown';
     const statusText = status === 'published' ? 'Published ✅' : 
                       status === 'draft' ? 'Draft 📝' : 
                       status === 'suspended' ? 'Suspended 🚫' : 
                       `${status} ❓`;
     
-    const description = course.description || course.course_description || 'No description available';
-    const courseType = course.course_type || course.type || 'Not specified';
-    const code = course.code || course.course_code || 'Not specified';
+    // Clean up HTML description
+    const rawDescription = course.description || course.short_description || 'No description available';
+    const description = rawDescription
+      .replace(/<[^>]*>/g, '') // Remove HTML tags
+      .replace(/&amp;/g, '&')  // Fix HTML entities
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .trim();
     
-    // Fix language and category mapping
-    const language = course.language?.name || course.language?.code || course.lang_code || course.language || 'Not specified';
-    const category = course.category?.name || course.category?.title || course.course_category || 'Not specified';
+    // Basic course information
+    const courseType = course.type || 'Not specified';
+    const code = course.code || 'Not specified';
+    const uid = course.uid || 'Not specified';
+    const slugName = course.slug_name || 'Not specified';
     
-    const credits = course.credits || course.course_credits || 'No credits assigned';
+    // Language and category (now working correctly)
+    const language = course.language?.name || course.language?.code || 'Not specified';
+    const category = course.category?.name || course.category?.title || 'Not specified';
     
-    // Fix dates - try multiple field names
-    const createdDate = course.date_creation || course.created_at || course.creation_date || course.date_created || 'Not available';
-    const modifiedDate = course.date_modification || course.updated_at || course.modified_date || course.date_modified || 'Not available';
-    const publishedDate = course.date_publication || course.published_at || course.date_published || 'Not available';
+    // Credits and rating (fix rating object issue)
+    const credits = course.credits || 'No credits assigned';
+    const rating = course.rating?.average || course.rating?.value || course.average_rating || 'Not rated';
+    const ratingText = rating !== 'Not rated' ? `${rating}/5` : 'Not rated';
     
-    // Fix enrollment stats - check for nested objects
-    const enrolledCount = course.enrolled_count || course.total_enrolled || course.user_count || 
-                         course.enrollments?.total || course.statistics?.enrolled || 'Not available';
-    const completedCount = course.completed_count || course.total_completed || 
-                          course.statistics?.completed || 'Not available';
-    const waitingCount = course.waiting_count || course.total_waiting || 
-                        course.statistics?.waiting || 'Not available';
+    // Dates (using the correct field names from debug)
+    const createdDate = course.created_on || 'Not available';
+    const modifiedDate = course.updated_on || 'Not available';
     
-    // Additional course details
-    const duration = course.duration || course.course_duration || course.estimated_duration || 'Not specified';
-    const difficulty = course.difficulty || course.level || course.difficulty_level || 'Not specified';
-    const price = course.price !== undefined ? `$${course.price}` : 
-                 course.enrollment_price !== undefined ? `$${course.enrollment_price}` : 'Not specified';
+    // Duration and completion time
+    const avgCompletionTime = course.average_completion_time || 'Not specified';
+    const duration = course.duration || avgCompletionTime || 'Not specified';
     
-    // Learning objects/materials count
-    const learningObjectsCount = course.learning_objects_count || course.lo_count || course.materials_count || 
-                                course.learning_objects?.length || 'Not available';
+    // Additional fields from the available list
+    const thumbnail = course.thumbnail ? 'Available' : 'Not available';
+    const cover = course.cover ? 'Available' : 'Not available';
+    const headerLayout = course.header_layout || 'Default';
     
-    // Course settings - check boolean values properly
-    const isAutoEnroll = course.auto_enroll === true || course.automatic_enrollment === true ? 'Yes' : 'No';
-    const isVisible = course.is_visible !== false && course.visible !== false ? 'Yes' : 'No';
-    const allowCertificate = course.allow_certificate === true || course.has_certificate === true || 
-                           course.certificate_enabled === true ? 'Yes' : 'No';
+    // Skills (if available)
+    const skills = course.skills?.length > 0 ? 
+      course.skills.map((skill: any) => skill.name || skill).slice(0, 3).join(', ') : 
+      'Not specified';
     
-    // Additional useful fields that might be available
-    const instructor = course.instructor?.name || course.instructor?.fullname || course.teacher || 'Not specified';
-    const rating = course.rating !== undefined ? `${course.rating}/5` : 'Not rated';
-    const sessionCount = course.session_count || course.sessions?.length || 'Not available';
+    // Creator information
+    const createdBy = course.created_by?.fullname || course.created_by?.name || 'Not available';
+    
+    // Try to get enrollment data (might need separate API call)
+    let enrollmentInfo = '';
+    try {
+      // This might require a separate API call to get enrollment stats
+      enrollmentInfo = `📈 **Enrollment Statistics**:
+• **Enrollment data**: Available via separate API call
+• **Average Completion Time**: ${avgCompletionTime}`;
+    } catch (error) {
+      enrollmentInfo = `📈 **Enrollment Statistics**:
+• **Enrollment data**: Requires separate API endpoint`;
+    }
     
     return NextResponse.json({
       response: `📚 **Course Details**: ${courseName}
@@ -732,6 +741,7 @@ async function handleCourseInfo(entities: any) {
 🆔 **Course ID**: ${courseId}
 📊 **Status**: ${statusText}
 🎯 **Code**: ${code}
+🔗 **UID**: ${uid}
 ⭐ **Credits**: ${credits}
 
 📝 **Description**: 
@@ -741,33 +751,24 @@ ${description}
 • **Type**: ${courseType}
 • **Language**: ${language}
 • **Category**: ${category}
-• **Difficulty**: ${difficulty}
-• **Duration**: ${duration}
-• **Price**: ${price}
-• **Instructor**: ${instructor}
-• **Rating**: ${rating}
+• **Slug**: ${slugName}
+• **Rating**: ${ratingText}
+• **Skills**: ${skills}
 
-📈 **Enrollment Statistics**:
-• **👥 Total Enrolled**: ${enrolledCount}
-• **✅ Completed**: ${completedCount}
-• **⏳ Waiting**: ${waitingCount}
-• **📖 Learning Objects**: ${learningObjectsCount}
-• **🎯 Sessions**: ${sessionCount}
+${enrollmentInfo}
 
-⚙️ **Course Settings**:
-• **Auto Enrollment**: ${isAutoEnroll}
-• **Visible**: ${isVisible}
-• **Certificate Available**: ${allowCertificate}
+🎨 **Media & Layout**:
+• **Thumbnail**: ${thumbnail}
+• **Cover Image**: ${cover}
+• **Header Layout**: ${headerLayout}
 
 📅 **Timeline**:
 • **Created**: ${createdDate}
-• **Last Modified**: ${modifiedDate}
-• **Published**: ${publishedDate}
+• **Created By**: ${createdBy}
+• **Last Updated**: ${modifiedDate}
+• **Average Completion Time**: ${avgCompletionTime}
 
-**Course found successfully!**
-
-🔍 **DEBUG INFO** (remove this after testing):
-Available fields: ${Object.keys(course).slice(0, 20).join(', ')}...`,
+**Course found successfully!**`,
       success: true,
       data: course,
       timestamp: new Date().toISOString()
