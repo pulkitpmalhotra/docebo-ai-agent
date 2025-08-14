@@ -345,6 +345,8 @@ function extractTrainingMaterial(message: string): string | null {
 }
 
 // Docebo API client
+// Clean DoceboAPI class - replace the existing class in /api/chat/route.ts
+
 class DoceboAPI {
   private config: any;
   private accessToken?: string;
@@ -586,33 +588,9 @@ class DoceboAPI {
       rawData: learningPlan // Include raw data for debugging
     };
   }
-  
+
   async getUserDetails(email: string): Promise<any> {
     const users = await this.apiRequest('/manage/v1/user', {
-      search_text: email,
-      page_size: 5
-    });
-    
-    const user = users.data?.items?.find((u: any) => u.email.toLowerCase() === email.toLowerCase());
-    
-    if (!user) {
-      throw new Error(`User not found: ${email}`);
-    }
-
-    return {
-      id: user.user_id || user.id,
-      fullname: user.fullname || `${user.firstname || ''} ${user.lastname || ''}`.trim() || 'Not available',
-      email: user.email,
-      username: user.username || 'Not available',
-      status: user.status === '1' ? 'Active' : user.status === '0' ? 'Inactive' : `Status: ${user.status}`,
-      level: user.level === 'godadmin' ? 'Superadmin' : user.level || 'User',
-      creationDate: user.register_date || user.creation_date || user.created_at || 'Not available',
-      lastAccess: user.last_access_date || user.last_access || user.last_login || 'Not available',
-      timezone: user.timezone || 'Not specified',
-      language: user.language || user.lang_code || 'Not specified',
-      department: user.department || 'Not specified'
-    };
-  }
       search_text: email,
       page_size: 5
     });
