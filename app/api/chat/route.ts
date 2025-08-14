@@ -896,7 +896,7 @@ async function handleSessionSearch(entities: any) {
       });
     }
     
-    const sessionList = result.sessions.slice(0, 15).map((session: any, i: number) => {
+    const sessionList = result.sessions.slice(0, 100).map((session: any, i: number) => {
       const sessionName = api.getSessionName(session);
       const sessionId = session.id || session.session_id || 'N/A';
       const instructor = session.instructor || 'Not assigned';
@@ -913,7 +913,7 @@ async function handleSessionSearch(entities: any) {
 ${sessionFilter ? `🔍 **Filter**: "${sessionFilter}"\n` : ''}
 📊 **Total Sessions**: ${result.totalSessions}
 
-${sessionList}${result.totalSessions > 15 ? `\n\n... and ${result.totalSessions - 15} more sessions` : ''}`,
+${sessionList}${result.totalSessions > 100 ? `\n\n... and ${result.totalSessions - 100} more sessions` : ''}`,
       success: true,
       totalCount: result.totalSessions,
       timestamp: new Date().toISOString()
@@ -1041,7 +1041,7 @@ async function handleUserSearch(entities: any) {
         });
       }
       
-      const userList = users.slice(0, 15).map((user, i) => {
+      const userList = users.slice(0, 100).map((user, i) => {
         const statusIcon = user.status === '1' ? '✅' : '❌';
         return `${i + 1}. ${statusIcon} **${user.fullname}** (${user.email})`;
       }).join('\n');
@@ -1049,7 +1049,7 @@ async function handleUserSearch(entities: any) {
       return NextResponse.json({
         response: `👥 **User Search Results**: Found ${users.length} users
 
-${userList}${users.length > 15 ? `\n\n... and ${users.length - 15} more users` : ''}`,
+${userList}${users.length > 100 ? `\n\n... and ${users.length - 100} more users` : ''}`,
         success: true,
         totalCount: users.length,
         timestamp: new Date().toISOString()
@@ -1091,7 +1091,7 @@ async function handleCourseSearch(entities: any) {
       });
     }
     
-    const courseList = courses.slice(0, 15).map((course, i) => {
+    const courseList = courses.slice(0, 100).map((course, i) => {
       const courseName = api.getCourseName(course);
       const courseId = course.id || course.course_id || 'N/A';
       const status = course.status || course.course_status || 'Unknown';
@@ -1102,7 +1102,7 @@ async function handleCourseSearch(entities: any) {
     return NextResponse.json({
       response: `📚 **Course Search Results**: Found ${courses.length} courses
 
-${courseList}${courses.length > 15 ? `\n\n... and ${courses.length - 15} more courses` : ''}`,
+${courseList}${courses.length > 100 ? `\n\n... and ${courses.length - 100} more courses` : ''}`,
       success: true,
       totalCount: courses.length,
       timestamp: new Date().toISOString()
@@ -1148,7 +1148,7 @@ async function handleLearningPlanSearch(entities: any) {
       });
     }
     
-    const planList = learningPlans.slice(0, 15).map((plan, i) => {
+    const planList = learningPlans.slice(0, 100).map((plan, i) => {
       const planName = api.getLearningPlanName(plan);
       const planId = plan.learning_plan_id || plan.id || 'N/A';
       const status = plan.is_published ? 'Published ✅' : 'Unpublished ❌';
@@ -1161,7 +1161,7 @@ async function handleLearningPlanSearch(entities: any) {
     return NextResponse.json({
       response: `📚 **Learning Plan Search Results**: Found ${learningPlans.length} learning plans
 
-${planList}${learningPlans.length > 15 ? `\n\n... and ${learningPlans.length - 15} more learning plans` : ''}
+${planList}${learningPlans.length > 100 ? `\n\n... and ${learningPlans.length - 100} more learning plans` : ''}
 
 **API Endpoint Used**: \`/learningplan/v1/learningplans\``,
       success: true,
