@@ -502,7 +502,7 @@ For immediate assistance, please visit:
     helpRequest: true,
     timestamp: new Date().toISOString()
   });
-} from 'next/server';
+}
 
 // Environment configuration
 function validateEnvironmentVariable(name: string, value: string | undefined): string {
