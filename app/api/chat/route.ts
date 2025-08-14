@@ -648,7 +648,7 @@ class DoceboAPI {
 let api: DoceboAPI;
 // Part 3: Handler Functions
 
-// Final optimized handleCourseInfo function
+// Final polished handleCourseInfo function
 async function handleCourseInfo(entities: any) {
   const identifier = entities.courseId || entities.courseName;
   
@@ -677,14 +677,22 @@ async function handleCourseInfo(entities: any) {
                       status === 'suspended' ? 'Suspended 🚫' : 
                       `${status} ❓`;
     
-    // Clean up HTML description
+    // Clean up HTML description and preserve formatting
     const rawDescription = course.description || course.short_description || 'No description available';
-    const description = rawDescription
-      .replace(/<[^>]*>/g, '') // Remove HTML tags
+    let description = rawDescription
+      .replace(/<\/li>/g, '\n• ') // Convert closing li tags to bullet points
+      .replace(/<li>/g, '• ') // Convert opening li tags to bullet points
+      .replace(/<\/ul>/g, '\n') // Add line break after lists
+      .replace(/<ul>/g, '\n') // Add line break before lists
+      .replace(/<\/p>/g, '\n\n') // Convert paragraphs to line breaks
+      .replace(/<p>/g, '') // Remove opening p tags
+      .replace(/<[^>]*>/g, '') // Remove remaining HTML tags
       .replace(/&amp;/g, '&')  // Fix HTML entities
       .replace(/&lt;/g, '<')
       .replace(/&gt;/g, '>')
       .replace(/&quot;/g, '"')
+      .replace(/\n\s*\n/g, '\n\n') // Clean up extra line breaks
+      .replace(/^•\s*/, '') // Remove leading bullet if exists
       .trim();
     
     // Basic course information
@@ -693,16 +701,16 @@ async function handleCourseInfo(entities: any) {
     const uid = course.uid || 'Not specified';
     const slugName = course.slug_name || 'Not specified';
     
-    // Language and category (now working correctly)
+    // Language and category
     const language = course.language?.name || course.language?.code || 'Not specified';
     const category = course.category?.name || course.category?.title || 'Not specified';
     
-    // Credits and rating (fix rating object issue)
+    // Credits and rating
     const credits = course.credits || 'No credits assigned';
     const rating = course.rating?.average || course.rating?.value || course.average_rating || 'Not rated';
     const ratingText = rating !== 'Not rated' ? `${rating}/5` : 'Not rated';
     
-    // Dates (using the correct field names from debug)
+    // Dates
     const createdDate = course.created_on || 'Not available';
     const modifiedDate = course.updated_on || 'Not available';
     
@@ -710,30 +718,22 @@ async function handleCourseInfo(entities: any) {
     const avgCompletionTime = course.average_completion_time || 'Not specified';
     const duration = course.duration || avgCompletionTime || 'Not specified';
     
-    // Additional fields from the available list
+    // Media assets
     const thumbnail = course.thumbnail ? 'Available' : 'Not available';
     const cover = course.cover ? 'Available' : 'Not available';
-    const headerLayout = course.header_layout || 'Default';
     
-    // Skills (if available)
+    // Fix header layout object issue
+    const headerLayout = typeof course.header_layout === 'object' ? 
+      course.header_layout?.name || course.header_layout?.type || 'Custom layout' : 
+      course.header_layout || 'Default';
+    
+    // Skills formatting with bullet points
     const skills = course.skills?.length > 0 ? 
-      course.skills.map((skill: any) => skill.name || skill).slice(0, 3).join(', ') : 
+      course.skills.map((skill: any) => skill.name || skill).slice(0, 5).join(', ') : 
       'Not specified';
     
     // Creator information
     const createdBy = course.created_by?.fullname || course.created_by?.name || 'Not available';
-    
-    // Try to get enrollment data (might need separate API call)
-    let enrollmentInfo = '';
-    try {
-      // This might require a separate API call to get enrollment stats
-      enrollmentInfo = `📈 **Enrollment Statistics**:
-• **Enrollment data**: Available via separate API call
-• **Average Completion Time**: ${avgCompletionTime}`;
-    } catch (error) {
-      enrollmentInfo = `📈 **Enrollment Statistics**:
-• **Enrollment data**: Requires separate API endpoint`;
-    }
     
     return NextResponse.json({
       response: `📚 **Course Details**: ${courseName}
@@ -753,9 +753,8 @@ ${description}
 • **Category**: ${category}
 • **Slug**: ${slugName}
 • **Rating**: ${ratingText}
-• **Skills**: ${skills}
 
-${enrollmentInfo}
+🎯 **Skills**: ${skills}
 
 🎨 **Media & Layout**:
 • **Thumbnail**: ${thumbnail}
