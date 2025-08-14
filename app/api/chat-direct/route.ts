@@ -194,6 +194,56 @@ class DirectDoceboAPI {
     });
     return result.data?.items || [];
   }
+
+  async searchLearningPlans(searchText: string, limit: number = 25): Promise<any[]> {
+    console.log(`🔍 Searching learning plans: "${searchText}"`);
+    
+    try {
+      const result = await this.apiRequest('/learningplan/v1/learningplans', {
+        search_text: searchText,
+        page_size: Math.min(limit, 200),
+        sort_attr: 'title',
+        sort_dir: 'asc'
+      });
+      
+      if (result.data?.items?.length > 0) {
+        return result.data.items;
+      }
+      
+      // Fallback: get all and filter manually
+      const allResult = await this.apiRequest('/learningplan/v1/learningplans', {
+        page_size: Math.min(limit * 2, 200),
+        sort_attr: 'title',
+        sort_dir: 'asc'
+      });
+      
+      if (allResult.data?.items?.length > 0) {
+        const filteredPlans = allResult.data.items.filter((lp: any) => {
+          const name = this.getLearningPlanName(lp).toLowerCase();
+          const description = (lp.description || '').toLowerCase();
+          return name.includes(searchText.toLowerCase()) || 
+                 description.includes(searchText.toLowerCase());
+        });
+        
+        return filteredPlans.slice(0, limit);
+      }
+      
+    } catch (error) {
+      console.error('Learning plan search failed:', error);
+    }
+    
+    return [];
+  }
+
+  getLearningPlanName(lp: any): string {
+    return lp.title || 
+           lp.name || 
+           lp.learning_plan_name || 
+           lp.lp_name || 
+           lp.learningplan_name ||
+           lp.plan_name ||
+           'Unknown Learning Plan';
+  }
 }
 
 // Initialize API
@@ -314,6 +364,39 @@ No user found with that email address in the system.`,
     const processingTime = Math.floor((Date.now() - startTime) / 1000);
     
     return NextResponse.json({
+      response: `❌ **Processing Error**: ${error instanceof Error ? error.message : 'Unknown error'}
+
+Processing took ${processingTime} seconds before failing.
+
+Please try again. If the issue persists, the user might have a very large number of enrollments.`,
+      success: false,
+      timestamp: new Date().toISOString()
+    }, { status: 500 });
+  }
+}
+
+export async function GET() {
+  return NextResponse.json({
+    status: 'Direct Docebo API - No Background Jobs',
+    version: '1.1.0',
+    timestamp: new Date().toISOString(),
+    features: [
+      'Direct processing within request timeout',
+      '5-minute caching for repeated requests',
+      'Multi-page enrollment fetching',
+      'No persistent storage dependencies',
+      'Updated learning plan endpoint: /learningplan/v1/learningplans'
+    ],
+    api_endpoints_used: {
+      'users': '/manage/v1/user',
+      'courses': '/course/v1/courses',
+      'learning_plans': '/learningplan/v1/learningplans',
+      'enrollments': '/course/v1/courses/enrollments'
+    }
+  });
+}000);
+    
+    return NextResponse.json({
       response: `📚 **${email}'s Courses** (${enrollmentResult.totalCount} total)
 
 👤 **User**: ${user.fullname}
@@ -346,30 +429,4 @@ ${enrollmentResult.totalCount > 20 ? `\n... and ${enrollmentResult.totalCount - 
     
   } catch (error) {
     console.error('❌ Direct processing error:', error);
-    const processingTime = Math.floor((Date.now() - startTime) / 1000);
-    
-    return NextResponse.json({
-      response: `❌ **Processing Error**: ${error instanceof Error ? error.message : 'Unknown error'}
-
-Processing took ${processingTime} seconds before failing.
-
-Please try again. If the issue persists, the user might have a very large number of enrollments.`,
-      success: false,
-      timestamp: new Date().toISOString()
-    }, { status: 500 });
-  }
-}
-
-export async function GET() {
-  return NextResponse.json({
-    status: 'Direct Docebo API - No Background Jobs',
-    version: '1.0.0',
-    timestamp: new Date().toISOString(),
-    features: [
-      'Direct processing within request timeout',
-      '5-minute caching for repeated requests',
-      'Multi-page enrollment fetching',
-      'No persistent storage dependencies'
-    ]
-  });
-}
+    const processingTime = Math.floor((Date.now() - startTime) / 1
