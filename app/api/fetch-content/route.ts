@@ -87,12 +87,12 @@ function extractMainContent(html: string): string {
     // This is a simplified content extraction
     // In a real implementation, you'd use a proper HTML parser
     
-    // Remove script and style tags
-    let content = html.replace(/<script[^>]*>.*?<\/script>/gis, '');
-    content = content.replace(/<style[^>]*>.*?<\/style>/gis, '');
+    // Remove script and style tags (using compatible regex flags)
+    let content = html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '');
+    content = content.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '');
     
     // Extract content from article tag (common in help sites)
-    const articleMatch = content.match(/<article[^>]*>(.*?)<\/article>/is);
+    const articleMatch = content.match(/<article[^>]*>([\s\S]*?)<\/article>/i);
     if (articleMatch) {
       content = articleMatch[1];
     }
