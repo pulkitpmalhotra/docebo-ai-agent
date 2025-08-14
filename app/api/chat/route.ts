@@ -313,6 +313,29 @@ class DoceboAPI {
     this.baseUrl = `https://${config.domain}`;
   }
 
+  // Utility methods first
+  getCourseName(course: any): string {
+    return course.title || course.course_name || course.name || 'Unknown Course';
+  }
+
+  getLearningPlanName(lp: any): string {
+    return lp.title || 
+           lp.name || 
+           lp.learning_plan_name || 
+           lp.lp_name || 
+           lp.learningplan_name ||
+           lp.plan_name ||
+           'Unknown Learning Plan';
+  }
+
+  getSessionName(session: any): string {
+    return session.name || session.session_name || session.title || 'Unknown Session';
+  }
+
+  getMaterialName(material: any): string {
+    return material.title || material.name || material.material_name || 'Unknown Material';
+  }
+
   private async getAccessToken(): Promise<string> {
     if (this.accessToken && this.tokenExpiry && this.tokenExpiry > new Date()) {
       return this.accessToken;
