@@ -175,7 +175,8 @@ async function fetchDoceboContent(url: string): Promise<string | null> {
     
     // Extract main content from Docebo help pages
     // This is a simplified extraction - in production, you'd use a proper HTML parser
-    const contentMatch = html.match(/<article[^>]*>(.*?)<\/article>/s);
+    // Using [\s\S] instead of . with 's' flag for ES2017 compatibility
+    const contentMatch = html.match(/<article[^>]*>([\s\S]*?)<\/article>/);
     if (contentMatch) {
       // Remove HTML tags and clean up the content
       const cleanContent = contentMatch[1]
@@ -188,11 +189,11 @@ async function fetchDoceboContent(url: string): Promise<string | null> {
     }
 
     // Fallback: try to extract from body
-    const bodyMatch = html.match(/<body[^>]*>(.*?)<\/body>/s);
+    const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/);
     if (bodyMatch) {
       const cleanContent = bodyMatch[1]
-        .replace(/<script[^>]*>.*?<\/script>/gs, '')
-        .replace(/<style[^>]*>.*?<\/style>/gs, '')
+        .replace(/<script[^>]*>[\s\S]*?<\/script>/g, '')
+        .replace(/<style[^>]*>[\s\S]*?<\/style>/g, '')
         .replace(/<[^>]*>/g, ' ')
         .replace(/\s+/g, ' ')
         .trim()
