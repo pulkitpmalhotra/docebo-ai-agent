@@ -1,4 +1,4 @@
-// app/api/chat/route.ts - Enhanced with better natural language processing
+// app/api/chat/route.ts - Complete enhanced version
 import { NextRequest, NextResponse } from 'next/server';
 
 // Environment configuration
@@ -58,7 +58,7 @@ class IntentAnalyzer {
           /(?:learning plan info|lp info|plan info|tell me about learning plan|learning plan details)/i,
           /(?:what is|describe|explain).+learning plan/i,
           /(?:details for|info for|information for).+learning plan/i,
-          /(?:info|details)\s+(.+)$/i // Catch "info XYZ" patterns
+          /(?:info|details)\s+(.+)$/i
         ],
         extractEntities: () => ({
           learningPlanName: learningPlanName || 
@@ -106,7 +106,7 @@ class IntentAnalyzer {
         patterns: [
           /(?:find user|search user|look up user|user info|user details)/i,
           /(?:who is|tell me about).+@/i,
-          /@[\w.-]+\.\w+/i // Email presence suggests user search
+          /@[\w.-]+\.\w+/i
         ],
         extractEntities: () => ({
           email: email,
@@ -187,7 +187,6 @@ class IntentAnalyzer {
   }
   
   static extractCourseId(message: string): string | null {
-    // Look for "course id 123", "course ID: 123", "ID 123", etc.
     const patterns = [
       /(?:course\s+)?id[:\s]+(\d+)/i,
       /(?:course\s+)?#(\d+)/i,
@@ -202,12 +201,11 @@ class IntentAnalyzer {
   }
   
   static extractCourseName(message: string): string | null {
-    // Extract course names from various patterns
     const patterns = [
       /(?:course|course info|course details)\s+(.+?)(?:\s+(?:id|ID)\s*:?\s*\d+)?$/i,
       /(?:in course|course named|course called)\s+(.+?)(?:\s|$)/i,
-      /"([^"]+)"/,  // Quoted strings
-      /\[([^\]]+)\]/ // Bracketed strings
+      /"([^"]+)"/,
+      /\[([^\]]+)\]/
     ];
     
     for (const pattern of patterns) {
@@ -232,7 +230,6 @@ class IntentAnalyzer {
       const match = message.match(pattern);
       if (match && match[1] && match[1].length > 2) {
         let name = match[1].trim();
-        // Clean up common false positives
         if (!name.match(/^(for|about|on|in|the|a|an)$/i)) {
           return name;
         }
@@ -284,8 +281,7 @@ class IntentAnalyzer {
     return match && match[1] ? match[1].trim() : null;
   }
 }
-
-// Docebo API client (enhanced)
+// Part 2: Docebo API Class
 class DoceboAPI {
   private config: any;
   private accessToken?: string;
@@ -356,7 +352,6 @@ class DoceboAPI {
   async findCourseByIdentifier(identifier: string): Promise<any> {
     console.log(`🔍 Finding course: "${identifier}"`);
     
-    // Try direct ID lookup first if it's numeric
     if (/^\d+$/.test(identifier)) {
       try {
         const directResult = await this.apiRequest(`/course/v1/courses/${identifier}`);
@@ -369,7 +364,6 @@ class DoceboAPI {
       }
     }
     
-    // Search by name
     const courses = await this.searchCourses(identifier, 20);
     const course = courses.find((c: any) => 
       c.id?.toString() === identifier ||
@@ -389,7 +383,6 @@ class DoceboAPI {
     const course = await this.findCourseByIdentifier(identifier);
     const courseId = course.id || course.course_id;
     
-    // Get additional course details
     try {
       const detailsResult = await this.apiRequest(`/course/v1/courses/${courseId}`);
       if (detailsResult.data) {
@@ -405,7 +398,6 @@ class DoceboAPI {
   async getLearningPlanDetails(identifier: string): Promise<any> {
     console.log(`🔍 Finding learning plan: "${identifier}"`);
     
-    // Try direct ID lookup first if it's numeric
     if (/^\d+$/.test(identifier)) {
       try {
         const directResult = await this.apiRequest(`/learningplan/v1/learningplans/${identifier}`);
@@ -418,7 +410,6 @@ class DoceboAPI {
       }
     }
     
-    // Search by name
     const learningPlans = await this.searchLearningPlans(identifier, 20);
     const lp = learningPlans.find((plan: any) => 
       plan.learning_plan_id?.toString() === identifier ||
@@ -551,7 +542,6 @@ class DoceboAPI {
         return result.data.items;
       }
       
-      // Fallback: manual filtering
       const allResult = await this.apiRequest('/learningplan/v1/learningplans', {
         page_size: Math.min(limit * 2, 200),
         sort_attr: 'title',
@@ -628,8 +618,8 @@ class DoceboAPI {
 }
 
 let api: DoceboAPI;
+// Part 3: Handler Functions
 
-// Handler functions
 async function handleCourseInfo(entities: any) {
   const identifier = entities.courseId || entities.courseName;
   
@@ -751,6 +741,70 @@ async function handleSessionSearch(entities: any) {
 **Examples:**
 • "Search for sessions in course id 944"
 • "Search for sessions in course Python Programming"
+• "Find Day 1 sessions in course Working with Data in Python"`,
+      success: false,
+      timestamp: new Date().toISOString()
+    });
+  }
+  
+  try {
+    const result = await api.searchSessionsInCourse(courseIdentifier, sessionFilter);
+    
+    if (result.totalSessions === 0) {
+      return NextResponse.json({
+        response: `🎯 **No Sessions Found**: Course "${api.getCourseName(result.course)}" has no sessions${sessionFilter ? ` matching "${sessionFilter}"` : ''}
+
+**Course Details:**
+• **Name**: ${api.getCourseName(result.course)}
+• **ID**: ${result.course.id || result.course.course_id}`,
+        success: false,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    const sessionList = result.sessions.slice(0, 15).map((session: any, i: number) => {
+      const sessionName = api.getSessionName(session);
+      const sessionId = session.id || session.session_id || 'N/A';
+      const instructor = session.instructor || 'Not assigned';
+      const startDate = session.start_date || session.date_begin || 'Not scheduled';
+      
+      return `${i + 1}. **${sessionName}** (ID: ${sessionId})
+   👨‍🏫 ${instructor} | 📅 ${startDate}`;
+    }).join('\n\n');
+    
+    return NextResponse.json({
+      response: `🎯 **Sessions in Course**: ${api.getCourseName(result.course)}
+
+📚 **Course ID**: ${result.course.id || result.course.course_id}
+${sessionFilter ? `🔍 **Filter**: "${sessionFilter}"\n` : ''}
+📊 **Total Sessions**: ${result.totalSessions}
+
+${sessionList}${result.totalSessions > 15 ? `\n\n... and ${result.totalSessions - 15} more sessions` : ''}`,
+      success: true,
+      totalCount: result.totalSessions,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    return NextResponse.json({
+      response: `❌ **Error**: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      success: false,
+      timestamp: new Date().toISOString()
+    });
+  }
+}
+
+async function handleMaterialSearch(entities: any) {
+  const courseIdentifier = entities.courseId || entities.courseName;
+  const materialFilter = entities.materialFilter;
+  
+  if (!courseIdentifier) {
+    return NextResponse.json({
+      response: `❌ **Missing Course**: I need a course name or ID to search for materials.
+
+**Examples:**
+• "Search for materials in course id 944"
+• "Search for materials in course Python Programming"
 • "Find Python materials in course Working with Data in Python"`,
       success: false,
       timestamp: new Date().toISOString()
@@ -825,7 +879,6 @@ async function handleUserSearch(entities: any) {
   
   try {
     if (entities.email) {
-      // Specific user lookup by email
       const userDetails = await api.getUserDetails(entities.email);
       return NextResponse.json({
         response: `👥 **User Found**: ${userDetails.fullname}
@@ -844,7 +897,6 @@ async function handleUserSearch(entities: any) {
         timestamp: new Date().toISOString()
       });
     } else {
-      // General user search
       const users = await api.searchUsers(searchTerm, 20);
       
       if (users.length === 0) {
@@ -1017,6 +1069,7 @@ For immediate assistance, please visit:
     timestamp: new Date().toISOString()
   });
 }
+// Part 4: Main POST and GET Functions
 
 export async function POST(request: NextRequest) {
   try {
@@ -1038,7 +1091,6 @@ export async function POST(request: NextRequest) {
 
     console.log(`🤖 Processing: "${message}"`);
     
-    // Analyze intent using enhanced NLP
     const analysis = IntentAnalyzer.analyzeIntent(message);
     console.log(`🎯 Intent: ${analysis.intent}, Confidence: ${analysis.confidence}, Entities:`, analysis.entities);
     
@@ -1144,68 +1196,4 @@ export async function GET() {
       'Help requests: "How to enroll users in Docebo"'
     ]
   });
-}d Day 1 sessions in course Working with Data in Python"`,
-      success: false,
-      timestamp: new Date().toISOString()
-    });
-  }
-  
-  try {
-    const result = await api.searchSessionsInCourse(courseIdentifier, sessionFilter);
-    
-    if (result.totalSessions === 0) {
-      return NextResponse.json({
-        response: `🎯 **No Sessions Found**: Course "${api.getCourseName(result.course)}" has no sessions${sessionFilter ? ` matching "${sessionFilter}"` : ''}
-
-**Course Details:**
-• **Name**: ${api.getCourseName(result.course)}
-• **ID**: ${result.course.id || result.course.course_id}`,
-        success: false,
-        timestamp: new Date().toISOString()
-      });
-    }
-    
-    const sessionList = result.sessions.slice(0, 15).map((session: any, i: number) => {
-      const sessionName = api.getSessionName(session);
-      const sessionId = session.id || session.session_id || 'N/A';
-      const instructor = session.instructor || 'Not assigned';
-      const startDate = session.start_date || session.date_begin || 'Not scheduled';
-      
-      return `${i + 1}. **${sessionName}** (ID: ${sessionId})
-   👨‍🏫 ${instructor} | 📅 ${startDate}`;
-    }).join('\n\n');
-    
-    return NextResponse.json({
-      response: `🎯 **Sessions in Course**: ${api.getCourseName(result.course)}
-
-📚 **Course ID**: ${result.course.id || result.course.course_id}
-${sessionFilter ? `🔍 **Filter**: "${sessionFilter}"\n` : ''}
-📊 **Total Sessions**: ${result.totalSessions}
-
-${sessionList}${result.totalSessions > 15 ? `\n\n... and ${result.totalSessions - 15} more sessions` : ''}`,
-      success: true,
-      totalCount: result.totalSessions,
-      timestamp: new Date().toISOString()
-    });
-    
-  } catch (error) {
-    return NextResponse.json({
-      response: `❌ **Error**: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      success: false,
-      timestamp: new Date().toISOString()
-    });
-  }
 }
-
-async function handleMaterialSearch(entities: any) {
-  const courseIdentifier = entities.courseId || entities.courseName;
-  const materialFilter = entities.materialFilter;
-  
-  if (!courseIdentifier) {
-    return NextResponse.json({
-      response: `❌ **Missing Course**: I need a course name or ID to search for materials.
-
-**Examples:**
-• "Search for materials in course id 944"
-• "Search for materials in course Python Programming"
-• "Fin
