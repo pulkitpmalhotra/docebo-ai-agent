@@ -392,7 +392,7 @@ class DoceboAPI {
       }
     }
     
-    const courses = await this.searchCourses(identifier, 20);
+    const courses = await this.searchCourses(identifier, 100);
     const course = courses.find((c: any) => 
       c.id?.toString() === identifier ||
       c.course_id?.toString() === identifier ||
@@ -438,7 +438,7 @@ class DoceboAPI {
       }
     }
     
-    const learningPlans = await this.searchLearningPlans(identifier, 20);
+    const learningPlans = await this.searchLearningPlans(identifier, 100);
     const lp = learningPlans.find((plan: any) => 
       plan.learning_plan_id?.toString() === identifier ||
       plan.id?.toString() === identifier ||
@@ -1031,7 +1031,7 @@ async function handleUserSearch(entities: any) {
         timestamp: new Date().toISOString()
       });
     } else {
-      const users = await api.searchUsers(searchTerm, 20);
+      const users = await api.searchUsers(searchTerm, 100);
       
       if (users.length === 0) {
         return NextResponse.json({
@@ -1081,7 +1081,7 @@ async function handleCourseSearch(entities: any) {
   }
   
   try {
-    const courses = await api.searchCourses(searchTerm, 20);
+    const courses = await api.searchCourses(searchTerm, 100);
     
     if (courses.length === 0) {
       return NextResponse.json({
@@ -1133,7 +1133,7 @@ async function handleLearningPlanSearch(entities: any) {
   }
   
   try {
-    const learningPlans = await api.searchLearningPlans(searchTerm, 20);
+    const learningPlans = await api.searchLearningPlans(searchTerm, 100);
     
     if (learningPlans.length === 0) {
       return NextResponse.json({
