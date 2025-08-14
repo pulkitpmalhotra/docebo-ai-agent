@@ -1095,9 +1095,10 @@ async function handleCourseSearch(entities: any) {
       const courseName = api.getCourseName(course);
       const courseId = course.id || course.course_id || 'N/A';
       const status = course.status || course.course_status || 'Unknown';
-      const statusIcon = status === 'published' ? '✅' : '📝';
-      return `${i + 1}. ${statusIcon} **${courseName}** (ID: ${courseId})`;
-    }).join('\n');
+      const statusIcon = status === 'published' ? '✅' : '❌';
+      const enrollmentCount = course.enrolled_count !== undefined ? course.enrolled_count : 0;
+    return `${i + 1}. **${courseName}** (ID: ${courseId})
+   📊 ${statusText} | 👥 ${enrollmentCount} enrollments | 🔗 ${courseType}`;
     
     return NextResponse.json({
       response: `📚 **Course Search Results**: Found ${courses.length} courses
@@ -1161,9 +1162,7 @@ async function handleLearningPlanSearch(entities: any) {
     return NextResponse.json({
       response: `📚 **Learning Plan Search Results**: Found ${learningPlans.length} learning plans
 
-${planList}${learningPlans.length > 100 ? `\n\n... and ${learningPlans.length - 100} more learning plans` : ''}
-
-**API Endpoint Used**: \`/learningplan/v1/learningplans\``,
+${planList}${learningPlans.length > 100 ? `\n\n... and ${learningPlans.length - 100} more learning plans` : ''},
       success: true,
       totalCount: learningPlans.length,
       timestamp: new Date().toISOString()
