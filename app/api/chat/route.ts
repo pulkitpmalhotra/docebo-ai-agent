@@ -1,4 +1,4 @@
-// app/api/chat/route.ts - Fixed version with proper syntax
+// app/api/chat/route.ts - Complete clean version with all syntax fixed
 import { NextRequest, NextResponse } from 'next/server';
 
 // Environment configuration
@@ -68,6 +68,38 @@ class IntentAnalyzer {
         confidence: 0.9
       },
       
+      // Session search patterns
+      {
+        intent: 'search_sessions_in_course',
+        patterns: [
+          /(?:search for sessions|find sessions|sessions in course|look for sessions)/i,
+          /(?:sessions).+(?:in course|course)/i,
+          /(?:course).+(?:sessions)/i
+        ],
+        extractEntities: () => ({
+          courseId: courseId,
+          courseName: courseName || this.extractCourseFromSessionQuery(message),
+          sessionFilter: this.extractSessionFilter(message)
+        }),
+        confidence: 0.8
+      },
+      
+      // Material search patterns
+      {
+        intent: 'search_materials_in_course',
+        patterns: [
+          /(?:search for materials|find materials|materials in course|training materials)/i,
+          /(?:materials).+(?:in course|course)/i,
+          /(?:course).+(?:materials)/i
+        ],
+        extractEntities: () => ({
+          courseId: courseId,
+          courseName: courseName || this.extractCourseFromMaterialQuery(message),
+          materialFilter: this.extractMaterialFilter(message)
+        }),
+        confidence: 0.8
+      },
+      
       // User search patterns
       {
         intent: 'search_users',
@@ -112,40 +144,21 @@ class IntentAnalyzer {
         }),
         confidence: 0.8
       },
-      
-      // Session search patterns
+      // enrollment data patterns
       {
-        intent: 'search_sessions_in_course',
-        patterns: [
-          /(?:search for sessions|find sessions|sessions in course|look for sessions)/i,
-          /(?:sessions).+(?:in course|course)/i,
-          /(?:course).+(?:sessions)/i
-        ],
-        extractEntities: () => ({
-          courseId: courseId,
-          courseName: courseName || this.extractCourseFromSessionQuery(message),
-          sessionFilter: this.extractSessionFilter(message)
-        }),
-        confidence: 0.8
-      },
-      
-      // Material search patterns
-      {
-        intent: 'search_materials_in_course',
-        patterns: [
-          /(?:search for materials|find materials|materials in course|training materials)/i,
-          /(?:materials).+(?:in course|course)/i,
-          /(?:course).+(?:materials)/i
-        ],
-        extractEntities: () => ({
-          courseId: courseId,
-          courseName: courseName || this.extractCourseFromMaterialQuery(message),
-          materialFilter: this.extractMaterialFilter(message)
-        }),
-        confidence: 0.8
-      },
-      
-      // User enrollment patterns
+  intent: 'get_user_enrollments',
+  patterns: [
+    /(?:user enrollments|enrollments for user|what courses is|what learning plans is)/i,
+    /(?:enrolled in|taking|assigned to)/i,
+    /(?:user progress|learning progress)/i
+  ],
+  extractEntities: () => ({
+    email: email,
+    userId: this.extractAfterPattern(message, /(?:user|for)\s+(.+?)(?:\s|$)/i)
+  }),
+  confidence: email ? 0.95 : 0.8
+},
+      // User enrollment patterns - ADD THIS
       {
         intent: 'get_user_enrollments',
         patterns: [
@@ -159,7 +172,6 @@ class IntentAnalyzer {
         }),
         confidence: email ? 0.95 : 0.8
       },
-      
       // Help patterns
       {
         intent: 'docebo_help',
@@ -302,6 +314,7 @@ class IntentAnalyzer {
 }
 
 // Docebo API client
+
 class DoceboAPI {
   private config: any;
   private accessToken?: string;
@@ -311,29 +324,6 @@ class DoceboAPI {
   constructor(config: any) {
     this.config = config;
     this.baseUrl = `https://${config.domain}`;
-  }
-
-  // Utility methods first
-  getCourseName(course: any): string {
-    return course.title || course.course_name || course.name || 'Unknown Course';
-  }
-
-  getLearningPlanName(lp: any): string {
-    return lp.title || 
-           lp.name || 
-           lp.learning_plan_name || 
-           lp.lp_name || 
-           lp.learningplan_name ||
-           lp.plan_name ||
-           'Unknown Learning Plan';
-  }
-
-  getSessionName(session: any): string {
-    return session.name || session.session_name || session.title || 'Unknown Session';
-  }
-
-  getMaterialName(material: any): string {
-    return material.title || material.name || material.material_name || 'Unknown Material';
   }
 
   private async getAccessToken(): Promise<string> {
@@ -468,87 +458,6 @@ class DoceboAPI {
     return lp;
   }
 
-  async searchUsers(searchText: string, limit: number = 100): Promise<any[]> {
-    const result = await this.apiRequest('/manage/v1/user', {
-      search_text: searchText,
-      page_size: Math.min(limit, 200)
-    });
-    return result.data?.items || [];
-  }
-
-  async searchCourses(searchText: string, limit: number = 100): Promise<any[]> {
-    const result = await this.apiRequest('/course/v1/courses', {
-      search_text: searchText,
-      page_size: Math.min(limit, 200)
-    });
-    return result.data?.items || [];
-  }
-
-  async searchLearningPlans(searchText: string, limit: number = 100): Promise<any[]> {
-    try {
-      const result = await this.apiRequest('/learningplan/v1/learningplans', {
-        search_text: searchText,
-        page_size: Math.min(limit, 200),
-        sort_attr: 'title',
-        sort_dir: 'asc'
-      });
-      
-      if (result.data?.items?.length > 0) {
-        return result.data.items;
-      }
-      
-      const allResult = await this.apiRequest('/learningplan/v1/learningplans', {
-        page_size: Math.min(limit * 2, 200),
-        sort_attr: 'title',
-        sort_dir: 'asc'
-      });
-      
-      if (allResult.data?.items?.length > 0) {
-        const filteredPlans = allResult.data.items.filter((lp: any) => {
-          const name = this.getLearningPlanName(lp).toLowerCase();
-          const description = (lp.description || '').toLowerCase();
-          return name.includes(searchText.toLowerCase()) || 
-                 description.includes(searchText.toLowerCase());
-        });
-        
-        return filteredPlans.slice(0, limit);
-      }
-      
-      return [];
-      
-    } catch (error) {
-      console.error(`❌ Learning plan search failed:`, error);
-      return [];
-    }
-  }
-
-  async getUserDetails(email: string): Promise<any> {
-    const users = await this.apiRequest('/manage/v1/user', {
-      search_text: email,
-      page_size: 5
-    });
-    
-    const user = users.data?.items?.find((u: any) => u.email.toLowerCase() === email.toLowerCase());
-    
-    if (!user) {
-      throw new Error(`User not found: ${email}`);
-    }
-
-    return {
-      id: user.user_id || user.id,
-      fullname: user.fullname || `${user.firstname || ''} ${user.lastname || ''}`.trim() || 'Not available',
-      email: user.email,
-      username: user.username || 'Not available',
-      status: user.status === '1' ? 'Active' : user.status === '0' ? 'Inactive' : `Status: ${user.status}`,
-      level: user.level === 'godadmin' ? 'Superadmin' : user.level || 'User',
-      creationDate: user.register_date || user.creation_date || user.created_at || 'Not available',
-      lastAccess: user.last_access_date || user.last_access || user.last_login || 'Not available',
-      timezone: user.timezone || 'Not specified',
-      language: user.language || user.lang_code || 'Not specified',
-      department: user.department || 'Not specified'
-    };
-  }
-
   async searchSessionsInCourse(courseIdentifier: string, sessionFilter?: string): Promise<any> {
     const course = await this.findCourseByIdentifier(courseIdentifier);
     const courseId = course.id || course.course_id;
@@ -637,6 +546,88 @@ class DoceboAPI {
     };
   }
 
+  async searchUsers(searchText: string, limit: number = 100): Promise<any[]> {
+    const result = await this.apiRequest('/manage/v1/user', {
+      search_text: searchText,
+      page_size: Math.min(limit, 200)
+    });
+    return result.data?.items || [];
+  }
+
+  async searchCourses(searchText: string, limit: number = 100): Promise<any[]> {
+    const result = await this.apiRequest('/course/v1/courses', {
+      search_text: searchText,
+      page_size: Math.min(limit, 200)
+    });
+    return result.data?.items || [];
+  }
+
+  async searchLearningPlans(searchText: string, limit: number = 100): Promise<any[]> {
+    try {
+      const result = await this.apiRequest('/learningplan/v1/learningplans', {
+        search_text: searchText,
+        page_size: Math.min(limit, 200),
+        sort_attr: 'title',
+        sort_dir: 'asc'
+      });
+      
+      if (result.data?.items?.length > 0) {
+        return result.data.items;
+      }
+      
+      const allResult = await this.apiRequest('/learningplan/v1/learningplans', {
+        page_size: Math.min(limit * 2, 200),
+        sort_attr: 'title',
+        sort_dir: 'asc'
+      });
+      
+      if (allResult.data?.items?.length > 0) {
+        const filteredPlans = allResult.data.items.filter((lp: any) => {
+          const name = this.getLearningPlanName(lp).toLowerCase();
+          const description = (lp.description || '').toLowerCase();
+          return name.includes(searchText.toLowerCase()) || 
+                 description.includes(searchText.toLowerCase());
+        });
+        
+        return filteredPlans.slice(0, limit);
+      }
+      
+      return [];
+      
+    } catch (error) {
+      console.error(`❌ Learning plan search failed:`, error);
+      return [];
+    }
+  }
+
+  async getUserDetails(email: string): Promise<any> {
+    const users = await this.apiRequest('/manage/v1/user', {
+      search_text: email,
+      page_size: 5
+    });
+    
+    const user = users.data?.items?.find((u: any) => u.email.toLowerCase() === email.toLowerCase());
+    
+    if (!user) {
+      throw new Error(`User not found: ${email}`);
+    }
+
+    return {
+      id: user.user_id || user.id,
+      fullname: user.fullname || `${user.firstname || ''} ${user.lastname || ''}`.trim() || 'Not available',
+      email: user.email,
+      username: user.username || 'Not available',
+      status: user.status === '1' ? 'Active' : user.status === '0' ? 'Inactive' : `Status: ${user.status}`,
+      level: user.level === 'godadmin' ? 'Superadmin' : user.level || 'User',
+      creationDate: user.register_date || user.creation_date || user.created_at || 'Not available',
+      lastAccess: user.last_access_date || user.last_access || user.last_login || 'Not available',
+      timezone: user.timezone || 'Not specified',
+      language: user.language || user.lang_code || 'Not specified',
+      department: user.department || 'Not specified'
+    };
+  }
+
+  // NEW: Get user's course enrollments
   async getUserCourseEnrollments(userId: string): Promise<any> {
     console.log(`📚 Getting course enrollments for user: ${userId}`);
     
@@ -654,6 +645,7 @@ class DoceboAPI {
         if (result.data?.items?.length > 0) {
           console.log(`✅ Found ${result.data.items.length} course enrollments from ${endpoint}`);
           
+          // Filter for the specific user if the endpoint returns multiple users
           const userEnrollments = result.data.items.filter((enrollment: any) => {
             return enrollment.user_id?.toString() === userId.toString() || 
                    enrollment.id_user?.toString() === userId.toString();
@@ -680,6 +672,82 @@ class DoceboAPI {
     };
   }
 
+  // NEW: Get user's learning plan enrollments
+  async getUserLearningPlanEnrollments(userId: string): Promise<any> {
+    console.log(`📋 Getting learning plan enrollments for user: ${userId}`);
+    
+    const endpoints = [
+      `/learningplan/v1/learningplans/enrollments?user_id=${userId}`,
+      `/learningplan/v1/learningplans/enrollments?id_user=${userId}`
+    ];
+    
+    for (const endpoint of endpoints) {
+      try {
+        console.log(`🔍 Trying learning plan enrollment endpoint: ${endpoint}`);
+        const result = await this.apiRequest(endpoint);
+        
+        if (result.data?.items?.length > 0) {
+          console.log(`✅ Found ${result.data.items.length} learning plan enrollments from ${endpoint}`);
+          
+          // Filter for the specific user if needed
+          const userEnrollments = result.data.items.filter((enrollment: any) => {
+            return enrollment.user_id?.toString() === userId.toString() || 
+                   enrollment.id_user?.toString() === userId.toString();
+          });
+          
+          return {
+            enrollments: userEnrollments,
+            totalCount: userEnrollments.length,
+            endpoint: endpoint,
+            success: true
+          };
+        }
+      } catch (error) {
+        console.log(`❌ Learning plan enrollment endpoint ${endpoint} failed:`, error);
+        continue;
+      }
+    }
+    
+    return {
+      enrollments: [],
+      totalCount: 0,
+      endpoint: 'none_available',
+      success: false
+    };
+  }
+
+  // NEW: Get comprehensive user enrollment data
+  async getUserAllEnrollments(userId: string): Promise<any> {
+    console.log(`🎯 Getting all enrollments for user: ${userId}`);
+    
+    try {
+      // Get both course and learning plan enrollments concurrently
+      const [courseResult, learningPlanResult] = await Promise.all([
+        this.getUserCourseEnrollments(userId),
+        this.getUserLearningPlanEnrollments(userId)
+      ]);
+      
+      return {
+        courses: courseResult,
+        learningPlans: learningPlanResult,
+        totalCourses: courseResult.totalCount,
+        totalLearningPlans: learningPlanResult.totalCount,
+        success: courseResult.success || learningPlanResult.success
+      };
+    } catch (error) {
+      console.error(`❌ Error getting all enrollments for user ${userId}:`, error);
+      return {
+        courses: { enrollments: [], totalCount: 0, success: false },
+        learningPlans: { enrollments: [], totalCount: 0, success: false },
+        totalCourses: 0,
+        totalLearningPlans: 0,
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  // Enhanced method to format course enrollment data
   formatCourseEnrollment(enrollment: any): any {
     return {
       courseId: enrollment.course_id || enrollment.id_course,
@@ -695,6 +763,26 @@ class DoceboAPI {
     };
   }
 
+  // Enhanced method to format learning plan enrollment data
+  formatLearningPlanEnrollment(enrollment: any): any {
+    return {
+      learningPlanId: enrollment.learning_plan_id || enrollment.id_learning_plan,
+      learningPlanName: enrollment.learning_plan_name || enrollment.name || 'Unknown Learning Plan',
+      enrollmentStatus: enrollment.status || enrollment.enrollment_status || 'Unknown',
+      enrollmentDate: enrollment.enrollment_date || enrollment.enrolled_at || enrollment.date_enrolled,
+      completionDate: enrollment.completion_date || enrollment.completed_at || enrollment.date_completed,
+      progress: enrollment.progress || enrollment.completion_percentage || 0,
+      completedCourses: enrollment.completed_courses || enrollment.courses_completed || 0,
+      totalCourses: enrollment.total_courses || enrollment.courses_total || 0,
+      lastAccess: enrollment.last_access || enrollment.last_access_date || null,
+      dueDate: enrollment.due_date || enrollment.deadline || null
+    };
+  }
+
+  getCourseName(course: any): string {
+    return course.title || course.course_name || course.name || 'Unknown Course';
+  }
+
   getLearningPlanName(lp: any): string {
     return lp.title || 
            lp.name || 
@@ -703,6 +791,14 @@ class DoceboAPI {
            lp.learningplan_name ||
            lp.plan_name ||
            'Unknown Learning Plan';
+  }
+
+  getSessionName(session: any): string {
+    return session.name || session.session_name || session.title || 'Unknown Session';
+  }
+
+  getMaterialName(material: any): string {
+    return material.title || material.name || material.material_name || 'Unknown Material';
   }
 }
 
@@ -736,15 +832,101 @@ async function handleCourseInfo(entities: any) {
                       status === 'suspended' ? 'Suspended 🚫' : 
                       `${status} ❓`;
     
+    const rawDescription = course.description || course.short_description || 'No description available';
+    let description = rawDescription
+      .replace(/<\/li>/g, '\n• ')
+      .replace(/<li>/g, '• ')
+      .replace(/<\/ul>/g, '\n')
+      .replace(/<ul>/g, '\n')
+      .replace(/<\/p>/g, '\n\n')
+      .replace(/<p>/g, '')
+      .replace(/<[^>]*>/g, '')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/\n\s*\n/g, '\n\n')
+      .replace(/^•\s*/, '')
+      .trim();
+    
+    const courseType = course.type || 'Not specified';
+    const code = course.code || 'Not specified';
+    const uid = course.uid || 'Not specified';
+    const slugName = course.slug_name || 'Not specified';
+    
+    const language = course.language?.name || course.language?.code || 'Not specified';
+    const category = course.category?.name || course.category?.title || 'Not specified';
+    
+    const credits = course.credits || 'No credits assigned';
+    const rating = course.rating?.average || course.rating?.value || course.average_rating || 'Not rated';
+    const ratingText = rating !== 'Not rated' ? `${rating}/5` : 'Not rated';
+    
+    const enrolledCount = course.enrolled_count !== undefined ? course.enrolled_count : 'Not available';
+    
+    const createdDate = course.created_on || 'Not available';
+    const modifiedDate = course.updated_on || 'Not available';
+    
+    const avgCompletionTime = course.average_completion_time || 'Not specified';
+    const duration = course.duration || avgCompletionTime || 'Not specified';
+    
+    const thumbnail = course.thumbnail ? 'Available' : 'Not available';
+    const cover = course.cover ? 'Available' : 'Not available';
+    
+    const headerLayout = typeof course.header_layout === 'object' ? 
+      course.header_layout?.name || course.header_layout?.type || 'Custom layout' : 
+      course.header_layout || 'Default';
+    
+    const skills = course.skills?.length > 0 ? 
+      course.skills.map((skill: any) => skill.name || skill).slice(0, 5).join(', ') : 
+      'Not specified';
+    
+    const createdBy = course.created_by?.fullname || course.created_by?.name || 'Not available';
+    
+    const updatedBy = course.update_data?.updated_by?.fullname || 
+                     course.updated_by?.fullname || 
+                     course.update_data?.updated_by?.name ||
+                     course.updated_by?.name ||
+                     'Not available';
+    
+    const updatedById = course.update_data?.updated_by?.id || 
+                       course.updated_by?.id || 
+                       'Not available';
+    
     return NextResponse.json({
       response: `📚 **Course Details**: ${courseName}
 
 🆔 **Course ID**: ${courseId}
 📊 **Status**: ${statusText}
-🎯 **Code**: ${course.code || 'Not specified'}
+🎯 **Code**: ${code}
+🔗 **UID**: ${uid}
+⭐ **Credits**: ${credits}
 
 📝 **Description**: 
-${course.description || 'No description available'}
+${description}
+
+🔗 **Course Information**:
+• **Type**: ${courseType}
+• **Language**: ${language}
+• **Category**: ${category}
+• **Slug**: ${slugName}
+• **Rating**: ${ratingText}
+
+🎯 **Skills**: ${skills}
+
+📈 **Enrollment Statistics**:
+• **👥 Enrolled Count**: ${enrolledCount}
+
+🎨 **Media & Layout**:
+• **Thumbnail**: ${thumbnail}
+• **Cover Image**: ${cover}
+• **Header Layout**: ${headerLayout}
+
+📅 **Timeline & Contributors**:
+• **Created**: ${createdDate}
+• **Created By**: ${createdBy}
+• **Last Updated**: ${modifiedDate}
+• **Updated By**: ${updatedBy}${updatedById !== 'Not available' ? ` (ID: ${updatedById})` : ''}
+• **Average Completion Time**: ${avgCompletionTime}
 
 **Course found successfully!**`,
       success: true,
@@ -758,7 +940,11 @@ ${course.description || 'No description available'}
 **Suggestions:**
 • Try searching for courses first: "Find ${identifier} courses"
 • Check the course name spelling
-• Use the exact course ID if you have it`,
+• Use the exact course ID if you have it
+
+**Alternative Commands:**
+• "Find Working with Data courses" (search for similar courses)
+• "Find Python courses" (broader search)`,
       success: false,
       timestamp: new Date().toISOString()
     });
@@ -822,6 +1008,137 @@ async function handleLearningPlanInfo(entities: any) {
   }
 }
 
+async function handleSessionSearch(entities: any) {
+  const courseIdentifier = entities.courseId || entities.courseName;
+  const sessionFilter = entities.sessionFilter;
+  
+  if (!courseIdentifier) {
+    return NextResponse.json({
+      response: `❌ **Missing Course**: I need a course name or ID to search for sessions.
+
+**Examples:**
+• "Search for sessions in course id 944"
+• "Search for sessions in course Python Programming"
+• "Find Day 1 sessions in course Working with Data in Python"`,
+      success: false,
+      timestamp: new Date().toISOString()
+    });
+  }
+  
+  try {
+    const result = await api.searchSessionsInCourse(courseIdentifier, sessionFilter);
+    
+    if (result.totalSessions === 0) {
+      return NextResponse.json({
+        response: `🎯 **No Sessions Found**: Course "${api.getCourseName(result.course)}" has no sessions${sessionFilter ? ` matching "${sessionFilter}"` : ''}
+
+**Course Details:**
+• **Name**: ${api.getCourseName(result.course)}
+• **ID**: ${result.course.id || result.course.course_id}`,
+        success: false,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    const sessionList = result.sessions.slice(0, 100).map((session: any, i: number) => {
+      const sessionName = api.getSessionName(session);
+      const sessionId = session.id || session.session_id || 'N/A';
+      const instructor = session.instructor || 'Not assigned';
+      const startDate = session.start_date || session.date_begin || 'Not scheduled';
+      
+      return `${i + 1}. **${sessionName}** (ID: ${sessionId})
+   👨‍🏫 ${instructor} | 📅 ${startDate}`;
+    }).join('\n\n');
+    
+    return NextResponse.json({
+      response: `🎯 **Sessions in Course**: ${api.getCourseName(result.course)}
+
+📚 **Course ID**: ${result.course.id || result.course.course_id}
+${sessionFilter ? `🔍 **Filter**: "${sessionFilter}"\n` : ''}
+📊 **Total Sessions**: ${result.totalSessions}
+
+${sessionList}${result.totalSessions > 100 ? `\n\n... and ${result.totalSessions - 100} more sessions` : ''}`,
+      success: true,
+      totalCount: result.totalSessions,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    return NextResponse.json({
+      response: `❌ **Error**: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      success: false,
+      timestamp: new Date().toISOString()
+    });
+  }
+}
+
+async function handleMaterialSearch(entities: any) {
+  const courseIdentifier = entities.courseId || entities.courseName;
+  const materialFilter = entities.materialFilter;
+  
+  if (!courseIdentifier) {
+    return NextResponse.json({
+      response: `❌ **Missing Course**: I need a course name or ID to search for materials.
+
+**Examples:**
+• "Search for materials in course id 944"
+• "Search for materials in course Python Programming"
+• "Find Python materials in course Working with Data in Python"`,
+      success: false,
+      timestamp: new Date().toISOString()
+    });
+  }
+  
+  try {
+    const result = await api.searchMaterialsInCourse(courseIdentifier, materialFilter);
+    
+    if (result.totalMaterials === 0) {
+      return NextResponse.json({
+        response: `📖 **No Materials Found**: Course "${api.getCourseName(result.course)}" has no training materials${materialFilter ? ` matching "${materialFilter}"` : ''}
+
+**Course Details:**
+• **Name**: ${api.getCourseName(result.course)}
+• **ID**: ${result.course.id || result.course.course_id}`,
+        success: false,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    const materialList = result.materials.slice(0, 100).map((material: any, i: number) => {
+      const materialName = api.getMaterialName(material);
+      const materialId = material.id || material.material_id || 'N/A';
+      const type = material.type || material.material_type || 'Unknown';
+      
+      const typeIcon = type.toLowerCase() === 'video' ? '🎥' : 
+                      type.toLowerCase() === 'pdf' ? '📄' : 
+                      type.toLowerCase() === 'scorm' ? '📦' : '📖';
+      
+      return `${i + 1}. ${typeIcon} **${materialName}** (ID: ${materialId})
+   📁 Type: ${type}`;
+    }).join('\n\n');
+    
+    return NextResponse.json({
+      response: `📖 **Materials in Course**: ${api.getCourseName(result.course)}
+
+📚 **Course ID**: ${result.course.id || result.course.course_id}
+${materialFilter ? `🔍 **Filter**: "${materialFilter}"\n` : ''}
+📊 **Total Materials**: ${result.totalMaterials}
+
+${materialList}${result.totalMaterials > 100 ? `\n\n... and ${result.totalMaterials - 100} more materials` : ''}`,
+      success: true,
+      totalCount: result.totalMaterials,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    return NextResponse.json({
+      response: `❌ **Error**: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      success: false,
+      timestamp: new Date().toISOString()
+    });
+  }
+}
+
 async function handleUserSearch(entities: any) {
   const searchTerm = entities.email || entities.searchTerm;
   
@@ -842,6 +1159,18 @@ async function handleUserSearch(entities: any) {
     if (entities.email) {
       const userDetails = await api.getUserDetails(entities.email);
       
+      // NEW: Get enrollment data for the user
+      const enrollmentData = await api.getUserAllEnrollments(userDetails.id);
+      
+      let enrollmentSummary = '';
+      if (enrollmentData.success) {
+        enrollmentSummary = `
+
+📚 **Enrollment Summary**:
+• **👥 Courses**: ${enrollmentData.totalCourses} enrollments
+• **📋 Learning Plans**: ${enrollmentData.totalLearningPlans} enrollments`;
+      }
+      
       return NextResponse.json({
         response: `👥 **User Found**: ${userDetails.fullname}
 
@@ -854,7 +1183,7 @@ async function handleUserSearch(entities: any) {
 🌍 **Language**: ${userDetails.language}
 🕐 **Timezone**: ${userDetails.timezone}
 📅 **Created**: ${userDetails.creationDate}
-🔐 **Last Access**: ${userDetails.lastAccess}
+🔐 **Last Access**: ${userDetails.lastAccess}${enrollmentSummary}
 
 💡 **Get detailed enrollments**: "User enrollments ${userDetails.email}"`,
         success: true,
@@ -871,7 +1200,7 @@ async function handleUserSearch(entities: any) {
         });
       }
       
-      const userList = users.slice(0, 10).map((user, i) => {
+      const userList = users.slice(0, 100).map((user, i) => {
         const statusIcon = user.status === '1' ? '✅' : '❌';
         return `${i + 1}. ${statusIcon} **${user.fullname}** (${user.email})`;
       }).join('\n');
@@ -879,9 +1208,10 @@ async function handleUserSearch(entities: any) {
       return NextResponse.json({
         response: `👥 **User Search Results**: Found ${users.length} users
 
-${userList}${users.length > 10 ? `\n\n... and ${users.length - 10} more users` : ''}
+${userList}${users.length > 100 ? `\n\n... and ${users.length - 100} more users` : ''}
 
-💡 **Get user details**: "Find user [email]"`,
+💡 **Get user details**: "Find user [email]"
+💡 **Get user enrollments**: "User enrollments [email]"`,
         success: true,
         totalCount: users.length,
         timestamp: new Date().toISOString()
@@ -895,7 +1225,6 @@ ${userList}${users.length > 10 ? `\n\n... and ${users.length - 10} more users` :
     });
   }
 }
-
 async function handleCourseSearch(entities: any) {
   const searchTerm = entities.searchTerm;
   
@@ -923,7 +1252,7 @@ async function handleCourseSearch(entities: any) {
       });
     }
     
-    const courseList = courses.slice(0, 10).map((course, i) => {
+    const courseList = courses.slice(0, 100).map((course, i) => {
       const courseName = api.getCourseName(course);
       const courseId = course.id || course.course_id || 'N/A';
       
@@ -943,7 +1272,7 @@ async function handleCourseSearch(entities: any) {
     return NextResponse.json({
       response: `📚 **Course Search Results**: Found ${courses.length} courses
 
-${courseList}${courses.length > 10 ? `\n\n... and ${courses.length - 10} more courses` : ''}
+${courseList}${courses.length > 100 ? `\n\n... and ${courses.length - 100} more courses` : ''}
 
 **Search Term**: "${searchTerm}"`,
       success: true,
@@ -991,7 +1320,7 @@ async function handleLearningPlanSearch(entities: any) {
       });
     }
     
-    const planList = learningPlans.slice(0, 10).map((plan, i) => {
+    const planList = learningPlans.slice(0, 100).map((plan, i) => {
       const planName = api.getLearningPlanName(plan);
       const planId = plan.learning_plan_id || plan.id || 'N/A';
       const status = plan.is_published ? 'Published ✅' : 'Unpublished ❌';
@@ -1004,7 +1333,7 @@ async function handleLearningPlanSearch(entities: any) {
     return NextResponse.json({
       response: `📚 **Learning Plan Search Results**: Found ${learningPlans.length} learning plans
 
-${planList}${learningPlans.length > 10 ? `\n\n... and ${learningPlans.length - 10} more learning plans` : ''}
+${planList}${learningPlans.length > 100 ? `\n\n... and ${learningPlans.length - 100} more learning plans` : ''}
 
 **API Endpoint Used**: \`/learningplan/v1/learningplans\``,
       success: true,
@@ -1019,138 +1348,156 @@ ${planList}${learningPlans.length > 10 ? `\n\n... and ${learningPlans.length - 1
     });
   }
 }
-
-async function handleSessionSearch(entities: any) {
-  const courseIdentifier = entities.courseId || entities.courseName;
-  const sessionFilter = entities.sessionFilter;
-  
-  if (!courseIdentifier) {
-    return NextResponse.json({
-      response: `❌ **Missing Course**: I need a course name or ID to search for sessions.
-
-**Examples:**
-• "Search for sessions in course id 944"
-• "Search for sessions in course Python Programming"
-• "Find Day 1 sessions in course Working with Data in Python"`,
-      success: false,
-      timestamp: new Date().toISOString()
-    });
-  }
-  
-  try {
-    const result = await api.searchSessionsInCourse(courseIdentifier, sessionFilter);
+async getUserCourseEnrollments(userId: string): Promise<any> {
+    console.log(`📚 Getting course enrollments for user: ${userId}`);
     
-    if (result.totalSessions === 0) {
-      return NextResponse.json({
-        response: `🎯 **No Sessions Found**: Course "${api.getCourseName(result.course)}" has no sessions${sessionFilter ? ` matching "${sessionFilter}"` : ''}
-
-**Course Details:**
-• **Name**: ${api.getCourseName(result.course)}
-• **ID**: ${result.course.id || result.course.course_id}`,
-        success: false,
-        timestamp: new Date().toISOString()
-      });
+    const endpoints = [
+      `/course/v1/courses/enrollments?user_id=${userId}`,
+      `/learn/v1/enrollments?id_user=${userId}`,
+      `/course/v1/courses/enrollments?id_user=${userId}`
+    ];
+    
+    for (const endpoint of endpoints) {
+      try {
+        console.log(`🔍 Trying course enrollment endpoint: ${endpoint}`);
+        const result = await this.apiRequest(endpoint);
+        
+        if (result.data?.items?.length > 0) {
+          console.log(`✅ Found ${result.data.items.length} course enrollments from ${endpoint}`);
+          
+          // Filter for the specific user if the endpoint returns multiple users
+          const userEnrollments = result.data.items.filter((enrollment: any) => {
+            return enrollment.user_id?.toString() === userId.toString() || 
+                   enrollment.id_user?.toString() === userId.toString();
+          });
+          
+          return {
+            enrollments: userEnrollments,
+            totalCount: userEnrollments.length,
+            endpoint: endpoint,
+            success: true
+          };
+        }
+      } catch (error) {
+        console.log(`❌ Course enrollment endpoint ${endpoint} failed:`, error);
+        continue;
+      }
     }
     
-    const sessionList = result.sessions.slice(0, 10).map((session: any, i: number) => {
-      const sessionName = api.getSessionName(session);
-      const sessionId = session.id || session.session_id || 'N/A';
-      const instructor = session.instructor || 'Not assigned';
-      const startDate = session.start_date || session.date_begin || 'Not scheduled';
-      
-      return `${i + 1}. **${sessionName}** (ID: ${sessionId})
-   👨‍🏫 ${instructor} | 📅 ${startDate}`;
-    }).join('\n\n');
-    
-    return NextResponse.json({
-      response: `🎯 **Sessions in Course**: ${api.getCourseName(result.course)}
-
-📚 **Course ID**: ${result.course.id || result.course.course_id}
-${sessionFilter ? `🔍 **Filter**: "${sessionFilter}"\n` : ''}
-📊 **Total Sessions**: ${result.totalSessions}
-
-${sessionList}${result.totalSessions > 10 ? `\n\n... and ${result.totalSessions - 10} more sessions` : ''}`,
-      success: true,
-      totalCount: result.totalSessions,
-      timestamp: new Date().toISOString()
-    });
-    
-  } catch (error) {
-    return NextResponse.json({
-      response: `❌ **Error**: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      success: false,
-      timestamp: new Date().toISOString()
-    });
+    return {
+      enrollments: [],
+      totalCount: 0,
+      endpoint: 'none_available',
+      success: false
+    };
   }
-}
 
-async function handleMaterialSearch(entities: any) {
-  const courseIdentifier = entities.courseId || entities.courseName;
-  const materialFilter = entities.materialFilter;
-  
-  if (!courseIdentifier) {
-    return NextResponse.json({
-      response: `❌ **Missing Course**: I need a course name or ID to search for materials.
-
-**Examples:**
-• "Search for materials in course id 944"
-• "Search for materials in course Python Programming"
-• "Find Python materials in course Working with Data in Python"`,
-      success: false,
-      timestamp: new Date().toISOString()
-    });
-  }
-  
-  try {
-    const result = await api.searchMaterialsInCourse(courseIdentifier, materialFilter);
+  // NEW: Get user's learning plan enrollments
+  async getUserLearningPlanEnrollments(userId: string): Promise<any> {
+    console.log(`📋 Getting learning plan enrollments for user: ${userId}`);
     
-    if (result.totalMaterials === 0) {
-      return NextResponse.json({
-        response: `📖 **No Materials Found**: Course "${api.getCourseName(result.course)}" has no training materials${materialFilter ? ` matching "${materialFilter}"` : ''}
-
-**Course Details:**
-• **Name**: ${api.getCourseName(result.course)}
-• **ID**: ${result.course.id || result.course.course_id}`,
-        success: false,
-        timestamp: new Date().toISOString()
-      });
+    const endpoints = [
+      `/learningplan/v1/learningplans/enrollments?user_id=${userId}`,
+      `/learningplan/v1/learningplans/enrollments?id_user=${userId}`
+    ];
+    
+    for (const endpoint of endpoints) {
+      try {
+        console.log(`🔍 Trying learning plan enrollment endpoint: ${endpoint}`);
+        const result = await this.apiRequest(endpoint);
+        
+        if (result.data?.items?.length > 0) {
+          console.log(`✅ Found ${result.data.items.length} learning plan enrollments from ${endpoint}`);
+          
+          // Filter for the specific user if needed
+          const userEnrollments = result.data.items.filter((enrollment: any) => {
+            return enrollment.user_id?.toString() === userId.toString() || 
+                   enrollment.id_user?.toString() === userId.toString();
+          });
+          
+          return {
+            enrollments: userEnrollments,
+            totalCount: userEnrollments.length,
+            endpoint: endpoint,
+            success: true
+          };
+        }
+      } catch (error) {
+        console.log(`❌ Learning plan enrollment endpoint ${endpoint} failed:`, error);
+        continue;
+      }
     }
     
-    const materialList = result.materials.slice(0, 10).map((material: any, i: number) => {
-      const materialName = api.getMaterialName(material);
-      const materialId = material.id || material.material_id || 'N/A';
-      const type = material.type || material.material_type || 'Unknown';
-      
-      const typeIcon = type.toLowerCase() === 'video' ? '🎥' : 
-                      type.toLowerCase() === 'pdf' ? '📄' : 
-                      type.toLowerCase() === 'scorm' ? '📦' : '📖';
-      
-      return `${i + 1}. ${typeIcon} **${materialName}** (ID: ${materialId})
-   📁 Type: ${type}`;
-    }).join('\n\n');
-    
-    return NextResponse.json({
-      response: `📖 **Materials in Course**: ${api.getCourseName(result.course)}
-
-📚 **Course ID**: ${result.course.id || result.course.course_id}
-${materialFilter ? `🔍 **Filter**: "${materialFilter}"\n` : ''}
-📊 **Total Materials**: ${result.totalMaterials}
-
-${materialList}${result.totalMaterials > 10 ? `\n\n... and ${result.totalMaterials - 10} more materials` : ''}`,
-      success: true,
-      totalCount: result.totalMaterials,
-      timestamp: new Date().toISOString()
-    });
-    
-  } catch (error) {
-    return NextResponse.json({
-      response: `❌ **Error**: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      success: false,
-      timestamp: new Date().toISOString()
-    });
+    return {
+      enrollments: [],
+      totalCount: 0,
+      endpoint: 'none_available',
+      success: false
+    };
   }
-}
 
+  // NEW: Get comprehensive user enrollment data
+  async getUserAllEnrollments(userId: string): Promise<any> {
+    console.log(`🎯 Getting all enrollments for user: ${userId}`);
+    
+    try {
+      // Get both course and learning plan enrollments concurrently
+      const [courseResult, learningPlanResult] = await Promise.all([
+        this.getUserCourseEnrollments(userId),
+        this.getUserLearningPlanEnrollments(userId)
+      ]);
+      
+      return {
+        courses: courseResult,
+        learningPlans: learningPlanResult,
+        totalCourses: courseResult.totalCount,
+        totalLearningPlans: learningPlanResult.totalCount,
+        success: courseResult.success || learningPlanResult.success
+      };
+    } catch (error) {
+      console.error(`❌ Error getting all enrollments for user ${userId}:`, error);
+      return {
+        courses: { enrollments: [], totalCount: 0, success: false },
+        learningPlans: { enrollments: [], totalCount: 0, success: false },
+        totalCourses: 0,
+        totalLearningPlans: 0,
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  // Enhanced method to format course enrollment data
+  formatCourseEnrollment(enrollment: any): any {
+    return {
+      courseId: enrollment.course_id || enrollment.id_course,
+      courseName: enrollment.course_name || enrollment.name || 'Unknown Course',
+      enrollmentStatus: enrollment.status || enrollment.enrollment_status || 'Unknown',
+      enrollmentDate: enrollment.enrollment_date || enrollment.enrolled_at || enrollment.date_enrolled,
+      completionDate: enrollment.completion_date || enrollment.completed_at || enrollment.date_completed,
+      progress: enrollment.progress || enrollment.completion_percentage || 0,
+      score: enrollment.score || enrollment.final_score || null,
+      timeSpent: enrollment.time_spent || enrollment.total_time || null,
+      lastAccess: enrollment.last_access || enrollment.last_access_date || null,
+      dueDate: enrollment.due_date || enrollment.deadline || null
+    };
+  }
+
+  // Enhanced method to format learning plan enrollment data
+  formatLearningPlanEnrollment(enrollment: any): any {
+    return {
+      learningPlanId: enrollment.learning_plan_id || enrollment.id_learning_plan,
+      learningPlanName: enrollment.learning_plan_name || enrollment.name || 'Unknown Learning Plan',
+      enrollmentStatus: enrollment.status || enrollment.enrollment_status || 'Unknown',
+      enrollmentDate: enrollment.enrollment_date || enrollment.enrolled_at || enrollment.date_enrolled,
+      completionDate: enrollment.completion_date || enrollment.completed_at || enrollment.date_completed,
+      progress: enrollment.progress || enrollment.completion_percentage || 0,
+      completedCourses: enrollment.completed_courses || enrollment.courses_completed || 0,
+      totalCourses: enrollment.total_courses || enrollment.courses_total || 0,
+      lastAccess: enrollment.last_access || enrollment.last_access_date || null,
+      dueDate: enrollment.due_date || enrollment.deadline || null
+    };
+  }
 async function handleUserEnrollments(entities: any) {
   const identifier = entities.email || entities.userId;
   
@@ -1168,42 +1515,109 @@ async function handleUserEnrollments(entities: any) {
   }
   
   try {
-    const userDetails = await api.getUserDetails(identifier);
-    const userId = userDetails.id;
+    // Get user details first
+    let userId: string;
+    let userDetails: any;
     
-    // Get course enrollments
-    const courseResult = await api.getUserCourseEnrollments(userId);
+    if (identifier.includes('@')) {
+      // It's an email
+      userDetails = await api.getUserDetails(identifier);
+      userId = userDetails.id;
+    } else {
+      // Assume it's a user ID
+      userId = identifier;
+      // Try to get user details, but don't fail if we can't
+      try {
+        const users = await api.searchUsers(identifier, 1);
+        userDetails = users.length > 0 ? users[0] : { fullname: `User ${userId}`, email: 'Unknown' };
+      } catch (error) {
+        userDetails = { fullname: `User ${userId}`, email: 'Unknown' };
+      }
+    }
     
-    if (!courseResult.success || courseResult.totalCount === 0) {
+    // Get comprehensive enrollment data
+    const enrollmentData = await api.getUserAllEnrollments(userId);
+    
+    if (!enrollmentData.success) {
+      return NextResponse.json({
+        response: `❌ **No Enrollment Data**: Could not retrieve enrollment information for "${identifier}"
+
+**Possible reasons:**
+• User might not be enrolled in any courses or learning plans
+• API endpoints might not be accessible
+• User ID might be incorrect
+
+**Suggestions:**
+• Verify the user email/ID is correct
+• Try: "Find user ${identifier}" to confirm user exists`,
+        success: false,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    // Format course enrollments
+    let courseSection = '';
+    if (enrollmentData.courses.success && enrollmentData.totalCourses > 0) {
+      const formattedCourses = enrollmentData.courses.enrollments.slice(0, 100).map((enrollment: any, i: number) => {
+        const formatted = api.formatCourseEnrollment(enrollment);
+        const statusIcon = formatted.enrollmentStatus === 'completed' ? '✅' : 
+                          formatted.enrollmentStatus === 'in_progress' ? '🔄' : 
+                          formatted.enrollmentStatus === 'not_started' ? '⏳' : '📚';
+        
+        const progressText = formatted.progress ? ` (${formatted.progress}%)` : '';
+        const scoreText = formatted.score ? ` | Score: ${formatted.score}` : '';
+        
+        return `${i + 1}. ${statusIcon} **${formatted.courseName}**${progressText}${scoreText}
+   📅 Enrolled: ${formatted.enrollmentDate || 'Unknown'}`;
+      }).join('\n\n');
+      
+      courseSection = `📚 **Course Enrollments** (${enrollmentData.totalCourses} total):
+
+${formattedCourses}${enrollmentData.totalCourses > 100 ? `\n\n... and ${enrollmentData.totalCourses - 100} more courses` : ''}`;
+    }
+    
+    // Format learning plan enrollments
+    let learningPlanSection = '';
+    if (enrollmentData.learningPlans.success && enrollmentData.totalLearningPlans > 0) {
+      const formattedPlans = enrollmentData.learningPlans.enrollments.slice(0, 5).map((enrollment: any, i: number) => {
+        const formatted = api.formatLearningPlanEnrollment(enrollment);
+        const statusIcon = formatted.enrollmentStatus === 'completed' ? '✅' : 
+                          formatted.enrollmentStatus === 'in_progress' ? '🔄' : 
+                          formatted.enrollmentStatus === 'not_started' ? '⏳' : '📋';
+        
+        const progressText = formatted.progress ? ` (${formatted.progress}%)` : '';
+        const coursesText = formatted.totalCourses ? ` | ${formatted.completedCourses}/${formatted.totalCourses} courses` : '';
+        
+        return `${i + 1}. ${statusIcon} **${formatted.learningPlanName}**${progressText}${coursesText}
+   📅 Enrolled: ${formatted.enrollmentDate || 'Unknown'}`;
+      }).join('\n\n');
+      
+      learningPlanSection = `📋 **Learning Plan Enrollments** (${enrollmentData.totalLearningPlans} total):
+
+${formattedPlans}${enrollmentData.totalLearningPlans > 100 ? `\n\n... and ${enrollmentData.totalLearningPlans - 100} more learning plans` : ''}`;
+    }
+    
+    // Combine sections
+    const sections = [courseSection, learningPlanSection].filter(section => section).join('\n\n');
+    
+    if (!sections) {
       return NextResponse.json({
         response: `📊 **User Enrollments**: ${userDetails.fullname}
 
 👥 **User**: ${userDetails.email}
 🆔 **User ID**: ${userId}
 
-📚 **No Course Enrollments Found**
+📚 **No Active Enrollments Found**
 
-This user is not currently enrolled in any courses, or the enrollment data is not accessible through the API.
+This user is not currently enrolled in any courses or learning plans, or the enrollment data is not accessible through the API.
 
-**API Endpoint Tested**: ${courseResult.endpoint}`,
+**Suggestions:**
+• Check if the user has been assigned any courses manually in Docebo
+• Verify enrollment endpoints are accessible`,
         success: true,
         timestamp: new Date().toISOString()
       });
     }
-    
-    // Format course enrollments
-    const formattedCourses = courseResult.enrollments.slice(0, 20).map((enrollment: any, i: number) => {
-      const formatted = api.formatCourseEnrollment(enrollment);
-      const statusIcon = formatted.enrollmentStatus === 'completed' ? '✅' : 
-                        formatted.enrollmentStatus === 'in_progress' ? '🔄' : 
-                        formatted.enrollmentStatus === 'not_started' ? '⏳' : '📚';
-      
-      const progressText = formatted.progress ? ` (${formatted.progress}%)` : '';
-      const scoreText = formatted.score ? ` | Score: ${formatted.score}` : '';
-      
-      return `${i + 1}. ${statusIcon} **${formatted.courseName}**${progressText}${scoreText}
-   📅 Enrolled: ${formatted.enrollmentDate || 'Unknown'}`;
-    }).join('\n\n');
     
     return NextResponse.json({
       response: `📊 **User Enrollments**: ${userDetails.fullname}
@@ -1211,13 +1625,11 @@ This user is not currently enrolled in any courses, or the enrollment data is no
 👥 **User**: ${userDetails.email}
 🆔 **User ID**: ${userId}
 
-📚 **Course Enrollments** (${courseResult.totalCount} total):
+${sections}
 
-${formattedCourses}${courseResult.totalCount > 20 ? `\n\n... and ${courseResult.totalCount - 20} more courses` : ''}
-
-**API Endpoint Used**: ${courseResult.endpoint}`,
+**API Endpoints Used**: ${enrollmentData.courses.endpoint || 'N/A'}, ${enrollmentData.learningPlans.endpoint || 'N/A'}`,
       success: true,
-      data: courseResult,
+      data: enrollmentData,
       timestamp: new Date().toISOString()
     });
     
@@ -1234,7 +1646,6 @@ ${formattedCourses}${courseResult.totalCount > 20 ? `\n\n... and ${courseResult.
     });
   }
 }
-
 async function handleDoceboHelp(entities: any) {
   const query = entities.query;
   
@@ -1261,7 +1672,154 @@ For immediate assistance, please visit:
     timestamp: new Date().toISOString()
   });
 }
+async function handleUserEnrollments(entities: any) {
+  const identifier = entities.email || entities.userId;
+  
+  if (!identifier) {
+    return NextResponse.json({
+      response: `❌ **Missing User**: I need a user email or ID to get enrollment information.
 
+**Examples:**
+• "User enrollments mike@company.com"
+• "What courses is sarah@company.com enrolled in?"
+• "Learning progress for john@company.com"`,
+      success: false,
+      timestamp: new Date().toISOString()
+    });
+  }
+  
+  try {
+    // Get user details first
+    let userId: string;
+    let userDetails: any;
+    
+    if (identifier.includes('@')) {
+      // It's an email
+      userDetails = await api.getUserDetails(identifier);
+      userId = userDetails.id;
+    } else {
+      // Assume it's a user ID
+      userId = identifier;
+      // Try to get user details, but don't fail if we can't
+      try {
+        const users = await api.searchUsers(identifier, 1);
+        userDetails = users.length > 0 ? users[0] : { fullname: `User ${userId}`, email: 'Unknown' };
+      } catch (error) {
+        userDetails = { fullname: `User ${userId}`, email: 'Unknown' };
+      }
+    }
+    
+    // Get comprehensive enrollment data
+    const enrollmentData = await api.getUserAllEnrollments(userId);
+    
+    if (!enrollmentData.success) {
+      return NextResponse.json({
+        response: `❌ **No Enrollment Data**: Could not retrieve enrollment information for "${identifier}"
+
+**Possible reasons:**
+• User might not be enrolled in any courses or learning plans
+• API endpoints might not be accessible
+• User ID might be incorrect
+
+**Suggestions:**
+• Verify the user email/ID is correct
+• Try: "Find user ${identifier}" to confirm user exists`,
+        success: false,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    // Format course enrollments
+    let courseSection = '';
+    if (enrollmentData.courses.success && enrollmentData.totalCourses > 0) {
+      const formattedCourses = enrollmentData.courses.enrollments.slice(0, 10).map((enrollment: any, i: number) => {
+        const formatted = api.formatCourseEnrollment(enrollment);
+        const statusIcon = formatted.enrollmentStatus === 'completed' ? '✅' : 
+                          formatted.enrollmentStatus === 'in_progress' ? '🔄' : 
+                          formatted.enrollmentStatus === 'not_started' ? '⏳' : '📚';
+        
+        const progressText = formatted.progress ? ` (${formatted.progress}%)` : '';
+        const scoreText = formatted.score ? ` | Score: ${formatted.score}` : '';
+        
+        return `${i + 1}. ${statusIcon} **${formatted.courseName}**${progressText}${scoreText}
+   📅 Enrolled: ${formatted.enrollmentDate || 'Unknown'}`;
+      }).join('\n\n');
+      
+      courseSection = `📚 **Course Enrollments** (${enrollmentData.totalCourses} total):
+
+${formattedCourses}${enrollmentData.totalCourses > 10 ? `\n\n... and ${enrollmentData.totalCourses - 10} more courses` : ''}`;
+    }
+    
+    // Format learning plan enrollments
+    let learningPlanSection = '';
+    if (enrollmentData.learningPlans.success && enrollmentData.totalLearningPlans > 0) {
+      const formattedPlans = enrollmentData.learningPlans.enrollments.slice(0, 5).map((enrollment: any, i: number) => {
+        const formatted = api.formatLearningPlanEnrollment(enrollment);
+        const statusIcon = formatted.enrollmentStatus === 'completed' ? '✅' : 
+                          formatted.enrollmentStatus === 'in_progress' ? '🔄' : 
+                          formatted.enrollmentStatus === 'not_started' ? '⏳' : '📋';
+        
+        const progressText = formatted.progress ? ` (${formatted.progress}%)` : '';
+        const coursesText = formatted.totalCourses ? ` | ${formatted.completedCourses}/${formatted.totalCourses} courses` : '';
+        
+        return `${i + 1}. ${statusIcon} **${formatted.learningPlanName}**${progressText}${coursesText}
+   📅 Enrolled: ${formatted.enrollmentDate || 'Unknown'}`;
+      }).join('\n\n');
+      
+      learningPlanSection = `📋 **Learning Plan Enrollments** (${enrollmentData.totalLearningPlans} total):
+
+${formattedPlans}${enrollmentData.totalLearningPlans > 5 ? `\n\n... and ${enrollmentData.totalLearningPlans - 5} more learning plans` : ''}`;
+    }
+    
+    // Combine sections
+    const sections = [courseSection, learningPlanSection].filter(section => section).join('\n\n');
+    
+    if (!sections) {
+      return NextResponse.json({
+        response: `📊 **User Enrollments**: ${userDetails.fullname}
+
+👥 **User**: ${userDetails.email}
+🆔 **User ID**: ${userId}
+
+📚 **No Active Enrollments Found**
+
+This user is not currently enrolled in any courses or learning plans, or the enrollment data is not accessible through the API.
+
+**Suggestions:**
+• Check if the user has been assigned any courses manually in Docebo
+• Verify enrollment endpoints are accessible`,
+        success: true,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    return NextResponse.json({
+      response: `📊 **User Enrollments**: ${userDetails.fullname}
+
+👥 **User**: ${userDetails.email}
+🆔 **User ID**: ${userId}
+
+${sections}
+
+**API Endpoints Used**: ${enrollmentData.courses.endpoint || 'N/A'}, ${enrollmentData.learningPlans.endpoint || 'N/A'}`,
+      success: true,
+      data: enrollmentData,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    return NextResponse.json({
+      response: `❌ **Error**: ${error instanceof Error ? error.message : 'Unknown error'}
+
+**Suggestions:**
+• Verify the user email/ID is correct
+• Check if enrollment API endpoints are accessible
+• Try: "Find user ${identifier}" to confirm user exists`,
+      success: false,
+      timestamp: new Date().toISOString()
+    });
+  }
+}
 export async function POST(request: NextRequest) {
   try {
     if (!api) {
@@ -1308,7 +1866,7 @@ export async function POST(request: NextRequest) {
         case 'search_learning_plans':
           return await handleLearningPlanSearch(analysis.entities);
 
-        case 'get_user_enrollments':
+          case 'get_user_enrollments':  // NEW: Handle user enrollment requests
           return await handleUserEnrollments(analysis.entities);
           
         case 'docebo_help':
@@ -1325,6 +1883,8 @@ Based on your message: "${message}"
 • **📊 User Enrollments**: "User enrollments email@company.com" or "What courses is user@company.com enrolled in?"
 • **📚 Find/Info Courses**: "Find Python courses" or "Course info Working with Data in Python"  
 • **📋 Find/Info Learning Plans**: "Find Python learning plans" or "Learning plan info Getting Started with Python"
+• **🎯 Sessions**: "Search for sessions in course Python Programming"
+• **📖 Materials**: "Search for materials in course Python Programming"
 • **🆘 Help**: "How to enroll users in Docebo"
 
 **Try rephrasing your question or use one of the examples above.**`,
@@ -1354,35 +1914,55 @@ Based on your message: "${message}"
   }
 }
 
-// Updated GET endpoint
+// Updated GET endpoint with new capabilities
 export async function GET() {
   return NextResponse.json({
-    status: 'Docebo Chat API - Fixed Version',
-    version: '2.0.0',
+    status: 'Enhanced Docebo Chat API with Enrollment Data',
+    version: '3.0.0',
     timestamp: new Date().toISOString(),
     features: [
       'Enhanced natural language processing',
       'Intent-based command detection',
-      'Course info retrieval',
+      'Course info retrieval with enrollment data',
       'Learning plan info retrieval',
-      'User search and details',
-      'Course search', 
+      'User enrollment tracking (NEW)',
+      'Comprehensive enrollment analysis (NEW)',
+      'Session search in courses',
+      'Material search in courses',
+      'User search and details with enrollment summary',
+      'Course search with enrollment data', 
       'Learning plan search',
-      'User enrollment tracking (in development)',
       'Docebo help integration'
     ],
     api_endpoints_used: {
       'users': '/manage/v1/user',
       'courses': '/course/v1/courses',
-      'learning_plans': '/learningplan/v1/learningplans'
+      'learning_plans': '/learningplan/v1/learningplans',
+      'course_enrollments': '/course/v1/courses/enrollments',
+      'lp_enrollments': '/learningplan/v1/learningplans/enrollments',
+      'user_enrollments': '/learn/v1/enrollments',
+      'sessions': '/course/v1/courses/{id}/sessions',
+      'materials': '/course/v1/courses/{id}/lo'
     },
     nlp_capabilities: [
       'Course info: "Course info Working with Data in Python"',
       'Learning plan info: "Learning plan info Getting Started with Python"',
+      'User enrollments: "User enrollments mike@company.com" (NEW)',
+      'Enrollment queries: "What courses is john@company.com enrolled in?" (NEW)',
+      'Learning progress: "Learning progress for sarah@company.com" (NEW)',
+      'Session search: "Search for sessions in course Python Programming"',
+      'Material search: "Search for materials in course Data Science"',
       'User search: "Find user mike@company.com"',
       'Course search: "Find Python courses"',
       'Learning plan search: "Find Python learning plans"',
       'Help requests: "How to enroll users in Docebo"'
-    ]
+    ],
+    enrollment_features: {
+      'user_course_enrollments': 'Get all courses a user is enrolled in',
+      'user_lp_enrollments': 'Get all learning plans a user is enrolled in',
+      'comprehensive_view': 'Combined view of all user enrollments',
+      'progress_tracking': 'Shows completion status and progress',
+      'multiple_endpoints': 'Tries multiple API endpoints for maximum compatibility'
+    }
   });
 }
