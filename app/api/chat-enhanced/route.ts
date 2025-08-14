@@ -1,4 +1,4 @@
-// app/api/chat-enhanced/route.ts - Fixed compilation issues
+// app/api/chat-enhanced/route.ts - Fixed learning plan endpoint
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
@@ -28,7 +28,7 @@ interface ChatResponse {
   };
 }
 
-// Enhanced Docebo API client (simplified for compilation)
+// Enhanced Docebo API client (with learning plan fix)
 class DoceboAPIClient {
   private config: any;
   private accessToken?: string;
@@ -131,6 +131,45 @@ class DoceboAPIClient {
     }
   }
 
+  async searchLearningPlans(searchText: string, limit: number = 25): Promise<any[]> {
+    try {
+      // Updated to use correct endpoint
+      const result = await this.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
+        search_text: searchText,
+        page_size: limit,
+        sort_attr: 'title',
+        sort_dir: 'asc'
+      });
+      
+      if (result.data?.items?.length > 0) {
+        return result.data.items;
+      }
+      
+      // Fallback: manual filtering
+      const allResult = await this.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
+        page_size: Math.min(limit * 2, 200),
+        sort_attr: 'title',
+        sort_dir: 'asc'
+      });
+      
+      if (allResult.data?.items?.length > 0) {
+        const filteredPlans = allResult.data.items.filter((lp: any) => {
+          const name = (lp.title || lp.name || '').toLowerCase();
+          const description = (lp.description || '').toLowerCase();
+          return name.includes(searchText.toLowerCase()) || 
+                 description.includes(searchText.toLowerCase());
+        });
+        
+        return filteredPlans.slice(0, limit);
+      }
+      
+      return [];
+    } catch (error) {
+      console.error('Search learning plans failed:', error);
+      return [];
+    }
+  }
+
   async getUserEnrollments(userId: string): Promise<any> {
     try {
       const result = await this.apiRequest(`/learn/v1/enrollments/users/${userId}`);
@@ -225,8 +264,13 @@ class EnhancedChatProcessor {
           result = await this.doceboAPI.searchCourses(intent.entities.query || intent.entities.course_identifier);
           break;
 
+        case 'search_learning_plans':
+          functionsCalled.push('searchLearningPlans');
+          result = await this.doceboAPI.searchLearningPlans(intent.entities.query || intent.entities.learning_plan_identifier);
+          break;
+
         default:
-          result = { message: "I can help you with enrollment management, user search, course search, and enrollment statistics. What would you like to do?" };
+          result = { message: "I can help you with enrollment management, user search, course search, learning plan search, and enrollment statistics. What would you like to do?" };
           intent.intent = 'help';
       }
 
@@ -306,6 +350,13 @@ class EnhancedChatProcessor {
       return {
         intent: 'search_courses',
         entities: { query: message.replace(/search|courses?|find/gi, '').trim() }
+      };
+    }
+
+    if (messageLower.includes('learning plan') || messageLower.includes('lp')) {
+      return {
+        intent: 'search_learning_plans',
+        entities: { query: message.replace(/search|learning plan|lp|find/gi, '').trim() }
       };
     }
     
@@ -414,8 +465,11 @@ class EnhancedChatProcessor {
       case 'search_courses':
         return `📚 **Course Search**: Found ${result.length} courses\n\n${result.slice(0, 5).map((course: any) => `• ${course.course_name || course.name}`).join('\n')}`;
         
+      case 'search_learning_plans':
+        return `📋 **Learning Plan Search**: Found ${result.length} learning plans\n\n${result.slice(0, 5).map((lp: any) => `• ${lp.title || lp.name || 'Untitled Plan'}`).join('\n')}\n\n*Using endpoint: /learningplan/v1/learningplans*`;
+        
       default:
-        return "I can help you with:\n\n• **Check Enrollments**: \"Is john@company.com enrolled in Python course?\"\n• **Enroll Users**: \"Enroll sarah@test.com in Excel training\"\n• **Search**: \"Find users in marketing\" or \"Search Python courses\"\n• **View Course Enrollments**: \"Who is enrolled in Leadership Training?\"\n\nWhat would you like to do?";
+        return "I can help you with:\n\n• **Check Enrollments**: \"Is john@company.com enrolled in Python course?\"\n• **Enroll Users**: \"Enroll sarah@test.com in Excel training\"\n• **Search**: \"Find users in marketing\" or \"Search Python courses\"\n• **Learning Plans**: \"Find Python learning plans\"\n• **View Course Enrollments**: \"Who is enrolled in Leadership Training?\"\n\nWhat would you like to do?";
     }
   }
 
@@ -425,11 +479,13 @@ class EnhancedChatProcessor {
     if (userRole === 'superadmin') {
       actions.push(
         { id: 'enroll', label: 'Enroll Users', type: 'primary', action: 'enrollment_form' },
-        { id: 'search', label: 'Search Users', type: 'secondary', action: 'user_search' }
+        { id: 'search', label: 'Search Users', type: 'secondary', action: 'user_search' },
+        { id: 'learning_plans', label: 'Learning Plans', type: 'secondary', action: 'learning_plan_search' }
       );
     } else if (userRole === 'power_user') {
       actions.push(
-        { id: 'search', label: 'Search Courses', type: 'primary', action: 'course_search' }
+        { id: 'search', label: 'Search Courses', type: 'primary', action: 'course_search' },
+        { id: 'learning_plans', label: 'Learning Plans', type: 'secondary', action: 'learning_plan_search' }
       );
     }
     
@@ -441,20 +497,24 @@ class EnhancedChatProcessor {
       superadmin: [
         "Enroll john@company.com in Python Programming",
         "Who is enrolled in Leadership Training?",
-        "Search for users in marketing department"
+        "Search for users in marketing department",
+        "Find Python learning plans"
       ],
       power_user: [
         "Is sarah@test.com enrolled in Excel course?",
         "Search for JavaScript training courses",
-        "Find users who completed SQL fundamentals"
+        "Find users who completed SQL fundamentals",
+        "Find leadership learning plans"
       ],
       user_manager: [
         "Show my team's progress",
-        "Find training for new employees"
+        "Find training for new employees",
+        "Find onboarding learning plans"
       ],
       user: [
         "What courses am I enrolled in?",
-        "Find Excel training courses"
+        "Find Excel training courses",
+        "Find beginner learning plans"
       ]
     };
     
@@ -462,12 +522,12 @@ class EnhancedChatProcessor {
   }
 }
 
-// Role-based permissions
+// Role-based permissions - Updated to include learning plans
 const ROLE_PERMISSIONS: Record<string, string[]> = {
-  superadmin: ['get_user_enrollments', 'get_course_enrollments', 'enroll_users', 'search_users', 'search_courses'],
-  power_user: ['get_user_enrollments', 'get_course_enrollments', 'search_users', 'search_courses'],
-  user_manager: ['get_user_enrollments', 'search_users'],
-  user: ['search_courses']
+  superadmin: ['get_user_enrollments', 'get_course_enrollments', 'enroll_users', 'search_users', 'search_courses', 'search_learning_plans'],
+  power_user: ['get_user_enrollments', 'get_course_enrollments', 'search_users', 'search_courses', 'search_learning_plans'],
+  user_manager: ['get_user_enrollments', 'search_users', 'search_learning_plans'],
+  user: ['search_courses', 'search_learning_plans']
 };
 
 // Initialize the chat processor
@@ -541,21 +601,34 @@ export async function GET() {
   return NextResponse.json({
     status: 'healthy',
     name: 'Enhanced Docebo Chat API',
-    version: '2.0.0',
+    version: '2.1.0',
     capabilities: [
       'Natural language enrollment management',
       'User and course search',
+      'Learning plan search (UPDATED: /learningplan/v1/learningplans)',
       'Enrollment status checking',
       'Role-based access control',
       'Real-time Docebo integration'
     ],
+    api_endpoints_used: {
+      'users': '/manage/v1/user',
+      'courses': '/learn/v1/courses',
+      'learning_plans': '/learningplan/v1/learningplans',
+      'enrollments': '/learn/v1/enrollments'
+    },
     examples: [
       "Is john@company.com enrolled in Python Programming?",
       "Enroll sarah@test.com in Excel course",
       "Who is enrolled in Leadership Training?",
       "Find users in marketing department",
-      "Search for JavaScript courses"
+      "Search for JavaScript courses",
+      "Find Python learning plans"
     ],
+    learning_plan_update: {
+      'old_endpoint': '/learn/v1/lp',
+      'new_endpoint': '/learningplan/v1/learningplans',
+      'status': 'FIXED'
+    },
     timestamp: new Date().toISOString()
   });
 }
