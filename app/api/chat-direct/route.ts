@@ -364,39 +364,6 @@ No user found with that email address in the system.`,
     const processingTime = Math.floor((Date.now() - startTime) / 1000);
     
     return NextResponse.json({
-      response: `❌ **Processing Error**: ${error instanceof Error ? error.message : 'Unknown error'}
-
-Processing took ${processingTime} seconds before failing.
-
-Please try again. If the issue persists, the user might have a very large number of enrollments.`,
-      success: false,
-      timestamp: new Date().toISOString()
-    }, { status: 500 });
-  }
-}
-
-export async function GET() {
-  return NextResponse.json({
-    status: 'Direct Docebo API - No Background Jobs',
-    version: '1.1.0',
-    timestamp: new Date().toISOString(),
-    features: [
-      'Direct processing within request timeout',
-      '5-minute caching for repeated requests',
-      'Multi-page enrollment fetching',
-      'No persistent storage dependencies',
-      'Updated learning plan endpoint: /learningplan/v1/learningplans'
-    ],
-    api_endpoints_used: {
-      'users': '/manage/v1/user',
-      'courses': '/course/v1/courses',
-      'learning_plans': '/learningplan/v1/learningplans',
-      'enrollments': '/course/v1/courses/enrollments'
-    }
-  });
-}000);
-    
-    return NextResponse.json({
       response: `📚 **${email}'s Courses** (${enrollmentResult.totalCount} total)
 
 👤 **User**: ${user.fullname}
@@ -429,4 +396,37 @@ ${enrollmentResult.totalCount > 20 ? `\n... and ${enrollmentResult.totalCount - 
     
   } catch (error) {
     console.error('❌ Direct processing error:', error);
-    const processingTime = Math.floor((Date.now() - startTime) / 1
+    const processingTime = Math.floor((Date.now() - startTime) / 1000);
+    
+    return NextResponse.json({
+      response: `❌ **Processing Error**: ${error instanceof Error ? error.message : 'Unknown error'}
+
+Processing took ${processingTime} seconds before failing.
+
+Please try again. If the issue persists, the user might have a very large number of enrollments.`,
+      success: false,
+      timestamp: new Date().toISOString()
+    }, { status: 500 });
+  }
+}
+
+export async function GET() {
+  return NextResponse.json({
+    status: 'Direct Docebo API - No Background Jobs',
+    version: '1.1.0',
+    timestamp: new Date().toISOString(),
+    features: [
+      'Direct processing within request timeout',
+      '5-minute caching for repeated requests',
+      'Multi-page enrollment fetching',
+      'No persistent storage dependencies',
+      'Updated learning plan endpoint: /learningplan/v1/learningplans'
+    ],
+    api_endpoints_used: {
+      'users': '/manage/v1/user',
+      'courses': '/course/v1/courses',
+      'learning_plans': '/learningplan/v1/learningplans',
+      'enrollments': '/course/v1/courses/enrollments'
+    }
+  });
+}
