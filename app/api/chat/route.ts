@@ -1,4 +1,4 @@
-// app/api/chat/route.ts - Complete enhanced version
+// app/api/chat/route.ts - Complete clean version with all syntax fixed
 import { NextRequest, NextResponse } from 'next/server';
 
 // Environment configuration
@@ -20,8 +20,6 @@ function getConfig() {
 }
 
 // Enhanced intent detection
-// Fixed IntentAnalyzer class - replace the existing one
-
 class IntentAnalyzer {
   static analyzeIntent(message: string): {
     intent: string;
@@ -203,21 +201,11 @@ class IntentAnalyzer {
   }
   
   static extractCourseName(message: string): string | null {
-    // FIXED: Better course name extraction patterns
     const patterns = [
-      // "Course info Working with Data in Python" -> "Working with Data in Python"
       /(?:course\s+info\s+|course\s+details\s+|course\s+information\s+)(.+?)(?:\s+(?:id|ID)\s*:?\s*\d+)?$/i,
-      
-      // "Tell me about course Python Programming" -> "Python Programming"  
       /(?:tell me about course\s+|info about course\s+)(.+?)(?:\s+(?:id|ID)\s*:?\s*\d+)?$/i,
-      
-      // "in course Working with Data" -> "Working with Data"
       /(?:in course\s+|course named\s+|course called\s+)(.+?)(?:\s|$)/i,
-      
-      // Quoted strings: "Working with Data in Python"
       /"([^"]+)"/,
-      
-      // Bracketed strings: [Working with Data in Python]
       /\[([^\]]+)\]/
     ];
     
@@ -225,7 +213,6 @@ class IntentAnalyzer {
       const match = message.match(pattern);
       if (match && match[1] && match[1].length > 2) {
         let name = match[1].trim();
-        // Clean up any remaining keywords
         name = name.replace(/^(info|details|about|course)\s+/i, '');
         return name;
       }
@@ -235,19 +222,10 @@ class IntentAnalyzer {
   
   static extractLearningPlanName(message: string): string | null {
     const patterns = [
-      // "Learning plan info Getting Started with Python" -> "Getting Started with Python"
       /(?:learning plan info\s+|lp info\s+|plan info\s+)(.+)/i,
-      
-      // "Tell me about learning plan Python" -> "Python"
       /(?:tell me about learning plan\s+|learning plan details\s+)(.+)/i,
-      
-      // "Info Getting Started with Python" -> "Getting Started with Python"
       /(?:info\s+|details\s+)(.+?)(?:\s+learning plan)?$/i,
-      
-      // Quoted strings
       /"([^"]+)"/,
-      
-      // Bracketed strings  
       /\[([^\]]+)\]/
     ];
     
@@ -255,9 +233,7 @@ class IntentAnalyzer {
       const match = message.match(pattern);
       if (match && match[1] && match[1].length > 2) {
         let name = match[1].trim();
-        // Clean up common false positives
         if (!name.match(/^(for|about|on|in|the|a|an|info|details)$/i)) {
-          // Remove any remaining keywords
           name = name.replace(/^(info|details|about|learning plan)\s+/i, '');
           return name;
         }
@@ -309,7 +285,8 @@ class IntentAnalyzer {
     return match && match[1] ? match[1].trim() : null;
   }
 }
-// Part 2: Docebo API Class
+
+// Docebo API client
 class DoceboAPI {
   private config: any;
   private accessToken?: string;
@@ -392,7 +369,7 @@ class DoceboAPI {
       }
     }
     
-    const courses = await this.searchCourses(identifier, 100);
+    const courses = await this.searchCourses(identifier, 20);
     const course = courses.find((c: any) => 
       c.id?.toString() === identifier ||
       c.course_id?.toString() === identifier ||
@@ -438,7 +415,7 @@ class DoceboAPI {
       }
     }
     
-    const learningPlans = await this.searchLearningPlans(identifier, 100);
+    const learningPlans = await this.searchLearningPlans(identifier, 20);
     const lp = learningPlans.find((plan: any) => 
       plan.learning_plan_id?.toString() === identifier ||
       plan.id?.toString() === identifier ||
@@ -541,7 +518,7 @@ class DoceboAPI {
     };
   }
 
-  async searchUsers(searchText: string, limit: number = 100): Promise<any[]> {
+  async searchUsers(searchText: string, limit: number = 20): Promise<any[]> {
     const result = await this.apiRequest('/manage/v1/user', {
       search_text: searchText,
       page_size: Math.min(limit, 200)
@@ -549,7 +526,7 @@ class DoceboAPI {
     return result.data?.items || [];
   }
 
-  async searchCourses(searchText: string, limit: number = 100): Promise<any[]> {
+  async searchCourses(searchText: string, limit: number = 20): Promise<any[]> {
     const result = await this.apiRequest('/course/v1/courses', {
       search_text: searchText,
       page_size: Math.min(limit, 200)
@@ -557,7 +534,7 @@ class DoceboAPI {
     return result.data?.items || [];
   }
 
-  async searchLearningPlans(searchText: string, limit: number = 100): Promise<any[]> {
+  async searchLearningPlans(searchText: string, limit: number = 20): Promise<any[]> {
     try {
       const result = await this.apiRequest('/learningplan/v1/learningplans', {
         search_text: searchText,
@@ -646,9 +623,8 @@ class DoceboAPI {
 }
 
 let api: DoceboAPI;
-// Part 3: Handler Functions
 
-// Enhanced handleCourseInfo with enrollment count and update data
+// Handler functions
 async function handleCourseInfo(entities: any) {
   const identifier = entities.courseId || entities.courseName;
   
@@ -670,75 +646,62 @@ async function handleCourseInfo(entities: any) {
     const courseName = api.getCourseName(course);
     const courseId = course.id || course.course_id || course.idCourse;
     
-    // Status mapping
     const status = course.status || 'Unknown';
     const statusText = status === 'published' ? 'Published ✅' : 
                       status === 'draft' ? 'Draft 📝' : 
                       status === 'suspended' ? 'Suspended 🚫' : 
                       `${status} ❓`;
     
-    // Clean up HTML description and preserve formatting
     const rawDescription = course.description || course.short_description || 'No description available';
     let description = rawDescription
-      .replace(/<\/li>/g, '\n• ') // Convert closing li tags to bullet points
-      .replace(/<li>/g, '• ') // Convert opening li tags to bullet points
-      .replace(/<\/ul>/g, '\n') // Add line break after lists
-      .replace(/<ul>/g, '\n') // Add line break before lists
-      .replace(/<\/p>/g, '\n\n') // Convert paragraphs to line breaks
-      .replace(/<p>/g, '') // Remove opening p tags
-      .replace(/<[^>]*>/g, '') // Remove remaining HTML tags
-      .replace(/&amp;/g, '&')  // Fix HTML entities
+      .replace(/<\/li>/g, '\n• ')
+      .replace(/<li>/g, '• ')
+      .replace(/<\/ul>/g, '\n')
+      .replace(/<ul>/g, '\n')
+      .replace(/<\/p>/g, '\n\n')
+      .replace(/<p>/g, '')
+      .replace(/<[^>]*>/g, '')
+      .replace(/&amp;/g, '&')
       .replace(/&lt;/g, '<')
       .replace(/&gt;/g, '>')
       .replace(/&quot;/g, '"')
-      .replace(/\n\s*\n/g, '\n\n') // Clean up extra line breaks
-      .replace(/^•\s*/, '') // Remove leading bullet if exists
+      .replace(/\n\s*\n/g, '\n\n')
+      .replace(/^•\s*/, '')
       .trim();
     
-    // Basic course information
     const courseType = course.type || 'Not specified';
     const code = course.code || 'Not specified';
     const uid = course.uid || 'Not specified';
     const slugName = course.slug_name || 'Not specified';
     
-    // Language and category
     const language = course.language?.name || course.language?.code || 'Not specified';
     const category = course.category?.name || course.category?.title || 'Not specified';
     
-    // Credits and rating
     const credits = course.credits || 'No credits assigned';
     const rating = course.rating?.average || course.rating?.value || course.average_rating || 'Not rated';
     const ratingText = rating !== 'Not rated' ? `${rating}/5` : 'Not rated';
     
-    // ENROLLMENT COUNT - Add this specific field
     const enrolledCount = course.enrolled_count !== undefined ? course.enrolled_count : 'Not available';
     
-    // Dates
     const createdDate = course.created_on || 'Not available';
     const modifiedDate = course.updated_on || 'Not available';
     
-    // Duration and completion time
     const avgCompletionTime = course.average_completion_time || 'Not specified';
     const duration = course.duration || avgCompletionTime || 'Not specified';
     
-    // Media assets
     const thumbnail = course.thumbnail ? 'Available' : 'Not available';
     const cover = course.cover ? 'Available' : 'Not available';
     
-    // Fix header layout object issue
     const headerLayout = typeof course.header_layout === 'object' ? 
       course.header_layout?.name || course.header_layout?.type || 'Custom layout' : 
       course.header_layout || 'Default';
     
-    // Skills formatting
     const skills = course.skills?.length > 0 ? 
       course.skills.map((skill: any) => skill.name || skill).slice(0, 5).join(', ') : 
       'Not specified';
     
-    // Creator and updater information
     const createdBy = course.created_by?.fullname || course.created_by?.name || 'Not available';
     
-    // UPDATE DATA - Extract updated by fullname from update_data
     const updatedBy = course.update_data?.updated_by?.fullname || 
                      course.updated_by?.fullname || 
                      course.update_data?.updated_by?.name ||
@@ -757,6 +720,9 @@ async function handleCourseInfo(entities: any) {
 🎯 **Code**: ${code}
 🔗 **UID**: ${uid}
 ⭐ **Credits**: ${credits}
+
+📝 **Description**: 
+${description}
 
 🔗 **Course Information**:
 • **Type**: ${courseType}
@@ -782,9 +748,6 @@ async function handleCourseInfo(entities: any) {
 • **Updated By**: ${updatedBy}${updatedById !== 'Not available' ? ` (ID: ${updatedById})` : ''}
 • **Average Completion Time**: ${avgCompletionTime}
 
-📝 **Description**: 
-${description}
-
 **Course found successfully!**`,
       success: true,
       data: course,
@@ -807,6 +770,7 @@ ${description}
     });
   }
 }
+
 async function handleLearningPlanInfo(entities: any) {
   const identifier = entities.learningPlanName;
   
@@ -896,7 +860,7 @@ async function handleSessionSearch(entities: any) {
       });
     }
     
-    const sessionList = result.sessions.slice(0, 100).map((session: any, i: number) => {
+    const sessionList = result.sessions.slice(0, 15).map((session: any, i: number) => {
       const sessionName = api.getSessionName(session);
       const sessionId = session.id || session.session_id || 'N/A';
       const instructor = session.instructor || 'Not assigned';
@@ -913,7 +877,7 @@ async function handleSessionSearch(entities: any) {
 ${sessionFilter ? `🔍 **Filter**: "${sessionFilter}"\n` : ''}
 📊 **Total Sessions**: ${result.totalSessions}
 
-${sessionList}${result.totalSessions > 100 ? `\n\n... and ${result.totalSessions - 100} more sessions` : ''}`,
+${sessionList}${result.totalSessions > 15 ? `\n\n... and ${result.totalSessions - 15} more sessions` : ''}`,
       success: true,
       totalCount: result.totalSessions,
       timestamp: new Date().toISOString()
@@ -1031,7 +995,7 @@ async function handleUserSearch(entities: any) {
         timestamp: new Date().toISOString()
       });
     } else {
-      const users = await api.searchUsers(searchTerm, 100);
+      const users = await api.searchUsers(searchTerm, 20);
       
       if (users.length === 0) {
         return NextResponse.json({
@@ -1041,7 +1005,7 @@ async function handleUserSearch(entities: any) {
         });
       }
       
-      const userList = users.slice(0, 100).map((user, i) => {
+      const userList = users.slice(0, 15).map((user, i) => {
         const statusIcon = user.status === '1' ? '✅' : '❌';
         return `${i + 1}. ${statusIcon} **${user.fullname}** (${user.email})`;
       }).join('\n');
@@ -1049,7 +1013,7 @@ async function handleUserSearch(entities: any) {
       return NextResponse.json({
         response: `👥 **User Search Results**: Found ${users.length} users
 
-${userList}${users.length > 100 ? `\n\n... and ${users.length - 100} more users` : ''}`,
+${userList}${users.length > 15 ? `\n\n... and ${users.length - 15} more users` : ''}`,
         success: true,
         totalCount: users.length,
         timestamp: new Date().toISOString()
@@ -1064,7 +1028,6 @@ ${userList}${users.length > 100 ? `\n\n... and ${users.length - 100} more users`
   }
 }
 
-// Fixed handleCourseSearch function with correct syntax
 async function handleCourseSearch(entities: any) {
   const searchTerm = entities.searchTerm;
   
@@ -1092,25 +1055,19 @@ async function handleCourseSearch(entities: any) {
       });
     }
     
-    // Enhanced course list with enrollment data (similar to learning plan format)
     const courseList = courses.slice(0, 15).map((course, i) => {
       const courseName = api.getCourseName(course);
       const courseId = course.id || course.course_id || 'N/A';
       
-      // Status with icon (similar to learning plan)
       const status = course.status || course.course_status || 'Unknown';
       const statusText = status === 'published' ? 'Published ✅' : 
                         status === 'draft' ? 'Draft 📝' : 
                         status === 'suspended' ? 'Suspended 🚫' : 
                         `${status} ❓`;
       
-      // Enrollment count (similar to learning plan enrollment count)
       const enrollmentCount = course.enrolled_count !== undefined ? course.enrolled_count : 0;
-      
-      // Additional useful info
       const courseType = course.type || course.course_type || 'Unknown';
       
-      // Format similar to learning plan search results
       return `${i + 1}. **${courseName}** (ID: ${courseId})
    📊 ${statusText} | 👥 ${enrollmentCount} enrollments | 🔗 ${courseType}`;
     }).join('\n\n');
@@ -1124,8 +1081,7 @@ ${courseList}${courses.length > 15 ? `\n\n... and ${courses.length - 15} more co
       success: true,
       totalCount: courses.length,
       timestamp: new Date().toISOString()
-    }); // <- This closing brace was missing!
-    
+    });
   } catch (error) {
     return NextResponse.json({
       response: `❌ **Error**: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -1134,6 +1090,7 @@ ${courseList}${courses.length > 15 ? `\n\n... and ${courses.length - 15} more co
     });
   }
 }
+
 async function handleLearningPlanSearch(entities: any) {
   const searchTerm = entities.searchTerm;
   
@@ -1151,7 +1108,7 @@ async function handleLearningPlanSearch(entities: any) {
   }
   
   try {
-    const learningPlans = await api.searchLearningPlans(searchTerm, 100);
+    const learningPlans = await api.searchLearningPlans(searchTerm, 20);
     
     if (learningPlans.length === 0) {
       return NextResponse.json({
@@ -1166,7 +1123,7 @@ async function handleLearningPlanSearch(entities: any) {
       });
     }
     
-    const planList = learningPlans.slice(0, 100).map((plan, i) => {
+    const planList = learningPlans.slice(0, 15).map((plan, i) => {
       const planName = api.getLearningPlanName(plan);
       const planId = plan.learning_plan_id || plan.id || 'N/A';
       const status = plan.is_published ? 'Published ✅' : 'Unpublished ❌';
@@ -1179,7 +1136,9 @@ async function handleLearningPlanSearch(entities: any) {
     return NextResponse.json({
       response: `📚 **Learning Plan Search Results**: Found ${learningPlans.length} learning plans
 
-${planList}${learningPlans.length > 100 ? `\n\n... and ${learningPlans.length - 100} more learning plans` : ''},
+${planList}${learningPlans.length > 15 ? `\n\n... and ${learningPlans.length - 15} more learning plans` : ''}
+
+**API Endpoint Used**: \`/learningplan/v1/learningplans\``,
       success: true,
       totalCount: learningPlans.length,
       timestamp: new Date().toISOString()
@@ -1219,7 +1178,6 @@ For immediate assistance, please visit:
     timestamp: new Date().toISOString()
   });
 }
-// Part 4: Main POST and GET Functions
 
 export async function POST(request: NextRequest) {
   try {
@@ -1319,12 +1277,12 @@ export async function GET() {
     features: [
       'Enhanced natural language processing',
       'Intent-based command detection',
-      'Course info retrieval',
+      'Course info retrieval with enrollment data',
       'Learning plan info retrieval',
       'Session search in courses',
       'Material search in courses',
       'User search and details',
-      'Course search', 
+      'Course search with enrollment data', 
       'Learning plan search',
       'Docebo help integration'
     ],
