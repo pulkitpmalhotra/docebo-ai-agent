@@ -662,7 +662,11 @@ class DoceboAPI {
     
     const endpoints = [
       `/learningplan/v1/learningplans/enrollments?user_id=${userId}`,
-      `/learningplan/v1/learningplans/enrollments?id_user=${userId}`
+      `/learningplan/v1/learningplans/enrollments?id_user=${userId}`,
+      `/learn/v1/enrollments/learningplans?user_id=${userId}`,
+      `/learn/v1/enrollments/learningplans?id_user=${userId}`,
+      `/manage/v1/user/${userId}/learningplans`,
+      `/learn/v1/users/${userId}/learningplans`
     ];
     
     for (const endpoint of endpoints) {
@@ -674,13 +678,22 @@ class DoceboAPI {
           console.log(`✅ Found ${result.data.items.length} learning plan enrollments from ${endpoint}`);
           
           const userEnrollments = result.data.items.filter((enrollment: any) => {
-            return enrollment.user_id?.toString() === userId.toString() || 
-                   enrollment.id_user?.toString() === userId.toString();
+            const enrollmentUserId = enrollment.user_id || enrollment.id_user || enrollment.userId;
+            return enrollmentUserId?.toString() === userId.toString();
           });
           
           return {
-            enrollments: userEnrollments,
-            totalCount: userEnrollments.length,
+            enrollments: userEnrollments.length > 0 ? userEnrollments : result.data.items,
+            totalCount: userEnrollments.length > 0 ? userEnrollments.length : result.data.items.length,
+            endpoint: endpoint,
+            success: true
+          };
+        } else if (result.data && Array.isArray(result.data) && result.data.length > 0) {
+          // Handle case where data is directly an array
+          console.log(`✅ Found ${result.data.length} learning plan enrollments from ${endpoint} (direct array)`);
+          return {
+            enrollments: result.data,
+            totalCount: result.data.length,
             endpoint: endpoint,
             success: true
           };
@@ -1172,21 +1185,20 @@ async function handleUserEnrollments(entities: any) {
     
     if (!enrollmentData.success) {
       return NextResponse.json({
-        response: `❌ **No Enrollment Data**: Could not retrieve enrollment information for "${identifier}"
+        response: `😔 **Oops! I couldn't find enrollment data for ${userDetails.fullname}**
 
-**Debug Info:**
-• User ID: ${userId}
-• Course endpoint tried: ${enrollmentData.courses?.endpoint || 'N/A'}
-• Learning plan endpoint tried: ${enrollmentData.learningPlans?.endpoint || 'N/A'}
+**What I checked:**
+• Course enrollments via: ${enrollmentData.courses?.endpoint || 'N/A'}
+• Learning plan enrollments via: ${enrollmentData.learningPlans?.endpoint || 'N/A'}
 
-**Possible reasons:**
-• User might not be enrolled in any courses or learning plans
-• API endpoints might not be accessible with current permissions
-• User ID might be incorrect
+**This might happen if:**
+• The user isn't enrolled in anything yet
+• API permissions don't allow access to enrollment data
+• There's a temporary connectivity issue
 
-**Suggestions:**
-• Verify the user email/ID is correct
-• Check API permissions for enrollment endpoints`,
+**Want to try something else?**
+• Check user profile: "Find user ${identifier}"
+• Search for courses: "Find Python courses"`,
         success: false,
         timestamp: new Date().toISOString()
       });
@@ -1196,7 +1208,7 @@ async function handleUserEnrollments(entities: any) {
     if (enrollmentData.courses.success && enrollmentData.totalCourses > 0) {
       console.log(`📚 Processing ${enrollmentData.totalCourses} course enrollments`);
       
-      const formattedCourses = enrollmentData.courses.enrollments.slice(0, 10).map((enrollment: any, i: number) => {
+      const formattedCourses = enrollmentData.courses.enrollments.slice(0, 8).map((enrollment: any, i: number) => {
         const formatted = api.formatCourseEnrollment(enrollment);
         const statusIcon = formatted.enrollmentStatus === 'completed' ? '✅' : 
                           formatted.enrollmentStatus === 'in_progress' ? '🔄' : 
@@ -1204,18 +1216,32 @@ async function handleUserEnrollments(entities: any) {
                           formatted.enrollmentStatus === 'enrolled' ? '📚' : '❓';
         
         const progressText = formatted.progress > 0 ? ` (${formatted.progress}% complete)` : '';
-        const scoreText = formatted.score ? ` | Score: ${formatted.score}` : '';
-        const dateText = formatted.enrollmentDate ? ` | ${formatted.enrollmentDate}` : '';
+        const scoreText = formatted.score ? ` | 🎯 Score: ${formatted.score}` : '';
+        
+        // Format date nicely
+        let dateText = '';
+        if (formatted.enrollmentDate && formatted.enrollmentDate !== 'Unknown') {
+          try {
+            const date = new Date(formatted.enrollmentDate);
+            dateText = date.toLocaleDateString('en-US', { 
+              year: 'numeric', 
+              month: 'short', 
+              day: 'numeric' 
+            });
+          } catch {
+            dateText = formatted.enrollmentDate;
+          }
+        } else {
+          dateText = 'Date not available';
+        }
         
         return `${i + 1}. ${statusIcon} **${formatted.courseName}**${progressText}${scoreText}
-   📅 Enrolled: ${formatted.enrollmentDate || 'Unknown'}${formatted.completionDate ? ` | ✅ Completed: ${formatted.completionDate}` : ''}`;
+   📅 Enrolled: ${dateText}${formatted.completionDate ? ` | ✅ Completed: ${formatted.completionDate}` : ''}`;
       }).join('\n\n');
       
-      courseSection = `📚 **Course Enrollments** (${enrollmentData.totalCourses} total):
+      courseSection = `📚 **Courses** (${enrollmentData.totalCourses} total)
 
-${formattedCourses}${enrollmentData.totalCourses > 10 ? `\n\n... and ${enrollmentData.totalCourses - 10} more courses` : ''}
-
-**Endpoint used**: ${enrollmentData.courses.endpoint}`;
+${formattedCourses}${enrollmentData.totalCourses > 8 ? `\n\n✨ **Plus ${enrollmentData.totalCourses - 8} more courses!** Great learning progress! 🎉` : ''}`;
     }
     
     let learningPlanSection = '';
@@ -1229,50 +1255,85 @@ ${formattedCourses}${enrollmentData.totalCourses > 10 ? `\n\n... and ${enrollmen
                           formatted.enrollmentStatus === 'not_started' ? '⏳' : '📋';
         
         const progressText = formatted.progress > 0 ? ` (${formatted.progress}% complete)` : '';
-        const coursesText = formatted.totalCourses > 0 ? ` | ${formatted.completedCourses}/${formatted.totalCourses} courses` : '';
+        const coursesText = formatted.totalCourses > 0 ? ` | 📚 ${formatted.completedCourses}/${formatted.totalCourses} courses done` : '';
+        
+        // Format date nicely
+        let dateText = '';
+        if (formatted.enrollmentDate && formatted.enrollmentDate !== 'Unknown') {
+          try {
+            const date = new Date(formatted.enrollmentDate);
+            dateText = date.toLocaleDateString('en-US', { 
+              year: 'numeric', 
+              month: 'short', 
+              day: 'numeric' 
+            });
+          } catch {
+            dateText = formatted.enrollmentDate;
+          }
+        } else {
+          dateText = 'Date not available';
+        }
         
         return `${i + 1}. ${statusIcon} **${formatted.learningPlanName}**${progressText}${coursesText}
-   📅 Enrolled: ${formatted.enrollmentDate || 'Unknown'}`;
+   📅 Started: ${dateText}`;
       }).join('\n\n');
       
-      learningPlanSection = `📋 **Learning Plan Enrollments** (${enrollmentData.totalLearningPlans} total):
+      learningPlanSection = `🎯 **Learning Plans** (${enrollmentData.totalLearningPlans} total)
 
-${formattedPlans}${enrollmentData.totalLearningPlans > 5 ? `\n\n... and ${enrollmentData.totalLearningPlans - 5} more learning plans` : ''}
+${formattedPlans}${enrollmentData.totalLearningPlans > 5 ? `\n\n✨ **Plus ${enrollmentData.totalLearningPlans - 5} more learning paths!**` : ''}`;
+    } else {
+      // Try to provide helpful info about why no learning plans were found
+      learningPlanSection = `🎯 **Learning Plans**
 
-**Endpoint used**: ${enrollmentData.learningPlans.endpoint}`;
-    } else if (enrollmentData.totalLearningPlans === 0) {
-      learningPlanSection = `📋 **Learning Plan Enrollments**: No learning plan enrollments found`;
+🔍 No learning plan enrollments found using endpoint: ${enrollmentData.learningPlans?.endpoint || 'none available'}
+
+*Note: This might mean ${userDetails.fullname} isn't enrolled in any learning plans, or they might be enrolled in individual courses instead of structured learning paths.*`;
     }
     
     const sections = [courseSection, learningPlanSection].filter(section => section).join('\n\n');
     
     if (!sections && enrollmentData.totalCourses === 0 && enrollmentData.totalLearningPlans === 0) {
       return NextResponse.json({
-        response: `📊 **User Enrollments**: ${userDetails.fullname}
+        response: `📊 **${userDetails.fullname}'s Learning Journey**
 
-👥 **User**: ${userDetails.email}
-🆔 **User ID**: ${userId}
+👋 Hi! Here's what I found for **${userDetails.fullname}** (${userDetails.email}):
 
-📚 **No Active Enrollments Found**
+🎒 **Currently Not Enrolled**
+It looks like ${userDetails.fullname.split(' ')[0]} isn't enrolled in any courses or learning plans right now.
 
-This user is not currently enrolled in any courses or learning plans.
+**Ready to get started?** Here are some options:
+• Browse available courses: "Find Python courses"
+• Search learning plans: "Find leadership learning plans"
+• Check user profile: "Find user ${userDetails.email}"
 
-**API Debug Info:**
-• Course endpoint: ${enrollmentData.courses?.endpoint || 'N/A'}
-• Learning plan endpoint: ${enrollmentData.learningPlans?.endpoint || 'N/A'}`,
+*API checked: Course endpoint (${enrollmentData.courses?.endpoint}) and Learning Plan endpoint (${enrollmentData.learningPlans?.endpoint})*`,
         success: true,
         timestamp: new Date().toISOString()
       });
     }
     
+    // Calculate some friendly stats
+    const completedCourses = enrollmentData.courses.enrollments?.filter((e: any) => 
+      api.formatCourseEnrollment(e).enrollmentStatus === 'completed'
+    ).length || 0;
+    
+    const inProgressCourses = enrollmentData.courses.enrollments?.filter((e: any) => 
+      api.formatCourseEnrollment(e).enrollmentStatus === 'in_progress'
+    ).length || 0;
+    
     return NextResponse.json({
-      response: `📊 **User Enrollments**: ${userDetails.fullname}
+      response: `📊 **${userDetails.fullname}'s Learning Journey**
 
-👥 **User**: ${userDetails.email} | 🆔 **User ID**: ${userId}
+👋 Hi! Here's ${userDetails.fullname.split(' ')[0]}'s learning progress:
 
 ${sections}
 
-**Total Summary**: ${enrollmentData.totalCourses} courses, ${enrollmentData.totalLearningPlans} learning plans`,
+🎉 **Quick Stats:**
+• 📚 **${enrollmentData.totalCourses} courses total** (${completedCourses} completed, ${inProgressCourses} in progress)
+• 🎯 **${enrollmentData.totalLearningPlans} learning plans**
+• 🏆 **Status**: ${userDetails.status} ${userDetails.level}
+
+*Keep up the great work! 🌟*`,
       success: true,
       data: enrollmentData,
       timestamp: new Date().toISOString()
@@ -1281,12 +1342,16 @@ ${sections}
   } catch (error) {
     console.error('❌ Enrollment fetch error:', error);
     return NextResponse.json({
-      response: `❌ **Error**: ${error instanceof Error ? error.message : 'Unknown error'}
+      response: `😔 **Oops! Something went wrong**
 
-**Suggestions:**
-• Verify the user email/ID is correct: "${identifier}"
-• Check if enrollment API endpoints are accessible
-• Try: "Find user ${identifier}" to confirm user exists first`,
+I had trouble getting enrollment info for "${identifier}".
+
+**Error details**: ${error instanceof Error ? error.message : 'Unknown error'}
+
+**Let's try something else:**
+• Check if user exists: "Find user ${identifier}"
+• Browse courses: "Find courses"
+• Get help: "How to check enrollments"`,
       success: false,
       timestamp: new Date().toISOString()
     });
