@@ -36,7 +36,15 @@ class IntentAnalyzer {
     
     // Intent patterns with confidence scores
     const patterns = [
-      // Course Info patterns
+      // Check enrollment patterns
+      {
+    intent: 'check_specific_enrollment',
+    patterns: [
+      /(?:check if|is)\s+(.+?)\s+(?:enrolled|taking|assigned to|has completed|completed)\s+(?:in\s+)?(?:course|learning plan)\s+(.+)/i,
+      /(?:check status|status|enrollment details|enrollment status)\s+(?:of\s+)?(.+?)\s+(?:in\s+)?(?:course|learning plan)\s+(.+)/i,
+      // ... etc
+    ],
+        // Course Info patterns
       {
         intent: 'get_course_info',
         patterns: [
@@ -1243,7 +1251,253 @@ ${planList}${learningPlans.length > 10 ? `\n\n... and ${learningPlans.length - 1
     });
   }
 }
+async function handleSpecificEnrollmentCheck(entities: any) {
+  const { email, resourceName, resourceType, checkType, query } = entities;
+  
+  if (!email || !resourceName) {
+    return NextResponse.json({
+      response: `❌ **Missing Information**: I need both a user email and ${resourceType === 'learning_plan' ? 'learning plan' : 'course'} name.
 
+**Examples:**
+- "Check if john@company.com is enrolled in course Python Programming"
+- "Check if sarah@company.com has completed learning plan Data Science Fundamentals"
+- "Check status of mike@company.com in course Excel Training"
+- "Provide enrollment details of user@company.com in learning plan Leadership Development"`,
+      success: false,
+      timestamp: new Date().toISOString()
+    });
+  }
+  
+  console.log(`🎯 Specific enrollment check: ${email} -> ${resourceType} "${resourceName}" (${checkType})`);
+  
+  try {
+    // Get user details
+    const userDetails = await api.getUserDetails(email);
+    const userId = userDetails.id;
+    
+    // Get all enrollments for the user
+    const enrollmentData = await api.getUserAllEnrollments(userId);
+    
+    if (!enrollmentData.success) {
+      return NextResponse.json({
+        response: `😔 **Could not retrieve enrollment data for ${userDetails.fullname}**
+
+**Error**: Unable to fetch enrollment information from the system.
+
+**Try instead:**
+- General user lookup: "Find user ${email}"
+- Browse available content: "Find ${resourceName} ${resourceType === 'learning_plan' ? 'learning plans' : 'courses'}"`,
+        success: false,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    let foundEnrollment = null;
+    let searchResults = [];
+    
+    if (resourceType === 'course') {
+      // Search through course enrollments
+      searchResults = enrollmentData.courses.enrollments.filter((enrollment: any) => {
+        const formatted = api.formatCourseEnrollment(enrollment);
+        return formatted.courseName.toLowerCase().includes(resourceName.toLowerCase());
+      });
+      
+      foundEnrollment = searchResults.length > 0 ? searchResults[0] : null;
+    } else {
+      // Search through learning plan enrollments
+      searchResults = enrollmentData.learningPlans.enrollments.filter((enrollment: any) => {
+        const formatted = api.formatLearningPlanEnrollment(enrollment);
+        return formatted.learningPlanName.toLowerCase().includes(resourceName.toLowerCase());
+      });
+      
+      foundEnrollment = searchResults.length > 0 ? searchResults[0] : null;
+    }
+    
+    if (!foundEnrollment) {
+      // No enrollment found - provide helpful response
+      const resourceTypeDisplay = resourceType === 'learning_plan' ? 'learning plan' : 'course';
+      
+      return NextResponse.json({
+        response: `❌ **No Enrollment Found**
+
+**User**: ${userDetails.fullname} (${email})
+**${resourceTypeDisplay.charAt(0).toUpperCase() + resourceTypeDisplay.slice(1)}**: "${resourceName}"
+
+🔍 **Status**: **Not enrolled** - ${userDetails.fullname.split(' ')[0]} is not currently enrolled in this ${resourceTypeDisplay}.
+
+**What you can do:**
+- Check if the ${resourceTypeDisplay} name is spelled correctly
+- Search for similar ${resourceType === 'learning_plan' ? 'learning plans' : 'courses'}: "Find ${resourceName} ${resourceType === 'learning_plan' ? 'learning plans' : 'courses'}"
+- View all enrollments: "User enrollments ${email}"
+- Enroll the user: "How to enroll users in ${resourceTypeDisplay}s"
+
+**Alternative searches:**
+${searchResults.length === 0 ? `• Try partial name: "Check if ${email} is enrolled in ${resourceName.split(' ')[0]}"` : ''}`,
+        success: true,
+        data: {
+          enrolled: false,
+          userFound: true,
+          resourceFound: false
+        },
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    // Enrollment found - format detailed response
+    let formatted: any;
+    let resourceId: string;
+    let resourceDisplayName: string;
+    
+    if (resourceType === 'course') {
+      formatted = api.formatCourseEnrollment(foundEnrollment);
+      resourceId = formatted.courseId || 'Unknown ID';
+      resourceDisplayName = formatted.courseName;
+    } else {
+      formatted = api.formatLearningPlanEnrollment(foundEnrollment);
+      resourceId = formatted.learningPlanId || 'Unknown ID';
+      resourceDisplayName = formatted.learningPlanName;
+    }
+    
+    // Status analysis
+    const status = formatted.enrollmentStatus;
+    let statusIcon = '📚';
+    let statusText = '';
+    let statusDescription = '';
+    
+    if (status === 'completed') {
+      statusIcon = '✅';
+      statusText = 'Completed';
+      statusDescription = 'Successfully completed all requirements';
+    } else if (status === 'in_progress' || status === 'in-progress') {
+      statusIcon = '🔄';
+      statusText = 'In Progress';
+      statusDescription = 'Currently working through the content';
+    } else if (status === 'not_started' || status === 'not-started') {
+      statusIcon = '⏳';
+      statusText = 'Not Started';
+      statusDescription = 'Enrolled but has not begun yet';
+    } else if (status === 'enrolled') {
+      statusIcon = '📚';
+      statusText = 'Enrolled';
+      statusDescription = 'Successfully enrolled and ready to begin';
+    } else if (status === 'suspended') {
+      statusIcon = '🚫';
+      statusText = 'Suspended';
+      statusDescription = 'Enrollment is currently suspended';
+    } else if (status === 'waiting_for_payment') {
+      statusIcon = '💳';
+      statusText = 'Waiting for Payment';
+      statusDescription = 'Enrollment pending payment processing';
+    } else {
+      statusIcon = '❓';
+      statusText = status || 'Unknown';
+      statusDescription = 'Status information not available';
+    }
+    
+    // Answer the specific question asked
+    let answerSummary = '';
+    if (checkType === 'completion') {
+      const isCompleted = status === 'completed';
+      answerSummary = `**${isCompleted ? '✅ Yes' : '❌ No'}** - ${userDetails.fullname.split(' ')[0]} has ${isCompleted ? '' : '**not**'} completed this ${resourceType === 'learning_plan' ? 'learning plan' : 'course'}.`;
+    } else {
+      answerSummary = `**✅ Yes** - ${userDetails.fullname.split(' ')[0]} is enrolled in this ${resourceType === 'learning_plan' ? 'learning plan' : 'course'}.`;
+    }
+    
+    // Format dates
+    const formatDate = (dateString: string | null | undefined): string => {
+      if (!dateString) return 'Not available';
+      try {
+        const date = new Date(dateString);
+        if (isNaN(date.getTime())) return dateString;
+        return date.toLocaleDateString('en-US', { 
+          year: 'numeric', 
+          month: 'long', 
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+      } catch {
+        return dateString;
+      }
+    };
+    
+    // Build progress information
+    let progressInfo = '';
+    if (resourceType === 'course') {
+      if (formatted.progress > 0) {
+        progressInfo = `📊 **Progress**: ${formatted.progress}%`;
+      }
+      if (formatted.score) {
+        progressInfo += progressInfo ? ` | 🎯 **Score**: ${formatted.score}` : `🎯 **Score**: ${formatted.score}`;
+      }
+    } else {
+      // Learning plan progress
+      if (formatted.totalCourses > 0) {
+        progressInfo = `📚 **Courses**: ${formatted.completedCourses}/${formatted.totalCourses} completed`;
+      }
+      if (formatted.progress > 0) {
+        progressInfo += progressInfo ? ` | 📊 **Progress**: ${formatted.progress}%` : `📊 **Progress**: ${formatted.progress}%`;
+      }
+    }
+    
+    // Additional details
+    let additionalDetails = '';
+    if (formatted.assignmentType) {
+      additionalDetails += `📋 **Assignment Type**: ${formatted.assignmentType}`;
+    }
+    
+    return NextResponse.json({
+      response: `🎯 **Enrollment Status Check**
+
+👤 **User**: ${userDetails.fullname} (${email})
+${resourceType === 'learning_plan' ? '📋' : '📚'} **${resourceType === 'learning_plan' ? 'Learning Plan' : 'Course'}**: ${resourceDisplayName}
+🆔 **ID**: ${resourceId}
+
+${answerSummary}
+
+📊 **Current Status**: ${statusIcon} **${statusText}**
+*${statusDescription}*
+
+${progressInfo ? `\n${progressInfo}\n` : ''}
+📅 **Key Dates**:
+- **Enrolled**: ${formatDate(formatted.enrollmentDate)}
+${formatted.completionDate ? `• **Completed**: ${formatDate(formatted.completionDate)}` : ''}
+${formatted.dueDate ? `• **Due**: ${formatDate(formatted.dueDate)}` : ''}
+
+${additionalDetails ? `${additionalDetails}\n` : ''}
+**💡 Need more details?**
+- View all enrollments: "User enrollments ${email}"
+- Search for similar: "Find ${resourceName} ${resourceType === 'learning_plan' ? 'learning plans' : 'courses'}"`,
+      success: true,
+      data: {
+        enrolled: true,
+        status: statusText,
+        completed: status === 'completed',
+        progress: formatted.progress || 0,
+        userInfo: userDetails,
+        enrollmentDetails: formatted
+      },
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('❌ Specific enrollment check error:', error);
+    return NextResponse.json({
+      response: `😔 **Error checking enrollment**
+
+**Query**: "${query}"
+
+**Error**: ${error instanceof Error ? error.message : 'Unknown error'}
+
+**Try instead:**
+- Check user exists: "Find user ${email}"
+- Search for the ${resourceType === 'learning_plan' ? 'learning plan' : 'course'}: "Find ${resourceName} ${resourceType === 'learning_plan' ? 'learning plans' : 'courses'}"
+- Get all enrollments: "User enrollments ${email}"`,
+      success: false,
+      timestamp: new Date().toISOString()
+    });
+  }
+}
 async function handleUserEnrollments(entities: any) {
   const identifier = entities.email || entities.userId;
   
@@ -1723,6 +1977,9 @@ export async function POST(request: NextRequest) {
     
     try {
       switch (analysis.intent) {
+  case 'check_specific_enrollment':  // ADD THIS NEW CASE
+    return await handleSpecificEnrollmentCheck(analysis.entities);
+          
         case 'get_course_info':
           return await handleCourseInfo(analysis.entities);
           
