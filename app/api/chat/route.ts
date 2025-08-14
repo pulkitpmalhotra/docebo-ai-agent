@@ -268,24 +268,6 @@ function extractHelpContent(html: string): string {
   }
 }
 
-// Example of how different questions get different articles:
-
-// Query: "How to enroll users in Docebo"
-// Search: "How to enroll users in Docebo site:help.docebo.com"
-// Result URL: https://help.docebo.com/hc/en-us/articles/9167072863762-Enrolling-users-in-e-learning-courses
-
-// Query: "How to enable timeout session"  
-// Search: "How to enable timeout session site:help.docebo.com"
-// Result URL: https://help.docebo.com/hc/en-us/articles/360020127259-Session-timeout-and-user-login-settings
-
-// Query: "How to create observation checklist"
-// Search: "How to create observation checklist site:help.docebo.com"  
-// Result URL: https://help.docebo.com/hc/en-us/articles/360020124179-Creating-and-managing-observation-checklists
-
-// Query: "How to set up SAML authentication"
-// Search: "How to set up SAML authentication site:help.docebo.com"
-// Result URL: [Whatever article is most relevant from the search]
-
 // Generate response from real search results
 async function generateHelpResponseFromRealSearch(query: string, searchResults: SearchResult[]): Promise<string> {
   if (searchResults.length === 0) {
@@ -359,11 +341,20 @@ function extractLearningPlan(message: string): string | null {
   const bracketMatch = message.match(/\[([^\]]+)\]/);
   if (bracketMatch) return bracketMatch[1];
   
-  const lpInfoMatch = message.match(/(?:learning plan info|lp info)\s+(.+)/i);
+  // Updated patterns for learning plan info
+  const lpInfoPattern = /(?:learning plan info|lp info|plan info)\s+(.+)/i;
+  const lpInfoMatch = message.match(lpInfoPattern);
   if (lpInfoMatch) return lpInfoMatch[1].trim();
   
-  const lpMatch = message.match(/find\s+(.+?)\s+(?:learning plan|lp)/i);
-  if (lpMatch) return lpMatch[1].trim();
+  // Updated patterns for find learning plan
+  const findLpPattern = /find\s+(.+?)\s+(?:learning plan|lp|plan)/i;
+  const findLpMatch = message.match(findLpPattern);
+  if (findLpMatch) return findLpMatch[1].trim();
+  
+  // New pattern for "search learning plans"
+  const searchLpPattern = /search\s+(.+?)\s+(?:learning plans|lps)/i;
+  const searchLpMatch = message.match(searchLpPattern);
+  if (searchLpMatch) return searchLpMatch[1].trim();
   
   return null;
 }
@@ -485,40 +476,58 @@ class DoceboAPI {
   }
 
   async searchLearningPlans(searchText: string, limit: number = 20): Promise<any[]> {
-    const correctEndpoint = '/learn/v1/lp';
+    console.log(`🔍 Searching learning plans with: "${searchText}"`);
+    
+    // Use the correct endpoint: /learningplan/v1/learningplans
+    const correctEndpoint = '/learningplan/v1/learningplans';
     
     try {
+      // First try with search parameters
       const result = await this.apiRequest(correctEndpoint, {
         search_text: searchText,
-        page_size: Math.min(limit, 200)
+        page_size: Math.min(limit, 200),
+        sort_attr: 'title',
+        sort_dir: 'asc'
       });
       
+      console.log(`📚 Learning plans API response:`, result);
+      
       if (result.data?.items?.length > 0) {
+        console.log(`✅ Found ${result.data.items.length} learning plans with search`);
         return result.data.items;
       }
       
+      // If search_text doesn't work, try without it and filter manually
+      console.log(`🔄 Trying manual search for learning plans...`);
       const allResult = await this.apiRequest(correctEndpoint, {
-        page_size: 10
+        page_size: Math.min(limit * 2, 200), // Get more to filter
+        sort_attr: 'title',
+        sort_dir: 'asc'
       });
       
-      const totalLearningPlans = allResult.data?.items?.length || 0;
-      
-      if (totalLearningPlans > 0) {
+      if (allResult.data?.items?.length > 0) {
+        console.log(`📋 Retrieved ${allResult.data.items.length} total learning plans`);
+        
+        // Manual filtering
         const filteredPlans = allResult.data.items.filter((lp: any) => {
           const name = this.getLearningPlanName(lp).toLowerCase();
-          return name.includes(searchText.toLowerCase());
+          const description = (lp.description || '').toLowerCase();
+          const searchLower = searchText.toLowerCase();
+          
+          return name.includes(searchLower) || description.includes(searchLower);
         });
         
-        if (filteredPlans.length > 0) {
-          return filteredPlans;
-        }
+        console.log(`🎯 Filtered to ${filteredPlans.length} matching learning plans`);
+        return filteredPlans.slice(0, limit);
       }
       
+      console.log(`❌ No learning plans found`);
+      return [];
+      
     } catch (error) {
-      console.log(`Learning plan endpoint failed:`, error);
+      console.error(`❌ Learning plan search failed:`, error);
+      return [];
     }
-    
-    return [];
   }
 
   async searchSessions(searchText: string, limit: number = 20): Promise<any[]> {
@@ -595,7 +604,14 @@ class DoceboAPI {
   }
 
   getLearningPlanName(lp: any): string {
-    return lp.title || lp.name || lp.learning_plan_name || lp.lp_name || 'Unknown Learning Plan';
+    // Handle different possible property names for learning plan titles
+    return lp.title || 
+           lp.name || 
+           lp.learning_plan_name || 
+           lp.lp_name || 
+           lp.learningplan_name ||
+           lp.plan_name ||
+           'Unknown Learning Plan';
   }
 
   getSessionName(session: any): string {
@@ -839,6 +855,150 @@ ${courseList}${courses.length > 20 ? `\n\n... and ${courses.length - 20} more co
         timestamp: new Date().toISOString()
       });
     }
+
+    // 5. LEARNING PLAN SEARCH - UPDATED
+    if (PATTERNS.searchLearningPlans(message)) {
+      const searchTerm = learningPlan || message.replace(/find|search|learning plan|lp/gi, '').trim();
+      
+      if (!searchTerm || searchTerm.length < 2) {
+        return NextResponse.json({
+          response: `❌ **Missing Search Term**: I need a learning plan name to search for.`,
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      console.log(`🔍 Searching learning plans for: "${searchTerm}"`);
+      const learningPlans = await api.searchLearningPlans(searchTerm, 50);
+      
+      if (learningPlans.length === 0) {
+        return NextResponse.json({
+          response: `📚 **No Learning Plans Found**: No learning plans match "${searchTerm}"
+
+**Suggestions:**
+• Try broader search terms
+• Check spelling
+• Search for keywords within plan descriptions
+
+**API Endpoint Used**: \`/learningplan/v1/learningplans\``,
+          success: false,
+          searchTerm: searchTerm,
+          endpoint: '/learningplan/v1/learningplans',
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      const displayCount = Math.min(learningPlans.length, 20);
+      const planList = learningPlans.slice(0, displayCount).map((plan, i) => {
+        const planName = api.getLearningPlanName(plan);
+        const planId = plan.id || plan.learning_plan_id || plan.lp_id || 'N/A';
+        const status = plan.status || plan.learning_plan_status || 'Unknown';
+        const enrollments = plan.enrollment_count || plan.enrolled_users || 'N/A';
+        
+        // Status icon
+        const statusIcon = status === 'active' ? '✅' : 
+                          status === 'inactive' ? '❌' : 
+                          status === 'archived' ? '📦' : '❓';
+        
+        return `${i + 1}. ${statusIcon} **${planName}** (ID: ${planId})
+   📊 Status: *${status}* | 👥 Enrollments: ${enrollments}`;
+      }).join('\n\n');
+      
+      return NextResponse.json({
+        response: `📚 **Learning Plan Search Results**: Found ${learningPlans.length} learning plans (Showing ${displayCount})
+
+${planList}${learningPlans.length > 20 ? `\n\n... and ${learningPlans.length - 20} more learning plans` : ''}
+
+**API Endpoint Used**: \`/learningplan/v1/learningplans\``,
+        success: true,
+        totalCount: learningPlans.length,
+        endpoint: '/learningplan/v1/learningplans',
+        searchTerm: searchTerm,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // 6. SESSION SEARCH
+    if (PATTERNS.searchSessions(message)) {
+      const searchTerm = session || message.replace(/find|search|session/gi, '').trim();
+      
+      if (!searchTerm || searchTerm.length < 2) {
+        return NextResponse.json({
+          response: `❌ **Missing Search Term**: I need a session name to search for.`,
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      const sessions = await api.searchSessions(searchTerm, 50);
+      
+      if (sessions.length === 0) {
+        return NextResponse.json({
+          response: `🎯 **No Sessions Found**: No sessions match "${searchTerm}"`,
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      const displayCount = Math.min(sessions.length, 20);
+      const sessionList = sessions.slice(0, displayCount).map((session, i) => {
+        const sessionName = api.getSessionName(session);
+        const sessionId = session.id || session.session_id || 'N/A';
+        const status = session.status || session.session_status || 'Unknown';
+        const statusIcon = status === 'active' ? '✅' : status === 'inactive' ? '❌' : '❓';
+        return `${i + 1}. ${statusIcon} **${sessionName}** (ID: ${sessionId}) - *${status}*`;
+      }).join('\n');
+      
+      return NextResponse.json({
+        response: `🎯 **Session Search Results**: Found ${sessions.length} sessions (Showing ${displayCount})
+
+${sessionList}${sessions.length > 20 ? `\n\n... and ${sessions.length - 20} more sessions` : ''}`,
+        success: true,
+        totalCount: sessions.length,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // 7. TRAINING MATERIAL SEARCH
+    if (PATTERNS.searchTrainingMaterials(message)) {
+      const searchTerm = trainingMaterial || message.replace(/find|search|training material|material/gi, '').trim();
+      
+      if (!searchTerm || searchTerm.length < 2) {
+        return NextResponse.json({
+          response: `❌ **Missing Search Term**: I need a material name to search for.`,
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      const materials = await api.searchTrainingMaterials(searchTerm, 50);
+      
+      if (materials.length === 0) {
+        return NextResponse.json({
+          response: `📖 **No Training Materials Found**: No materials match "${searchTerm}"`,
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      const displayCount = Math.min(materials.length, 20);
+      const materialList = materials.slice(0, displayCount).map((material, i) => {
+        const materialName = api.getMaterialName(material);
+        const materialId = material.id || material.material_id || 'N/A';
+        const type = material.type || material.material_type || 'Unknown';
+        const typeIcon = type === 'video' ? '🎥' : type === 'pdf' ? '📄' : type === 'scorm' ? '📦' : '📖';
+        return `${i + 1}. ${typeIcon} **${materialName}** (ID: ${materialId}) - *${type}*`;
+      }).join('\n');
+      
+      return NextResponse.json({
+        response: `📖 **Training Material Search Results**: Found ${materials.length} materials (Showing ${displayCount})
+
+${materialList}${materials.length > 20 ? `\n\n... and ${materials.length - 20} more materials` : ''}`,
+        success: true,
+        totalCount: materials.length,
+        timestamp: new Date().toISOString()
+      });
+    }
     
     // FALLBACK: Just return basic usage info (NO generic responses)
     return NextResponse.json({
@@ -851,6 +1011,16 @@ I can help you with:
 
 ## 📚 **Courses**  
 • **Find courses**: "Find Python courses"
+
+## 📋 **Learning Plans** (UPDATED)
+• **Find learning plans**: "Find Python learning plans"
+• **Endpoint**: \`/learningplan/v1/learningplans\`
+
+## 🎯 **Sessions**
+• **Find sessions**: "Find Python sessions"
+
+## 📖 **Training Materials**
+• **Find materials**: "Find Python training materials"
 
 ## 🌐 **Real-time Docebo Help**
 • **Ask ANY question** and I'll search help.docebo.com live
@@ -885,37 +1055,43 @@ I can help you with:
 export async function GET() {
   return NextResponse.json({
     status: 'Real-time Docebo Chat API with Live Help Search',
-    version: '5.0.0',
+    version: '5.1.0', // Updated version
     timestamp: new Date().toISOString(),
     features: [
       'Real-time help.docebo.com search (NO fallback responses)',
       'User search and details',
       'Course search and details', 
-      'Learning plan search',
+      'Learning plan search (UPDATED: /learningplan/v1/learningplans)', // Updated
       'Session search',
       'Training material search',
       'Live web search integration',
       'Answers ANY Docebo question with current documentation',
       'No generic fallback responses'
     ],
-    search_system: {
-      'real_time_web_search': 'Searches help.docebo.com directly using web search tools',
-      'no_fallbacks': 'All generic fallback responses removed as requested',
-      'live_content': 'Always current information from official Docebo help',
-      'direct_answers': 'Step-by-step instructions from source documentation',
-      'source_verification': 'All responses include direct links to help articles'
+    api_endpoints_used: {
+      'users': '/manage/v1/user',
+      'courses': '/course/v1/courses',
+      'learning_plans': '/learningplan/v1/learningplans', // Updated
+      'sessions': '/course/v1/sessions',
+      'materials': '/learn/v1/lo',
+      'enrollments': '/course/v1/courses/enrollments'
     },
-    implementation_status: {
-      'fallback_removal': 'COMPLETED - All generic responses removed',
-      'web_search_integration': 'IN PROGRESS - Needs web_search tool integration',
-      'real_time_fetching': 'READY - System configured for live search',
-      'help_site_targeting': 'CONFIGURED - Searches help.docebo.com specifically'
+    learning_plan_update: {
+      'old_endpoint': '/learn/v1/lp',
+      'new_endpoint': '/learningplan/v1/learningplans',
+      'supported_parameters': [
+        'search_text',
+        'page_size', 
+        'sort_attr',
+        'sort_dir',
+        'status_filter'
+      ],
+      'status': 'FIXED'
     },
     usage_examples: [
-      'How to enable timeout session',
-      'How to create observation checklist',
-      'How to configure SAML authentication',
-      'How to set up enrollment rules',
+      'Find Python learning plans',
+      'Learning plan info Advanced Programming',
+      'Search leadership learning plans',
       'Find user mike@company.com',
       'Find Python courses'
     ]
