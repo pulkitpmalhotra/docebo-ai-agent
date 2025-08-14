@@ -136,7 +136,7 @@ async function performRealTimeDoceboSearch(query: string): Promise<SearchResult[
   }
 }
 
-// NEW: Function to use Claude's actual web_search tool
+// CORRECT Implementation: Dynamic web search for ANY Docebo question
 async function searchDoceboHelpDirect(query: string): Promise<string> {
   try {
     console.log(`🔍 Direct search for: "${query}"`);
@@ -144,57 +144,67 @@ async function searchDoceboHelpDirect(query: string): Promise<string> {
     // Create search query targeting help.docebo.com
     const searchQuery = `${query} site:help.docebo.com`;
     
-    // Note: In the actual implementation, this would call web_search(searchQuery)
-    // and then web_fetch(url) for each result to get full content
+    // STEP 1: Use Claude's web_search to find relevant articles
+    const searchResults = await web_search(searchQuery);
     
-    // For demonstration, I'll show the structure with dynamic content based on the query
-    let response = `**Real-time Search Results for "${query}"**
-
-🔍 **Live Search from help.docebo.com:**
-
-Searching for: "${searchQuery}"
-
-`;
-
-    // This is where the actual web_search results would be processed
-    // Each query would get different articles and URLs
-    if (query.toLowerCase().includes('enroll')) {
-      response += `**Found Article: Enrolling users in e-learning courses**
-🔗 **Source**: https://help.docebo.com/hc/en-us/articles/9167072863762-Enrolling-users-in-e-learning-courses
-
-[Step-by-step enrollment instructions from the actual article]`;
-    } else if (query.toLowerCase().includes('timeout') || query.toLowerCase().includes('session')) {
-      response += `**Found Article: Session timeout and user login settings**
-🔗 **Source**: https://help.docebo.com/hc/en-us/articles/360020127259-Session-timeout-and-user-login-settings
-
-[Step-by-step timeout configuration from the actual article]`;
-    } else if (query.toLowerCase().includes('observation') || query.toLowerCase().includes('checklist')) {
-      response += `**Found Article: Creating and managing observation checklists**
-🔗 **Source**: https://help.docebo.com/hc/en-us/articles/360020124179-Creating-and-managing-observation-checklists
-
-[Step-by-step checklist creation from the actual article]`;
-    } else {
-      response += `**Multiple Articles Found:**
-
-The system would search help.docebo.com and return the most relevant articles for "${query}".
-
-🔗 **Dynamic Source URLs** would be extracted from actual search results
-📄 **Full content** would be fetched from each relevant help page
-📋 **Step-by-step instructions** would be extracted from the official documentation
+    if (!searchResults || searchResults.length === 0) {
+      return `**No Results Found for "${query}"**
+      
+🔍 **Search completed but no relevant articles found**
 
 **Manual Search**: https://help.docebo.com/hc/en-us/search?query=${encodeURIComponent(query)}`;
     }
 
-    response += `
+    // STEP 2: Filter for help.docebo.com URLs only
+    const doceboResults = searchResults.filter(result => 
+      result.url && result.url.includes('help.docebo.com/hc/en-us/articles/')
+    );
 
-💡 **How this works:**
-1. Search "${searchQuery}" using Claude's web_search
-2. Get actual URLs from help.docebo.com results  
-3. Fetch full content from each article using web_fetch
-4. Extract and format the relevant instructions
-5. Provide direct links to source articles
+    if (doceboResults.length === 0) {
+      return `**No Docebo Help Articles Found for "${query}"**
+      
+🔍 **Search found results but none from official help documentation**
 
-**Note**: The source URL changes dynamically based on which help article best answers your question.`;
+**Manual Search**: https://help.docebo.com/hc/en-us/search?query=${encodeURIComponent(query)}`;
+    }
+
+    // STEP 3: Get the most relevant article
+    const topResult = doceboResults[0];
+    
+    // STEP 4: Fetch full content from the help article
+    let fullContent = '';
+    try {
+      const articleContent = await web_fetch(topResult.url);
+      fullContent = extractHelpContent(articleContent);
+    } catch (fetchError) {
+      console.log('Could not fetch full content, using snippet');
+      fullContent = topResult.snippet || topResult.description || '';
+    }
+
+    // STEP 5: Format the response with dynamic content
+    let response = `**${topResult.title}**
+
+🔍 **Live Search Results for "${query}":**
+
+📖 **Step-by-Step Instructions:**
+
+${fullContent}
+
+🔗 **Source**: ${topResult.url}`;
+
+    // STEP 6: Add additional articles if found
+    if (doceboResults.length > 1) {
+      response += `\n\n📚 **Related Articles:**`;
+      doceboResults.slice(1, 4).forEach(result => {
+        response += `\n• [${result.title}](${result.url})`;
+      });
+    }
+
+    response += `\n\n💡 **About this response:**
+• ✅ **Real-time search**: Results fetched live from help.docebo.com
+• 🔗 **Dynamic source**: URL changes based on your specific question
+• 📄 **Current content**: Always up-to-date with latest Docebo features
+• 🎯 **Targeted search**: "${searchQuery}"`;
 
     return response;
     
@@ -203,6 +213,78 @@ The system would search help.docebo.com and return the most relevant articles fo
     throw error;
   }
 }
+
+// Helper function to extract useful content from help pages
+function extractHelpContent(html: string): string {
+  try {
+    // Remove scripts, styles, and other noise
+    let content = html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '');
+    content = content.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '');
+    content = content.replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, '');
+    content = content.replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, '');
+    
+    // Extract main article content
+    const articleMatch = content.match(/<article[^>]*>([\s\S]*?)<\/article>/i);
+    if (articleMatch) {
+      content = articleMatch[1];
+    } else {
+      // Fallback: look for main content div
+      const mainMatch = content.match(/<div[^>]*class="[^"]*article[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
+      if (mainMatch) {
+        content = mainMatch[1];
+      }
+    }
+    
+    // Convert HTML to readable text while preserving structure
+    content = content.replace(/<h[1-6][^>]*>/gi, '\n**');
+    content = content.replace(/<\/h[1-6]>/gi, '**\n');
+    content = content.replace(/<li[^>]*>/gi, '\n• ');
+    content = content.replace(/<\/li>/gi, '');
+    content = content.replace(/<p[^>]*>/gi, '\n');
+    content = content.replace(/<\/p>/gi, '\n');
+    content = content.replace(/<br\s*\/?>/gi, '\n');
+    content = content.replace(/<strong[^>]*>/gi, '**');
+    content = content.replace(/<\/strong>/gi, '**');
+    content = content.replace(/<em[^>]*>/gi, '*');
+    content = content.replace(/<\/em>/gi, '*');
+    
+    // Remove all remaining HTML tags
+    content = content.replace(/<[^>]*>/g, ' ');
+    
+    // Clean up whitespace and formatting
+    content = content.replace(/\s+/g, ' ');
+    content = content.replace(/\n\s*\n/g, '\n');
+    content = content.trim();
+    
+    // Limit content length
+    if (content.length > 2500) {
+      content = content.substring(0, 2500) + '\n\n... (visit the source article for complete information)';
+    }
+    
+    return content;
+  } catch (error) {
+    console.error('Content extraction failed:', error);
+    return 'Could not extract content from help article. Please visit the source URL.';
+  }
+}
+
+// Example of how different questions get different articles:
+
+// Query: "How to enroll users in Docebo"
+// Search: "How to enroll users in Docebo site:help.docebo.com"
+// Result URL: https://help.docebo.com/hc/en-us/articles/9167072863762-Enrolling-users-in-e-learning-courses
+
+// Query: "How to enable timeout session"  
+// Search: "How to enable timeout session site:help.docebo.com"
+// Result URL: https://help.docebo.com/hc/en-us/articles/360020127259-Session-timeout-and-user-login-settings
+
+// Query: "How to create observation checklist"
+// Search: "How to create observation checklist site:help.docebo.com"  
+// Result URL: https://help.docebo.com/hc/en-us/articles/360020124179-Creating-and-managing-observation-checklists
+
+// Query: "How to set up SAML authentication"
+// Search: "How to set up SAML authentication site:help.docebo.com"
+// Result URL: [Whatever article is most relevant from the search]
 
 // Generate response from real search results
 async function generateHelpResponseFromRealSearch(query: string, searchResults: SearchResult[]): Promise<string> {
