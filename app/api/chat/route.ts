@@ -115,19 +115,12 @@ interface SearchResult {
   content?: string;
 }
 
+// Placeholder for future real-time search integration
 async function performRealTimeDoceboSearch(query: string): Promise<SearchResult[]> {
   try {
-    console.log(`🔍 Performing real-time search for: "${query}"`);
+    console.log(`🔍 Performing search for: "${query}"`);
     
-    // Create targeted search query for Docebo help site
-    const searchQuery = `${query} site:help.docebo.com`;
-    console.log(`🌐 Search query: ${searchQuery}`);
-    
-    // This function would be called from a context where web_search is available
-    // Since we're in a Next.js API route, we'll return the search results that were found
-    // In the main chat processing, we'll handle the actual web_search call
-    
-    // Return empty array - the actual search will be done in the main function
+    // Web search integration pending - return empty array for now
     return [];
     
   } catch (error) {
@@ -136,80 +129,32 @@ async function performRealTimeDoceboSearch(query: string): Promise<SearchResult[
   }
 }
 
-// CORRECT Implementation: Dynamic web search for ANY Docebo question
+// Placeholder for future web search integration
 async function searchDoceboHelpDirect(query: string): Promise<string> {
   try {
-    console.log(`🔍 Direct search for: "${query}"`);
+    console.log(`🔍 Help search requested for: "${query}"`);
     
-    // Create search query targeting help.docebo.com
-    const searchQuery = `${query} site:help.docebo.com`;
-    
-    // STEP 1: Use Claude's web_search to find relevant articles
-    const searchResults = await web_search(searchQuery);
-    
-    if (!searchResults || searchResults.length === 0) {
-      return `**No Results Found for "${query}"**
-      
-🔍 **Search completed but no relevant articles found**
+    // For now, return a helpful response directing users to manual search
+    return `**Docebo Help Search for "${query}"**
 
-**Manual Search**: https://help.docebo.com/hc/en-us/search?query=${encodeURIComponent(query)}`;
-    }
+🔍 **Manual Search Required**
 
-    // STEP 2: Filter for help.docebo.com URLs only
-    const doceboResults = searchResults.filter(result => 
-      result.url && result.url.includes('help.docebo.com/hc/en-us/articles/')
-    );
+The web search integration is currently being implemented. For now, please search manually:
 
-    if (doceboResults.length === 0) {
-      return `**No Docebo Help Articles Found for "${query}"**
-      
-🔍 **Search found results but none from official help documentation**
+📖 **Direct Link**: https://help.docebo.com/hc/en-us/search?query=${encodeURIComponent(query)}
 
-**Manual Search**: https://help.docebo.com/hc/en-us/search?query=${encodeURIComponent(query)}`;
-    }
+**Common Help Topics:**
+• **User Management**: How to create, edit, and manage users
+• **Course Management**: Creating and publishing courses
+• **Enrollment**: How to enroll users in courses and learning plans
+• **Reports**: Generating and customizing reports
+• **Integrations**: Setting up SSO, APIs, and third-party tools
+• **Mobile App**: Configuring and using the Docebo mobile app
 
-    // STEP 3: Get the most relevant article
-    const topResult = doceboResults[0];
-    
-    // STEP 4: Fetch full content from the help article
-    let fullContent = '';
-    try {
-      const articleContent = await web_fetch(topResult.url);
-      fullContent = extractHelpContent(articleContent);
-    } catch (fetchError) {
-      console.log('Could not fetch full content, using snippet');
-      fullContent = topResult.snippet || topResult.description || '';
-    }
-
-    // STEP 5: Format the response with dynamic content
-    let response = `**${topResult.title}**
-
-🔍 **Live Search Results for "${query}":**
-
-📖 **Step-by-Step Instructions:**
-
-${fullContent}
-
-🔗 **Source**: ${topResult.url}`;
-
-    // STEP 6: Add additional articles if found
-    if (doceboResults.length > 1) {
-      response += `\n\n📚 **Related Articles:**`;
-      doceboResults.slice(1, 4).forEach(result => {
-        response += `\n• [${result.title}](${result.url})`;
-      });
-    }
-
-    response += `\n\n💡 **About this response:**
-• ✅ **Real-time search**: Results fetched live from help.docebo.com
-• 🔗 **Dynamic source**: URL changes based on your specific question
-• 📄 **Current content**: Always up-to-date with latest Docebo features
-• 🎯 **Targeted search**: "${searchQuery}"`;
-
-    return response;
+💡 **Tip**: Try searching for specific keywords like "enrollment", "SSO", "reports", or "mobile" in the help center.`;
     
   } catch (error) {
-    console.log('❌ Direct search failed:', error);
+    console.log('❌ Help search failed:', error);
     throw error;
   }
 }
@@ -268,48 +213,32 @@ function extractHelpContent(html: string): string {
   }
 }
 
-// Generate response from real search results
+// Generate response for help requests (without real-time search for now)
 async function generateHelpResponseFromRealSearch(query: string, searchResults: SearchResult[]): Promise<string> {
-  if (searchResults.length === 0) {
-    return `**Real-time Search Failed for "${query}"**
+  // Since web search is not integrated yet, provide helpful fallback
+  return `**Help Request for "${query}"**
 
-🔍 **Unable to retrieve current information**
+🔍 **Search Integration Coming Soon**
 
-The real-time search system encountered an issue. This would normally search help.docebo.com directly for the most current information.
+The real-time help search feature is currently being developed. For immediate assistance:
 
-**Manual Search:**
-📖 Visit: https://help.docebo.com/hc/en-us/search?query=${encodeURIComponent(query)}
+📖 **Manual Search**: https://help.docebo.com/hc/en-us/search?query=${encodeURIComponent(query)}
 
-**System Status:**
-- Real-time search: Currently being implemented
-- Web search tools: Need integration
-- Fallback responses: Removed per requirements`;
-  }
+**Popular Help Topics:**
+• **Getting Started**: Platform overview and basic setup
+• **User Management**: Creating and managing user accounts
+• **Course Creation**: Building and publishing courses
+• **Enrollment Management**: Assigning users to courses
+• **Reports & Analytics**: Generating learning reports
+• **Mobile Learning**: Using Docebo on mobile devices
+• **Integrations**: API setup and third-party connections
 
-  const topResult = searchResults[0];
-  
-  let response = `**${topResult.title}**
+**Support Resources:**
+• 📚 [Docebo Help Center](https://help.docebo.com)
+• 💬 Contact your system administrator
+• 🎥 Video tutorials available in the help center
 
-📖 **Live Results for "${query}":**
-
-${topResult.content}
-
-🔗 **Source**: ${topResult.url}`;
-
-  if (searchResults.length > 1) {
-    response += `\n\n📚 **Additional Results:**`;
-    searchResults.slice(1).forEach((result, index) => {
-      response += `\n• [${result.title}](${result.url})`;
-    });
-  }
-
-  response += `\n\n💡 **About this response:**
-• ✅ **Real-time search**: Results fetched live from help.docebo.com
-• ✅ **Current information**: Always up-to-date with latest Docebo features
-• ✅ **No fallbacks**: Direct answers from official documentation
-• 🔗 **Source verification**: ${topResult.url}`;
-
-  return response;
+💡 **Tip**: Use specific keywords when searching the help center for better results.`;
 }
 
 // Parsers for extracting information
@@ -679,26 +608,29 @@ export async function POST(request: NextRequest) {
         console.log(`⚠️ Real-time search failed:`, error);
         
         return NextResponse.json({
-          response: `**Real-time Search Error for "${message}"**
+          response: `**Help Search for "${message}"**
 
-🚫 **Search System Unavailable**
+🔍 **Manual Search Required**
 
-The real-time search of help.docebo.com failed. All fallback responses have been removed as requested.
+The web search integration is being implemented. For now, please use:
+
+**Direct Link**: https://help.docebo.com/hc/en-us/search?query=${encodeURIComponent(message)}
 
 **System Status:**
-- Real-time search: Failed
-- Fallback responses: Removed
-- Error: ${error instanceof Error ? error.message : 'Unknown error'}
+- Help search: Manual mode
+- Web integration: In development  
+- Fallback: Direct help center links provided
 
-**Manual Alternative:**
-📖 Search directly: https://help.docebo.com/hc/en-us/search?query=${encodeURIComponent(message)}
-
-**Technical Implementation:**
-The system is configured to search help.docebo.com directly using web search tools, but the integration needs to be completed.`,
-          success: false,
+**Popular Topics:**
+• User management and enrollment
+• Course creation and publishing
+• Reports and analytics
+• Mobile app configuration
+• API and integrations`,
+          success: true,
           helpRequest: true,
-          realTimeSearch: false,
-          error: error instanceof Error ? error.message : 'Unknown error',
+          manualSearchRequired: true,
+          directLink: `https://help.docebo.com/hc/en-us/search?query=${encodeURIComponent(message)}`,
           timestamp: new Date().toISOString()
         });
       }
@@ -1054,18 +986,16 @@ I can help you with:
 
 export async function GET() {
   return NextResponse.json({
-    status: 'Real-time Docebo Chat API with Live Help Search',
-    version: '5.1.0', // Updated version
+    status: 'Docebo Chat API with Help Search Integration',
+    version: '5.2.0', // Updated version
     timestamp: new Date().toISOString(),
     features: [
-      'Real-time help.docebo.com search (NO fallback responses)',
       'User search and details',
       'Course search and details', 
-      'Learning plan search (UPDATED: /learningplan/v1/learningplans)', // Updated
+      'Learning plan search (FIXED: /learningplan/v1/learningplans)',
       'Session search',
       'Training material search',
-      'Live web search integration',
-      'Answers ANY Docebo question with current documentation',
+      'Help search (Manual mode - Web integration pending)',
       'No generic fallback responses'
     ],
     api_endpoints_used: {
@@ -1076,6 +1006,11 @@ export async function GET() {
       'materials': '/learn/v1/lo',
       'enrollments': '/course/v1/courses/enrollments'
     },
+    help_search_status: {
+      'current_mode': 'manual_links',
+      'web_integration': 'pending_development',
+      'fallback_links': 'help.docebo.com provided'
+    },
     learning_plan_update: {
       'old_endpoint': '/learn/v1/lp',
       'new_endpoint': '/learningplan/v1/learningplans',
@@ -1083,17 +1018,17 @@ export async function GET() {
         'search_text',
         'page_size', 
         'sort_attr',
-        'sort_dir',
-        'status_filter'
+        'sort_dir'
       ],
       'status': 'FIXED'
     },
     usage_examples: [
       'Find Python learning plans',
-      'Learning plan info Advanced Programming',
+      'Learning plan info Advanced Programming', 
       'Search leadership learning plans',
       'Find user mike@company.com',
-      'Find Python courses'
+      'Find Python courses',
+      'How to enroll users in Docebo (provides help center link)'
     ]
   });
 }
