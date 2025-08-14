@@ -1552,6 +1552,9 @@ export async function POST(request: NextRequest) {
         case 'search_learning_plans':
           return await handleLearningPlanSearch(analysis.entities);
           
+        case 'get_user_enrollments':  // NEW: Handle user enrollment requests
+          return await handleUserEnrollments(analysis.entities);
+          
         case 'docebo_help':
           return await handleDoceboHelp(analysis.entities);
           
@@ -1563,6 +1566,7 @@ Based on your message: "${message}"
 
 **I can help you with:**
 • **👥 Find Users**: "Find user email@company.com"
+• **📊 User Enrollments**: "User enrollments email@company.com" or "What courses is user@company.com enrolled in?"
 • **📚 Find/Info Courses**: "Find Python courses" or "Course info Working with Data in Python"  
 • **📋 Find/Info Learning Plans**: "Find Python learning plans" or "Learning plan info Getting Started with Python"
 • **🎯 Sessions**: "Search for sessions in course Python Programming"
@@ -1596,19 +1600,22 @@ Based on your message: "${message}"
   }
 }
 
+// Updated GET endpoint with new capabilities
 export async function GET() {
   return NextResponse.json({
-    status: 'Enhanced Docebo Chat API with NLP',
-    version: '2.0.0',
+    status: 'Enhanced Docebo Chat API with Enrollment Data',
+    version: '3.0.0',
     timestamp: new Date().toISOString(),
     features: [
       'Enhanced natural language processing',
       'Intent-based command detection',
       'Course info retrieval with enrollment data',
       'Learning plan info retrieval',
+      'User enrollment tracking (NEW)',
+      'Comprehensive enrollment analysis (NEW)',
       'Session search in courses',
       'Material search in courses',
-      'User search and details',
+      'User search and details with enrollment summary',
       'Course search with enrollment data', 
       'Learning plan search',
       'Docebo help integration'
@@ -1617,18 +1624,31 @@ export async function GET() {
       'users': '/manage/v1/user',
       'courses': '/course/v1/courses',
       'learning_plans': '/learningplan/v1/learningplans',
+      'course_enrollments': '/course/v1/courses/enrollments',
+      'lp_enrollments': '/learningplan/v1/learningplans/enrollments',
+      'user_enrollments': '/learn/v1/enrollments',
       'sessions': '/course/v1/courses/{id}/sessions',
       'materials': '/course/v1/courses/{id}/lo'
     },
     nlp_capabilities: [
       'Course info: "Course info Working with Data in Python"',
       'Learning plan info: "Learning plan info Getting Started with Python"',
+      'User enrollments: "User enrollments mike@company.com" (NEW)',
+      'Enrollment queries: "What courses is john@company.com enrolled in?" (NEW)',
+      'Learning progress: "Learning progress for sarah@company.com" (NEW)',
       'Session search: "Search for sessions in course Python Programming"',
       'Material search: "Search for materials in course Data Science"',
       'User search: "Find user mike@company.com"',
       'Course search: "Find Python courses"',
       'Learning plan search: "Find Python learning plans"',
       'Help requests: "How to enroll users in Docebo"'
-    ]
+    ],
+    enrollment_features: {
+      'user_course_enrollments': 'Get all courses a user is enrolled in',
+      'user_lp_enrollments': 'Get all learning plans a user is enrolled in',
+      'comprehensive_view': 'Combined view of all user enrollments',
+      'progress_tracking': 'Shows completion status and progress',
+      'multiple_endpoints': 'Tries multiple API endpoints for maximum compatibility'
+    }
   });
 }
