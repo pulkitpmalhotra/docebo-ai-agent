@@ -667,20 +667,80 @@ async function handleCourseInfo(entities: any) {
   try {
     const course = await api.getCourseDetails(identifier);
     const courseName = api.getCourseName(course);
-    const courseId = course.id || course.course_id;
+    const courseId = course.id || course.course_id || course.idCourse;
+    
+    // Enhanced field mapping
     const status = course.status || course.course_status || 'Unknown';
-    const description = course.description || 'No description available';
+    const statusIcon = status === 'published' ? '✅' : status === 'draft' ? '📝' : status === 'suspended' ? '🚫' : '❓';
+    const statusText = status === 'published' ? 'Published ✅' : 
+                      status === 'draft' ? 'Draft 📝' : 
+                      status === 'suspended' ? 'Suspended 🚫' : 
+                      `${status} ❓`;
+    
+    const description = course.description || course.course_description || 'No description available';
+    const courseType = course.course_type || course.type || 'Not specified';
+    const code = course.code || course.course_code || 'Not specified';
+    const language = course.language || course.course_language || 'Not specified';
+    const credits = course.credits || course.course_credits || 'No credits assigned';
+    
+    // Dates
+    const createdDate = course.date_creation || course.created_at || course.creation_date || 'Not available';
+    const modifiedDate = course.date_modification || course.updated_at || course.modified_date || 'Not available';
+    const publishedDate = course.date_publication || course.published_at || 'Not available';
+    
+    // Enrollment and completion stats
+    const enrolledCount = course.enrolled_count || course.total_enrolled || course.user_count || 'Not available';
+    const completedCount = course.completed_count || course.total_completed || 'Not available';
+    const waitingCount = course.waiting_count || course.total_waiting || 'Not available';
+    
+    // Additional course details
+    const duration = course.duration || course.course_duration || 'Not specified';
+    const difficulty = course.difficulty || course.level || 'Not specified';
+    const category = course.category || course.course_category || 'Not specified';
+    const price = course.price !== undefined ? `$${course.price}` : 'Not specified';
+    
+    // Learning objects/materials count
+    const learningObjectsCount = course.learning_objects_count || course.lo_count || course.materials_count || 'Not available';
+    
+    // Course settings
+    const isAutoEnroll = course.auto_enroll || course.automatic_enrollment ? 'Yes' : 'No';
+    const isVisible = course.is_visible !== false ? 'Yes' : 'No';
+    const allowCertificate = course.allow_certificate || course.has_certificate ? 'Yes' : 'No';
     
     return NextResponse.json({
       response: `📚 **Course Details**: ${courseName}
 
 🆔 **Course ID**: ${courseId}
-📊 **Status**: ${status}
-📝 **Description**: ${description}
+📊 **Status**: ${statusText}
+🎯 **Code**: ${code}
+⭐ **Credits**: ${credits}
 
-🔗 **Course Type**: ${course.course_type || 'Not specified'}
-📅 **Created**: ${course.date_creation || 'Not available'}
-👥 **Enrolled Users**: ${course.enrolled_count || 'Not available'}
+📝 **Description**: 
+${description}
+
+🔗 **Course Information**:
+• **Type**: ${courseType}
+• **Language**: ${language}
+• **Category**: ${category}
+• **Difficulty**: ${difficulty}
+• **Duration**: ${duration}
+• **Price**: ${price}
+
+📈 **Enrollment Statistics**:
+• **👥 Total Enrolled**: ${enrolledCount}
+• **✅ Completed**: ${completedCount}
+• **⏳ Waiting**: ${waitingCount}
+• **📖 Learning Objects**: ${learningObjectsCount}
+
+⚙️ **Course Settings**:
+• **Auto Enrollment**: ${isAutoEnroll}
+• **Visible**: ${isVisible}
+• **Certificate Available**: ${allowCertificate}
+
+📅 **Timeline**:
+• **Created**: ${createdDate}
+• **Last Modified**: ${modifiedDate}
+• **Published**: ${publishedDate}
 
 **Course found successfully!**`,
       success: true,
@@ -694,13 +754,16 @@ async function handleCourseInfo(entities: any) {
 **Suggestions:**
 • Try searching for courses first: "Find ${identifier} courses"
 • Check the course name spelling
-• Use the exact course ID if you have it`,
+• Use the exact course ID if you have it
+
+**Alternative Commands:**
+• "Find Working with Data courses" (search for similar courses)
+• "Find Python courses" (broader search)`,
       success: false,
       timestamp: new Date().toISOString()
     });
   }
 }
-
 async function handleLearningPlanInfo(entities: any) {
   const identifier = entities.learningPlanName;
   
