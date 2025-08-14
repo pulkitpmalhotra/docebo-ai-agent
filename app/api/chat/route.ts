@@ -746,28 +746,30 @@ class DoceboAPI {
       courseId: enrollment.course_id || enrollment.id_course,
       courseName: enrollment.course_name || enrollment.name || 'Unknown Course',
       enrollmentStatus: enrollment.status || enrollment.enrollment_status || 'Unknown',
-      enrollmentDate: enrollment.enrollment_date || enrollment.enrolled_at || enrollment.date_enrolled,
-      completionDate: enrollment.completion_date || enrollment.completed_at || enrollment.date_completed,
+      enrollmentDate: enrollment.enrollment_date || enrollment.enrollment_created_at || enrollment.date_enrolled || enrollment.created_at,
+      completionDate: enrollment.date_complete || enrollment.enrollment_completion_date || enrollment.completion_date || enrollment.completed_at || enrollment.date_completed,
       progress: enrollment.progress || enrollment.completion_percentage || 0,
       score: enrollment.score || enrollment.final_score || null,
       timeSpent: enrollment.time_spent || enrollment.total_time || null,
       lastAccess: enrollment.last_access || enrollment.last_access_date || null,
-      dueDate: enrollment.due_date || enrollment.deadline || null
+      dueDate: enrollment.enrollment_validity_end_date || enrollment.active_until || enrollment.due_date || enrollment.deadline || null,
+      assignmentType: enrollment.assignment_type || null
     };
   }
 
   formatLearningPlanEnrollment(enrollment: any): any {
     return {
       learningPlanId: enrollment.learning_plan_id || enrollment.id_learning_plan,
-      learningPlanName: enrollment.learning_plan_name || enrollment.name || 'Unknown Learning Plan',
+      learningPlanName: enrollment.learning_plan_name || enrollment.name || enrollment.title || 'Unknown Learning Plan',
       enrollmentStatus: enrollment.status || enrollment.enrollment_status || 'Unknown',
-      enrollmentDate: enrollment.enrollment_date || enrollment.enrolled_at || enrollment.date_enrolled,
-      completionDate: enrollment.completion_date || enrollment.completed_at || enrollment.date_completed,
+      enrollmentDate: enrollment.enrollment_date || enrollment.enrollment_created_at || enrollment.date_enrolled || enrollment.created_at,
+      completionDate: enrollment.date_complete || enrollment.enrollment_completion_date || enrollment.completion_date || enrollment.completed_at || enrollment.date_completed,
       progress: enrollment.progress || enrollment.completion_percentage || 0,
       completedCourses: enrollment.completed_courses || enrollment.courses_completed || 0,
       totalCourses: enrollment.total_courses || enrollment.courses_total || 0,
       lastAccess: enrollment.last_access || enrollment.last_access_date || null,
-      dueDate: enrollment.due_date || enrollment.deadline || null
+      dueDate: enrollment.enrollment_validity_end_date || enrollment.active_until || enrollment.due_date || enrollment.deadline || null,
+      assignmentType: enrollment.assignment_type || null
     };
   }
 
@@ -1235,25 +1237,61 @@ async function handleUserEnrollments(entities: any) {
         const progressText = formatted.progress > 0 ? ` (${formatted.progress}%)` : '';
         const scoreText = formatted.score ? ` | 🎯 ${formatted.score}` : '';
         
-        // Format date nicely
-        let dateText = '';
-        if (formatted.enrollmentDate && formatted.enrollmentDate !== 'Unknown') {
+        // Format enrollment date
+        let enrollmentDateText = '';
+        if (formatted.enrollmentDate) {
           try {
             const date = new Date(formatted.enrollmentDate);
-            dateText = date.toLocaleDateString('en-US', { 
+            enrollmentDateText = date.toLocaleDateString('en-US', { 
               year: 'numeric', 
               month: 'short', 
               day: 'numeric' 
             });
           } catch {
-            dateText = formatted.enrollmentDate;
+            enrollmentDateText = formatted.enrollmentDate;
           }
         } else {
-          dateText = 'Date not available';
+          enrollmentDateText = 'Date not available';
+        }
+        
+        // Format completion date if exists
+        let completionText = '';
+        if (formatted.completionDate) {
+          try {
+            const date = new Date(formatted.completionDate);
+            completionText = ` | ✅ Completed: ${date.toLocaleDateString('en-US', { 
+              year: 'numeric', 
+              month: 'short', 
+              day: 'numeric' 
+            })}`;
+          } catch {
+            completionText = ` | ✅ Completed: ${formatted.completionDate}`;
+          }
+        }
+        
+        // Format due date if exists
+        let dueText = '';
+        if (formatted.dueDate) {
+          try {
+            const date = new Date(formatted.dueDate);
+            dueText = ` | ⏰ Due: ${date.toLocaleDateString('en-US', { 
+              year: 'numeric', 
+              month: 'short', 
+              day: 'numeric' 
+            })}`;
+          } catch {
+            dueText = ` | ⏰ Due: ${formatted.dueDate}`;
+          }
+        }
+        
+        // Assignment type if exists
+        let assignmentText = '';
+        if (formatted.assignmentType) {
+          assignmentText = ` | 📋 ${formatted.assignmentType}`;
         }
         
         return `${i + 1}. ${statusIcon} **${formatted.courseName}** - *${statusText}*${progressText}${scoreText}
-   📅 Enrolled: ${dateText}${formatted.completionDate ? ` | ✅ Completed: ${formatted.completionDate}` : ''}`;
+   📅 Enrolled: ${enrollmentDateText}${completionText}${dueText}${assignmentText}`;
       }).join('\n\n');
       
       courseSection = `📚 **Courses** (${enrollmentData.totalCourses} total)
@@ -1292,25 +1330,61 @@ ${formattedCourses}`;
         const progressText = formatted.progress > 0 ? ` (${formatted.progress}%)` : '';
         const coursesText = formatted.totalCourses > 0 ? ` | 📚 ${formatted.completedCourses}/${formatted.totalCourses} courses` : '';
         
-        // Format date nicely
-        let dateText = '';
-        if (formatted.enrollmentDate && formatted.enrollmentDate !== 'Unknown') {
+        // Format enrollment date
+        let enrollmentDateText = '';
+        if (formatted.enrollmentDate) {
           try {
             const date = new Date(formatted.enrollmentDate);
-            dateText = date.toLocaleDateString('en-US', { 
+            enrollmentDateText = date.toLocaleDateString('en-US', { 
               year: 'numeric', 
               month: 'short', 
               day: 'numeric' 
             });
           } catch {
-            dateText = formatted.enrollmentDate;
+            enrollmentDateText = formatted.enrollmentDate;
           }
         } else {
-          dateText = 'Date not available';
+          enrollmentDateText = 'Date not available';
+        }
+        
+        // Format completion date if exists
+        let completionText = '';
+        if (formatted.completionDate) {
+          try {
+            const date = new Date(formatted.completionDate);
+            completionText = ` | ✅ Completed: ${date.toLocaleDateString('en-US', { 
+              year: 'numeric', 
+              month: 'short', 
+              day: 'numeric' 
+            })}`;
+          } catch {
+            completionText = ` | ✅ Completed: ${formatted.completionDate}`;
+          }
+        }
+        
+        // Format due date if exists
+        let dueText = '';
+        if (formatted.dueDate) {
+          try {
+            const date = new Date(formatted.dueDate);
+            dueText = ` | ⏰ Due: ${date.toLocaleDateString('en-US', { 
+              year: 'numeric', 
+              month: 'short', 
+              day: 'numeric' 
+            })}`;
+          } catch {
+            dueText = ` | ⏰ Due: ${formatted.dueDate}`;
+          }
+        }
+        
+        // Assignment type if exists
+        let assignmentText = '';
+        if (formatted.assignmentType) {
+          assignmentText = ` | 📋 ${formatted.assignmentType}`;
         }
         
         return `${i + 1}. ${statusIcon} **${formatted.learningPlanName}** - *${statusText}*${progressText}${coursesText}
-   📅 Enrolled: ${dateText}`;
+   📅 Enrolled: ${enrollmentDateText}${completionText}${dueText}${assignmentText}`;
       }).join('\n\n');
       
       learningPlanSection = `🎯 **Learning Plans** (${enrollmentData.totalLearningPlans} total)
