@@ -34,7 +34,8 @@ const PATTERNS = {
   searchLearningPlans: (msg: string) => {
     const lower = msg.toLowerCase();
     return (lower.includes('find') && (lower.includes('learning plan') || lower.includes('lp'))) ||
-           (lower.includes('search') && (lower.includes('learning plan') || lower.includes('lp')));
+           (lower.includes('search') && (lower.includes('learning plan') || lower.includes('lp'))) ||
+           lower.includes('learning plan');
   },
   searchSessions: (msg: string) => {
     const lower = msg.toLowerCase();
@@ -48,6 +49,12 @@ const PATTERNS = {
   },
   doceboHelp: (msg: string) => {
     const lower = msg.toLowerCase();
+    
+    // Don't treat learning plan searches as help requests
+    if (lower.includes('learning plan') || lower.includes('find') && lower.includes('plans')) {
+      return false;
+    }
+    
     return (
       lower.includes('how to') || lower.includes('how do i') || lower.includes('how does') ||
       lower.includes('configure') || lower.includes('setup') || lower.includes('enable') ||
@@ -419,10 +426,20 @@ class DoceboAPI {
         sort_dir: 'asc'
       });
       
-      console.log(`📚 Learning plans API response:`, result);
+      console.log(`📚 Learning plans API response structure:`, {
+        hasData: !!result.data,
+        itemCount: result.data?.items?.length || 0,
+        firstItem: result.data?.items?.[0] ? Object.keys(result.data.items[0]) : [],
+        totalCount: result.data?.total_count
+      });
       
       if (result.data?.items?.length > 0) {
         console.log(`✅ Found ${result.data.items.length} learning plans with search`);
+        
+        // Log detailed info about the first learning plan
+        const firstPlan = result.data.items[0];
+        console.log(`📋 First learning plan details:`, firstPlan);
+        
         return result.data.items;
       }
       
@@ -823,14 +840,48 @@ ${courseList}${courses.length > 20 ? `\n\n... and ${courses.length - 20} more co
       const displayCount = Math.min(learningPlans.length, 20);
       const planList = learningPlans.slice(0, displayCount).map((plan, i) => {
         const planName = api.getLearningPlanName(plan);
-        const planId = plan.id || plan.learning_plan_id || plan.lp_id || 'N/A';
-        const status = plan.status || plan.learning_plan_status || 'Unknown';
-        const enrollments = plan.enrollment_count || plan.enrolled_users || 'N/A';
+        const planId = plan.id || plan.learning_plan_id || plan.lp_id || plan.idLearningPlan || 'N/A';
         
-        // Status icon
-        const statusIcon = status === 'active' ? '✅' : 
-                          status === 'inactive' ? '❌' : 
-                          status === 'archived' ? '📦' : '❓';
+        // More comprehensive status checking
+        const status = plan.status || plan.learning_plan_status || plan.lp_status || 
+                      plan.state || plan.is_active || 'Unknown';
+        
+        // More comprehensive enrollment checking
+        const enrollments = plan.enrollment_count || plan.enrolled_users || 
+                           plan.total_enrollments || plan.enrollments || 
+                           plan.user_count || plan.users_enrolled || 'N/A';
+        
+        // Enhanced status icon mapping
+        let statusIcon = '❓';
+        if (typeof status === 'string') {
+          const statusLower = status.toLowerCase();
+          if (statusLower === 'active' || statusLower === 'published' || statusLower === '1' || statusLower === 'true') {
+            statusIcon = '✅';
+          } else if (statusLower === 'inactive' || statusLower === 'unpublished' || statusLower === '0' || statusLower === 'false') {
+            statusIcon = '❌';
+          } else if (statusLower === 'archived' || statusLower === 'suspended') {
+            statusIcon = '📦';
+          } else if (statusLower === 'draft') {
+            statusIcon = '📝';
+          }
+        } else if (typeof status === 'boolean') {
+          statusIcon = status ? '✅' : '❌';
+        } else if (typeof status === 'number') {
+          statusIcon = status === 1 ? '✅' : '❌';
+        }
+        
+        // Debug logging for the first plan
+        if (i === 0) {
+          console.log(`📋 Learning Plan Debug:`, {
+            planName,
+            planId,
+            originalStatus: plan.status,
+            mappedStatus: status,
+            originalEnrollments: plan.enrollment_count,
+            mappedEnrollments: enrollments,
+            allPlanKeys: Object.keys(plan)
+          });
+        }
         
         return `${i + 1}. ${statusIcon} **${planName}** (ID: ${planId})
    📊 Status: *${status}* | 👥 Enrollments: ${enrollments}`;
