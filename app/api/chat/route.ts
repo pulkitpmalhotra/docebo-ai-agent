@@ -541,7 +541,7 @@ class DoceboAPI {
     };
   }
 
-  async searchUsers(searchText: string, limit: number = 20): Promise<any[]> {
+  async searchUsers(searchText: string, limit: number = 100): Promise<any[]> {
     const result = await this.apiRequest('/manage/v1/user', {
       search_text: searchText,
       page_size: Math.min(limit, 200)
@@ -549,7 +549,7 @@ class DoceboAPI {
     return result.data?.items || [];
   }
 
-  async searchCourses(searchText: string, limit: number = 20): Promise<any[]> {
+  async searchCourses(searchText: string, limit: number = 100): Promise<any[]> {
     const result = await this.apiRequest('/course/v1/courses', {
       search_text: searchText,
       page_size: Math.min(limit, 200)
@@ -557,7 +557,7 @@ class DoceboAPI {
     return result.data?.items || [];
   }
 
-  async searchLearningPlans(searchText: string, limit: number = 20): Promise<any[]> {
+  async searchLearningPlans(searchText: string, limit: number = 100): Promise<any[]> {
     try {
       const result = await this.apiRequest('/learningplan/v1/learningplans', {
         search_text: searchText,
