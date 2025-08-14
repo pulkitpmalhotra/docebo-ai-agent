@@ -751,37 +751,35 @@ class DoceboAPI {
       courseName: enrollment.course_name || enrollment.name || enrollment.title || 'Unknown Course',
       enrollmentStatus: enrollment.status || enrollment.enrollment_status || enrollment.state || 'Unknown',
       
-      // Try multiple field names for enrollment date
-      enrollmentDate: enrollment.enrollment_date || 
+      // CORRECTED: Use the actual field names from the API
+      enrollmentDate: enrollment.enroll_date_of_enrollment || 
+                     enrollment.enroll_begin_date || 
+                     enrollment.enrollment_date || 
                      enrollment.enrollment_created_at || 
                      enrollment.date_enrolled || 
-                     enrollment.created_at ||
-                     enrollment.enrolled_at ||
-                     enrollment.date_created ||
-                     enrollment.enrollment_create_date,
+                     enrollment.created_at,
       
-      // Try multiple field names for completion date
-      completionDate: enrollment.date_complete || 
+      // CORRECTED: Use the actual completion date field
+      completionDate: enrollment.course_complete_date || 
+                     enrollment.date_complete || 
                      enrollment.enrollment_completion_date || 
                      enrollment.completion_date || 
                      enrollment.completed_at || 
-                     enrollment.date_completed ||
-                     enrollment.complete_date ||
-                     enrollment.date_finish,
+                     enrollment.date_completed,
       
       progress: enrollment.progress || enrollment.completion_percentage || enrollment.percentage || 0,
       score: enrollment.score || enrollment.final_score || enrollment.grade || null,
       
-      // Try multiple field names for due date
-      dueDate: enrollment.enrollment_validity_end_date || 
+      // CORRECTED: Use the actual due date fields
+      dueDate: enrollment.enroll_end_date || 
+               enrollment.soft_deadline ||
+               enrollment.course_end_date ||
+               enrollment.enrollment_validity_end_date || 
                enrollment.active_until || 
                enrollment.due_date || 
-               enrollment.deadline ||
-               enrollment.validity_end_date ||
-               enrollment.end_date ||
-               enrollment.expiry_date,
+               enrollment.deadline,
       
-      // Try multiple field names for assignment type
+      // CORRECTED: Use the actual assignment type field
       assignmentType: enrollment.assignment_type || 
                      enrollment.type || 
                      enrollment.enrollment_type ||
