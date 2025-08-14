@@ -795,6 +795,31 @@ class DoceboAPI {
     console.log('🔍 Learning plan enrollment raw data fields:', Object.keys(enrollment));
     console.log('🔍 Sample LP enrollment data:', JSON.stringify(enrollment).substring(0, 500));
     
+    // Convert numeric status to text for learning plans
+    let enrollmentStatus = 'Unknown';
+    if (enrollment.status !== undefined && enrollment.status !== null) {
+      switch (parseInt(enrollment.status)) {
+        case -1:
+          enrollmentStatus = 'waiting_for_payment';
+          break;
+        case 0:
+          enrollmentStatus = 'enrolled';
+          break;
+        case 1:
+          enrollmentStatus = 'in_progress';
+          break;
+        case 2:
+          enrollmentStatus = 'completed';
+          break;
+        default:
+          // If it's not a number, try as string
+          enrollmentStatus = enrollment.status || enrollment.enrollment_status || enrollment.state || 'Unknown';
+      }
+    } else {
+      // Fallback to text-based status fields
+      enrollmentStatus = enrollment.enrollment_status || enrollment.state || enrollment.lp_status || 'Unknown';
+    }
+    
     const formatted = {
       learningPlanId: enrollment.learning_plan_id || enrollment.id_learning_plan || enrollment.lp_id,
       learningPlanName: enrollment.learning_plan_name || 
@@ -803,44 +828,38 @@ class DoceboAPI {
                        enrollment.lp_name ||
                        'Unknown Learning Plan',
       
-      enrollmentStatus: enrollment.status || 
-                       enrollment.enrollment_status || 
-                       enrollment.state ||
-                       enrollment.lp_status ||
-                       'Unknown',
+      enrollmentStatus: enrollmentStatus,
       
-      // Try multiple field names for enrollment date
-      enrollmentDate: enrollment.enrollment_date || 
+      // CORRECTED: Use the actual field names from the API (same as courses)
+      enrollmentDate: enrollment.enroll_date_of_enrollment || 
+                     enrollment.enroll_begin_date || 
+                     enrollment.enrollment_date || 
                      enrollment.enrollment_created_at || 
                      enrollment.date_enrolled || 
-                     enrollment.created_at ||
-                     enrollment.enrolled_at ||
-                     enrollment.date_created ||
-                     enrollment.enrollment_create_date,
+                     enrollment.created_at,
       
-      // Try multiple field names for completion date
-      completionDate: enrollment.date_complete || 
+      // CORRECTED: Use the actual completion date field
+      completionDate: enrollment.course_complete_date || 
+                     enrollment.date_complete || 
                      enrollment.enrollment_completion_date || 
                      enrollment.completion_date || 
                      enrollment.completed_at || 
-                     enrollment.date_completed ||
-                     enrollment.complete_date ||
-                     enrollment.date_finish,
+                     enrollment.date_completed,
       
       progress: enrollment.progress || enrollment.completion_percentage || enrollment.percentage || 0,
       completedCourses: enrollment.completed_courses || enrollment.courses_completed || 0,
       totalCourses: enrollment.total_courses || enrollment.courses_total || 0,
       
-      // Try multiple field names for due date
-      dueDate: enrollment.enrollment_validity_end_date || 
+      // CORRECTED: Use the actual due date fields
+      dueDate: enrollment.enroll_end_date || 
+               enrollment.soft_deadline ||
+               enrollment.course_end_date ||
+               enrollment.enrollment_validity_end_date || 
                enrollment.active_until || 
                enrollment.due_date || 
-               enrollment.deadline ||
-               enrollment.validity_end_date ||
-               enrollment.end_date ||
-               enrollment.expiry_date,
+               enrollment.deadline,
       
-      // Try multiple field names for assignment type
+      // CORRECTED: Use the actual assignment type field
       assignmentType: enrollment.assignment_type || 
                      enrollment.type || 
                      enrollment.enrollment_type ||
@@ -1408,7 +1427,7 @@ ${formattedCourses}`;
       const formattedPlans = enrollmentData.learningPlans.enrollments.slice(0, 100).map((enrollment: any, i: number) => {
         const formatted = api.formatLearningPlanEnrollment(enrollment);
         
-        // Status with appropriate icons
+        // Status with appropriate icons (updated for learning plans)
         let statusIcon = '📋';
         let statusText = '';
         
@@ -1424,6 +1443,9 @@ ${formattedCourses}`;
         } else if (formatted.enrollmentStatus === 'enrolled') {
           statusIcon = '📋';
           statusText = 'Enrolled';
+        } else if (formatted.enrollmentStatus === 'waiting_for_payment') {
+          statusIcon = '💳';
+          statusText = 'Waiting for Payment';
         } else {
           statusIcon = '❓';
           statusText = formatted.enrollmentStatus || 'Unknown';
@@ -1571,6 +1593,7 @@ It looks like ${userDetails.fullname.split(' ')[0]} isn't enrolled in any course
       inProgress: 0,
       notStarted: 0,
       enrolled: 0,
+      waitingForPayment: 0,
       unknown: 0
     };
     
@@ -1580,6 +1603,7 @@ It looks like ${userDetails.fullname.split(' ')[0]} isn't enrolled in any course
       else if (status === 'in_progress' || status === 'in-progress') lpStats.inProgress++;
       else if (status === 'not_started' || status === 'not-started') lpStats.notStarted++;
       else if (status === 'enrolled') lpStats.enrolled++;
+      else if (status === 'waiting_for_payment') lpStats.waitingForPayment++;
       else lpStats.unknown++;
     });
     
@@ -1604,6 +1628,7 @@ It looks like ${userDetails.fullname.split(' ')[0]} isn't enrolled in any course
       if (lpStats.inProgress > 0) statParts.push(`${lpStats.inProgress} in progress`);
       if (lpStats.notStarted > 0) statParts.push(`${lpStats.notStarted} not started`);
       if (lpStats.enrolled > 0) statParts.push(`${lpStats.enrolled} enrolled`);
+      if (lpStats.waitingForPayment > 0) statParts.push(`${lpStats.waitingForPayment} waiting for payment`);
       if (lpStats.unknown > 0) statParts.push(`${lpStats.unknown} other status`);
       lpStatsText = `**${enrollmentData.totalLearningPlans} learning plans** (${statParts.join(', ')})`;
     } else {
