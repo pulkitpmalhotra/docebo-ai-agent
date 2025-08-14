@@ -91,10 +91,12 @@ const PATTERNS = {
             !lower.includes('learning plan') && !lower.includes('session') && 
             !lower.includes('training material');
   },
-  getCourseInfo: (msg: string) => {
+  getLearningPlanInfo: (msg: string) => {
     const lower = msg.toLowerCase();
-    return (lower.includes('course info') || lower.includes('course details') || 
-            lower.includes('tell me about course'));
+    return (lower.includes('learning plan info') || lower.includes('lp info') || 
+            lower.includes('tell me about learning plan')) && !lower.includes('course') &&
+            !lower.includes('user') && !lower.includes('session') && 
+            !lower.includes('training material');
   },
   userQuestion: (msg: string) => {
     const lower = msg.toLowerCase();
@@ -533,8 +535,84 @@ class DoceboAPI {
     return [];
   }
 
+  async getLearningPlanDetails(learningPlanIdentifier: string): Promise<any> {
+    // First search for the learning plan
+    const learningPlans = await this.apiRequest('/learningplan/v1/learningplans', {
+      search_text: learningPlanIdentifier,
+      page_size: 10
+    });
+    
+    let learningPlan = learningPlans.data?.items?.find((lp: any) => 
+      lp.title.toLowerCase().includes(learningPlanIdentifier.toLowerCase()) ||
+      lp.code === learningPlanIdentifier ||
+      lp.learning_plan_id.toString() === learningPlanIdentifier
+    );
+
+    // If not found by search, try manual filtering
+    if (!learningPlan) {
+      const allPlans = await this.apiRequest('/learningplan/v1/learningplans', {
+        page_size: 200
+      });
+      
+      learningPlan = allPlans.data?.items?.find((lp: any) => 
+        lp.title.toLowerCase().includes(learningPlanIdentifier.toLowerCase()) ||
+        lp.code === learningPlanIdentifier ||
+        lp.learning_plan_id.toString() === learningPlanIdentifier
+      );
+    }
+    
+    if (!learningPlan) {
+      throw new Error(`Learning plan not found: ${learningPlanIdentifier}`);
+    }
+
+    // Format the detailed response based on available fields
+    return {
+      id: learningPlan.learning_plan_id,
+      uuid: learningPlan.uuid,
+      code: learningPlan.code,
+      title: learningPlan.title,
+      thumbnailUrl: learningPlan.thumbnail_url,
+      credits: learningPlan.credits,
+      isPublished: learningPlan.is_published,
+      isPublishable: learningPlan.is_publishable,
+      assignedCoursesCount: learningPlan.assigned_courses_count,
+      assignedEnrollmentsCount: learningPlan.assigned_enrollments_count,
+      assignedCatalogsCount: learningPlan.assigned_catalogs_count,
+      assignedChannelsCount: learningPlan.assigned_channels_count,
+      createdOn: learningPlan.created_on,
+      createdBy: learningPlan.created_by,
+      updatedOn: learningPlan.updated_on,
+      updatedBy: learningPlan.updated_by,
+      rawData: learningPlan // Include raw data for debugging
+    };
+  }
+  
   async getUserDetails(email: string): Promise<any> {
     const users = await this.apiRequest('/manage/v1/user', {
+      search_text: email,
+      page_size: 5
+    });
+    
+    const user = users.data?.items?.find((u: any) => u.email.toLowerCase() === email.toLowerCase());
+    
+    if (!user) {
+      throw new Error(`User not found: ${email}`);
+    }
+
+    return {
+      id: user.user_id || user.id,
+      fullname: user.fullname || `${user.firstname || ''} ${user.lastname || ''}`.trim() || 'Not available',
+      email: user.email,
+      username: user.username || 'Not available',
+      status: user.status === '1' ? 'Active' : user.status === '0' ? 'Inactive' : `Status: ${user.status}`,
+      level: user.level === 'godadmin' ? 'Superadmin' : user.level || 'User',
+      creationDate: user.register_date || user.creation_date || user.created_at || 'Not available',
+      lastAccess: user.last_access_date || user.last_access || user.last_login || 'Not available',
+      timezone: user.timezone || 'Not specified',
+      language: user.language || user.lang_code || 'Not specified',
+      department: user.department || 'Not specified'
+    };
+  }
       search_text: email,
       page_size: 5
     });
@@ -713,7 +791,73 @@ ${answer}`,
       }
     }
     
-    // 3. USER SEARCH
+    // 3. LEARNING PLAN INFO
+    if (PATTERNS.getLearningPlanInfo(message)) {
+      if (!learningPlan) {
+        return NextResponse.json({
+          response: `❌ **Missing Learning Plan**: I need a learning plan name or ID to get information about.
+
+**Examples:**
+• "Learning plan info Associate Memory Network"
+• "Tell me about learning plan LP-005"
+• "Learning plan info 277"`,
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      try {
+        const lpDetails = await api.getLearningPlanDetails(learningPlan);
+        
+        const statusText = lpDetails.isPublished ? 'Published ✅' : 'Unpublished ❌';
+        const publishableText = lpDetails.isPublishable ? 'Yes' : 'No';
+        const creditsText = lpDetails.credits ? `${lpDetails.credits} credits` : 'No credits assigned';
+        const createdByText = lpDetails.createdBy ? 
+          `${lpDetails.createdBy.fullname} (ID: ${lpDetails.createdBy.id})` : 'Not available';
+        const updatedByText = lpDetails.updatedBy ? 
+          `${lpDetails.updatedBy.fullname} (ID: ${lpDetails.updatedBy.id})` : 'Not available';
+
+        return NextResponse.json({
+          response: `📚 **Learning Plan Details**: ${lpDetails.title}
+
+🆔 **ID**: ${lpDetails.id}
+🏷️ **Code**: ${lpDetails.code}
+🎯 **UUID**: ${lpDetails.uuid}
+
+📊 **Status Information**:
+• **Published**: ${statusText}
+• **Publishable**: ${publishableText}
+• **Credits**: ${creditsText}
+
+📈 **Assignment Statistics**:
+• **👥 Enrollments**: ${lpDetails.assignedEnrollmentsCount} users enrolled
+• **📚 Courses**: ${lpDetails.assignedCoursesCount} courses assigned
+• **📂 Catalogs**: ${lpDetails.assignedCatalogsCount} catalogs
+• **📺 Channels**: ${lpDetails.assignedChannelsCount} channels
+
+📅 **Timeline**:
+• **Created**: ${lpDetails.createdOn}
+• **Created By**: ${createdByText}
+• **Last Updated**: ${lpDetails.updatedOn}
+• **Updated By**: ${updatedByText}
+
+${lpDetails.thumbnailUrl ? `🖼️ **Thumbnail**: Available` : '🖼️ **Thumbnail**: Not set'}
+
+**API Endpoint Used**: \`/learningplan/v1/learningplans\``,
+          success: true,
+          data: lpDetails,
+          timestamp: new Date().toISOString()
+        });
+      } catch (error) {
+        return NextResponse.json({
+          response: `❌ **Error**: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+    }
+
+    // 4. USER SEARCH
     if (PATTERNS.searchUsers(message)) {
       const searchTerm = email || message.replace(/find|user|search/gi, '').trim();
       
@@ -779,7 +923,7 @@ ${userList}${users.length > 20 ? `\n\n... and ${users.length - 20} more users` :
       }
     }
     
-    // 4. COURSE SEARCH
+    // 5. COURSE SEARCH
     if (PATTERNS.searchCourses(message)) {
       const searchTerm = course || message.replace(/find|search|course/gi, '').trim();
       
@@ -820,7 +964,7 @@ ${courseList}${courses.length > 20 ? `\n\n... and ${courses.length - 20} more co
       });
     }
 
-    // 5. LEARNING PLAN SEARCH - UPDATED
+    // 6. LEARNING PLAN SEARCH - UPDATED
     if (PATTERNS.searchLearningPlans(message)) {
       let searchTerm = learningPlan;
       
@@ -933,7 +1077,7 @@ ${planList}${learningPlans.length > 20 ? `\n\n... and ${learningPlans.length - 2
       });
     }
 
-    // 6. SESSION SEARCH
+    // 7. SESSION SEARCH
     if (PATTERNS.searchSessions(message)) {
       const searchTerm = session || message.replace(/find|search|session/gi, '').trim();
       
@@ -974,7 +1118,7 @@ ${sessionList}${sessions.length > 20 ? `\n\n... and ${sessions.length - 20} more
       });
     }
 
-    // 7. TRAINING MATERIAL SEARCH
+    // 8. TRAINING MATERIAL SEARCH
     if (PATTERNS.searchTrainingMaterials(message)) {
       const searchTerm = trainingMaterial || message.replace(/find|search|training material|material/gi, '').trim();
       
@@ -1029,6 +1173,7 @@ I can help you with:
 
 ## 📋 **Learning Plans** (UPDATED)
 • **Find learning plans**: "Find Python learning plans"
+• **Learning plan details**: "Learning plan info Associate Memory Network"
 • **Endpoint**: \`/learningplan/v1/learningplans\`
 
 ## 🎯 **Sessions**
@@ -1076,6 +1221,7 @@ export async function GET() {
       'User search and details',
       'Course search and details', 
       'Learning plan search (FIXED: /learningplan/v1/learningplans)',
+      'Learning plan detailed info (NEW)',
       'Session search',
       'Training material search',
       'Help search (Manual mode - Web integration pending)',
