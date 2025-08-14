@@ -648,6 +648,7 @@ class DoceboAPI {
 let api: DoceboAPI;
 // Part 3: Handler Functions
 
+// Debug version - let's see what fields are actually available
 async function handleCourseInfo(entities: any) {
   const identifier = entities.courseId || entities.courseName;
   
@@ -669,7 +670,11 @@ async function handleCourseInfo(entities: any) {
     const courseName = api.getCourseName(course);
     const courseId = course.id || course.course_id || course.idCourse;
     
-    // Enhanced field mapping
+    // DEBUG: Let's see all available fields
+    console.log('🔍 DEBUG: Course object keys:', Object.keys(course));
+    console.log('🔍 DEBUG: Course object:', JSON.stringify(course, null, 2));
+    
+    // Enhanced field mapping with better property access
     const status = course.status || course.course_status || 'Unknown';
     const statusIcon = status === 'published' ? '✅' : status === 'draft' ? '📝' : status === 'suspended' ? '🚫' : '❓';
     const statusText = status === 'published' ? 'Published ✅' : 
@@ -680,32 +685,46 @@ async function handleCourseInfo(entities: any) {
     const description = course.description || course.course_description || 'No description available';
     const courseType = course.course_type || course.type || 'Not specified';
     const code = course.code || course.course_code || 'Not specified';
-    const language = course.language || course.course_language || 'Not specified';
+    
+    // Fix language and category mapping
+    const language = course.language?.name || course.language?.code || course.lang_code || course.language || 'Not specified';
+    const category = course.category?.name || course.category?.title || course.course_category || 'Not specified';
+    
     const credits = course.credits || course.course_credits || 'No credits assigned';
     
-    // Dates
-    const createdDate = course.date_creation || course.created_at || course.creation_date || 'Not available';
-    const modifiedDate = course.date_modification || course.updated_at || course.modified_date || 'Not available';
-    const publishedDate = course.date_publication || course.published_at || 'Not available';
+    // Fix dates - try multiple field names
+    const createdDate = course.date_creation || course.created_at || course.creation_date || course.date_created || 'Not available';
+    const modifiedDate = course.date_modification || course.updated_at || course.modified_date || course.date_modified || 'Not available';
+    const publishedDate = course.date_publication || course.published_at || course.date_published || 'Not available';
     
-    // Enrollment and completion stats
-    const enrolledCount = course.enrolled_count || course.total_enrolled || course.user_count || 'Not available';
-    const completedCount = course.completed_count || course.total_completed || 'Not available';
-    const waitingCount = course.waiting_count || course.total_waiting || 'Not available';
+    // Fix enrollment stats - check for nested objects
+    const enrolledCount = course.enrolled_count || course.total_enrolled || course.user_count || 
+                         course.enrollments?.total || course.statistics?.enrolled || 'Not available';
+    const completedCount = course.completed_count || course.total_completed || 
+                          course.statistics?.completed || 'Not available';
+    const waitingCount = course.waiting_count || course.total_waiting || 
+                        course.statistics?.waiting || 'Not available';
     
     // Additional course details
-    const duration = course.duration || course.course_duration || 'Not specified';
-    const difficulty = course.difficulty || course.level || 'Not specified';
-    const category = course.category || course.course_category || 'Not specified';
-    const price = course.price !== undefined ? `$${course.price}` : 'Not specified';
+    const duration = course.duration || course.course_duration || course.estimated_duration || 'Not specified';
+    const difficulty = course.difficulty || course.level || course.difficulty_level || 'Not specified';
+    const price = course.price !== undefined ? `$${course.price}` : 
+                 course.enrollment_price !== undefined ? `$${course.enrollment_price}` : 'Not specified';
     
     // Learning objects/materials count
-    const learningObjectsCount = course.learning_objects_count || course.lo_count || course.materials_count || 'Not available';
+    const learningObjectsCount = course.learning_objects_count || course.lo_count || course.materials_count || 
+                                course.learning_objects?.length || 'Not available';
     
-    // Course settings
-    const isAutoEnroll = course.auto_enroll || course.automatic_enrollment ? 'Yes' : 'No';
-    const isVisible = course.is_visible !== false ? 'Yes' : 'No';
-    const allowCertificate = course.allow_certificate || course.has_certificate ? 'Yes' : 'No';
+    // Course settings - check boolean values properly
+    const isAutoEnroll = course.auto_enroll === true || course.automatic_enrollment === true ? 'Yes' : 'No';
+    const isVisible = course.is_visible !== false && course.visible !== false ? 'Yes' : 'No';
+    const allowCertificate = course.allow_certificate === true || course.has_certificate === true || 
+                           course.certificate_enabled === true ? 'Yes' : 'No';
+    
+    // Additional useful fields that might be available
+    const instructor = course.instructor?.name || course.instructor?.fullname || course.teacher || 'Not specified';
+    const rating = course.rating !== undefined ? `${course.rating}/5` : 'Not rated';
+    const sessionCount = course.session_count || course.sessions?.length || 'Not available';
     
     return NextResponse.json({
       response: `📚 **Course Details**: ${courseName}
@@ -725,12 +744,15 @@ ${description}
 • **Difficulty**: ${difficulty}
 • **Duration**: ${duration}
 • **Price**: ${price}
+• **Instructor**: ${instructor}
+• **Rating**: ${rating}
 
 📈 **Enrollment Statistics**:
 • **👥 Total Enrolled**: ${enrolledCount}
 • **✅ Completed**: ${completedCount}
 • **⏳ Waiting**: ${waitingCount}
 • **📖 Learning Objects**: ${learningObjectsCount}
+• **🎯 Sessions**: ${sessionCount}
 
 ⚙️ **Course Settings**:
 • **Auto Enrollment**: ${isAutoEnroll}
@@ -742,7 +764,10 @@ ${description}
 • **Last Modified**: ${modifiedDate}
 • **Published**: ${publishedDate}
 
-**Course found successfully!**`,
+**Course found successfully!**
+
+🔍 **DEBUG INFO** (remove this after testing):
+Available fields: ${Object.keys(course).slice(0, 20).join(', ')}...`,
       success: true,
       data: course,
       timestamp: new Date().toISOString()
