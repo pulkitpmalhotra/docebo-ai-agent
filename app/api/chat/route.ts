@@ -294,6 +294,11 @@ class IntentAnalyzer {
     const match = message.match(/(?:search for|find)\s+(.+?)\s+(?:materials|training materials)/i);
     return match && match[1] && match[1] !== 'for' ? match[1].trim() : null;
   }
+  
+  static extractAfterPattern(message: string, pattern: RegExp): string | null {
+    const match = message.match(pattern);
+    return match && match[1] ? match[1].trim() : null;
+  }
 }
 
 // Docebo API client
