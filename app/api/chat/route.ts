@@ -282,15 +282,30 @@ function extractLearningPlan(message: string): string | null {
   const lpInfoMatch = message.match(lpInfoPattern);
   if (lpInfoMatch) return lpInfoMatch[1].trim();
   
-  // Updated patterns for find learning plan
-  const findLpPattern = /find\s+(.+?)\s+(?:learning plan|lp|plan)/i;
+  // Updated patterns for find learning plan - extract the name between "find" and "learning plan"
+  const findLpPattern = /find\s+(.+?)\s+learning plan/i;
   const findLpMatch = message.match(findLpPattern);
   if (findLpMatch) return findLpMatch[1].trim();
   
-  // New pattern for "search learning plans"
-  const searchLpPattern = /search\s+(.+?)\s+(?:learning plans|lps)/i;
+  // Pattern for "search X learning plans"
+  const searchLpPattern = /search\s+(.+?)\s+learning plans/i;
   const searchLpMatch = message.match(searchLpPattern);
   if (searchLpMatch) return searchLpMatch[1].trim();
+  
+  // If the message contains "learning plan" or "learning plans", try to extract the name
+  if (message.toLowerCase().includes('learning plan')) {
+    // Remove common words and extract the core search term
+    let cleaned = message.toLowerCase()
+      .replace(/find/g, '')
+      .replace(/search/g, '')
+      .replace(/learning plans?/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    
+    if (cleaned && cleaned.length > 2) {
+      return cleaned;
+    }
+  }
   
   return null;
 }
@@ -550,7 +565,7 @@ class DoceboAPI {
   }
 
   getLearningPlanName(lp: any): string {
-    // Handle different possible property names for learning plan titles
+    // Based on the API response structure, use 'title' as the primary field
     return lp.title || 
            lp.name || 
            lp.learning_plan_name || 
@@ -807,11 +822,27 @@ ${courseList}${courses.length > 20 ? `\n\n... and ${courses.length - 20} more co
 
     // 5. LEARNING PLAN SEARCH - UPDATED
     if (PATTERNS.searchLearningPlans(message)) {
-      const searchTerm = learningPlan || message.replace(/find|search|learning plan|lp/gi, '').trim();
+      let searchTerm = learningPlan;
+      
+      // If no specific term extracted, try to clean up the message
+      if (!searchTerm) {
+        searchTerm = message
+          .toLowerCase()
+          .replace(/find/g, '')
+          .replace(/search/g, '')
+          .replace(/learning plans?/g, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+      }
       
       if (!searchTerm || searchTerm.length < 2) {
         return NextResponse.json({
-          response: `❌ **Missing Search Term**: I need a learning plan name to search for.`,
+          response: `❌ **Missing Search Term**: I need a learning plan name to search for.
+
+**Examples:**
+• "Find Python learning plans"
+• "Search Associate Memory Network learning plans"
+• "Find leadership learning plans"`,
           success: false,
           timestamp: new Date().toISOString()
         });
@@ -828,6 +859,7 @@ ${courseList}${courses.length > 20 ? `\n\n... and ${courses.length - 20} more co
 • Try broader search terms
 • Check spelling
 • Search for keywords within plan descriptions
+• Try: "Find Associate Memory" instead of full name
 
 **API Endpoint Used**: \`/learningplan/v1/learningplans\``,
           success: false,
@@ -840,51 +872,50 @@ ${courseList}${courses.length > 20 ? `\n\n... and ${courses.length - 20} more co
       const displayCount = Math.min(learningPlans.length, 20);
       const planList = learningPlans.slice(0, displayCount).map((plan, i) => {
         const planName = api.getLearningPlanName(plan);
-        const planId = plan.id || plan.learning_plan_id || plan.lp_id || plan.idLearningPlan || 'N/A';
+        const planId = plan.learning_plan_id || plan.id || plan.lp_id || plan.idLearningPlan || 'N/A';
         
-        // More comprehensive status checking
-        const status = plan.status || plan.learning_plan_status || plan.lp_status || 
-                      plan.state || plan.is_active || 'Unknown';
+        // Use the correct field names from the API response
+        const isPublished = plan.is_published;
+        const enrollmentCount = plan.assigned_enrollments_count;
+        const courseCount = plan.assigned_courses_count;
         
-        // More comprehensive enrollment checking
-        const enrollments = plan.enrollment_count || plan.enrolled_users || 
-                           plan.total_enrollments || plan.enrollments || 
-                           plan.user_count || plan.users_enrolled || 'N/A';
-        
-        // Enhanced status icon mapping
+        // Map status based on is_published field
+        let status = 'Unknown';
         let statusIcon = '❓';
-        if (typeof status === 'string') {
-          const statusLower = status.toLowerCase();
-          if (statusLower === 'active' || statusLower === 'published' || statusLower === '1' || statusLower === 'true') {
-            statusIcon = '✅';
-          } else if (statusLower === 'inactive' || statusLower === 'unpublished' || statusLower === '0' || statusLower === 'false') {
-            statusIcon = '❌';
-          } else if (statusLower === 'archived' || statusLower === 'suspended') {
-            statusIcon = '📦';
-          } else if (statusLower === 'draft') {
-            statusIcon = '📝';
-          }
-        } else if (typeof status === 'boolean') {
-          statusIcon = status ? '✅' : '❌';
-        } else if (typeof status === 'number') {
-          statusIcon = status === 1 ? '✅' : '❌';
+        
+        if (typeof isPublished === 'boolean') {
+          status = isPublished ? 'Published' : 'Unpublished';
+          statusIcon = isPublished ? '✅' : '❌';
+        } else if (isPublished === true || isPublished === 1 || isPublished === '1') {
+          status = 'Published';
+          statusIcon = '✅';
+        } else if (isPublished === false || isPublished === 0 || isPublished === '0') {
+          status = 'Unpublished';
+          statusIcon = '❌';
         }
+        
+        // Format enrollment information
+        const enrollmentInfo = enrollmentCount !== undefined && enrollmentCount !== null ? 
+          `${enrollmentCount} enrollments` : 'N/A';
+        
+        const courseInfo = courseCount !== undefined && courseCount !== null ? 
+          `${courseCount} courses` : 'N/A';
         
         // Debug logging for the first plan
         if (i === 0) {
-          console.log(`📋 Learning Plan Debug:`, {
+          console.log(`📋 Learning Plan Mapping:`, {
             planName,
             planId,
-            originalStatus: plan.status,
-            mappedStatus: status,
-            originalEnrollments: plan.enrollment_count,
-            mappedEnrollments: enrollments,
-            allPlanKeys: Object.keys(plan)
+            isPublished,
+            enrollmentCount,
+            courseCount,
+            status,
+            statusIcon
           });
         }
         
         return `${i + 1}. ${statusIcon} **${planName}** (ID: ${planId})
-   📊 Status: *${status}* | 👥 Enrollments: ${enrollments}`;
+   📊 Status: *${status}* | 👥 ${enrollmentInfo} | 📚 ${courseInfo}`;
       }).join('\n\n');
       
       return NextResponse.json({
@@ -892,7 +923,8 @@ ${courseList}${courses.length > 20 ? `\n\n... and ${courses.length - 20} more co
 
 ${planList}${learningPlans.length > 20 ? `\n\n... and ${learningPlans.length - 20} more learning plans` : ''}
 
-**API Endpoint Used**: \`/learningplan/v1/learningplans\``,
+**API Endpoint Used**: \`/learningplan/v1/learningplans\`
+**Search Term**: "${searchTerm}"`,
         success: true,
         totalCount: learningPlans.length,
         endpoint: '/learningplan/v1/learningplans',
