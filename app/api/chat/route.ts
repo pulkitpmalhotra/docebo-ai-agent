@@ -742,35 +742,115 @@ class DoceboAPI {
   }
 
   formatCourseEnrollment(enrollment: any): any {
-    return {
-      courseId: enrollment.course_id || enrollment.id_course,
-      courseName: enrollment.course_name || enrollment.name || 'Unknown Course',
-      enrollmentStatus: enrollment.status || enrollment.enrollment_status || 'Unknown',
-      enrollmentDate: enrollment.enrollment_date || enrollment.enrollment_created_at || enrollment.date_enrolled || enrollment.created_at,
-      completionDate: enrollment.date_complete || enrollment.enrollment_completion_date || enrollment.completion_date || enrollment.completed_at || enrollment.date_completed,
-      progress: enrollment.progress || enrollment.completion_percentage || 0,
-      score: enrollment.score || enrollment.final_score || null,
-      timeSpent: enrollment.time_spent || enrollment.total_time || null,
-      lastAccess: enrollment.last_access || enrollment.last_access_date || null,
-      dueDate: enrollment.enrollment_validity_end_date || enrollment.active_until || enrollment.due_date || enrollment.deadline || null,
-      assignmentType: enrollment.assignment_type || null
+    // Debug logging to see what fields are available
+    console.log('🔍 Course enrollment raw data fields:', Object.keys(enrollment));
+    console.log('🔍 Sample course enrollment data:', JSON.stringify(enrollment).substring(0, 500));
+    
+    const formatted = {
+      courseId: enrollment.course_id || enrollment.id_course || enrollment.idCourse,
+      courseName: enrollment.course_name || enrollment.name || enrollment.title || 'Unknown Course',
+      enrollmentStatus: enrollment.status || enrollment.enrollment_status || enrollment.state || 'Unknown',
+      
+      // Try multiple field names for enrollment date
+      enrollmentDate: enrollment.enrollment_date || 
+                     enrollment.enrollment_created_at || 
+                     enrollment.date_enrolled || 
+                     enrollment.created_at ||
+                     enrollment.enrolled_at ||
+                     enrollment.date_created ||
+                     enrollment.enrollment_create_date,
+      
+      // Try multiple field names for completion date
+      completionDate: enrollment.date_complete || 
+                     enrollment.enrollment_completion_date || 
+                     enrollment.completion_date || 
+                     enrollment.completed_at || 
+                     enrollment.date_completed ||
+                     enrollment.complete_date ||
+                     enrollment.date_finish,
+      
+      progress: enrollment.progress || enrollment.completion_percentage || enrollment.percentage || 0,
+      score: enrollment.score || enrollment.final_score || enrollment.grade || null,
+      
+      // Try multiple field names for due date
+      dueDate: enrollment.enrollment_validity_end_date || 
+               enrollment.active_until || 
+               enrollment.due_date || 
+               enrollment.deadline ||
+               enrollment.validity_end_date ||
+               enrollment.end_date ||
+               enrollment.expiry_date,
+      
+      // Try multiple field names for assignment type
+      assignmentType: enrollment.assignment_type || 
+                     enrollment.type || 
+                     enrollment.enrollment_type ||
+                     enrollment.assign_type
     };
+    
+    console.log('🔍 Formatted course enrollment:', JSON.stringify(formatted));
+    return formatted;
   }
 
   formatLearningPlanEnrollment(enrollment: any): any {
-    return {
-      learningPlanId: enrollment.learning_plan_id || enrollment.id_learning_plan,
-      learningPlanName: enrollment.learning_plan_name || enrollment.name || enrollment.title || 'Unknown Learning Plan',
-      enrollmentStatus: enrollment.status || enrollment.enrollment_status || 'Unknown',
-      enrollmentDate: enrollment.enrollment_date || enrollment.enrollment_created_at || enrollment.date_enrolled || enrollment.created_at,
-      completionDate: enrollment.date_complete || enrollment.enrollment_completion_date || enrollment.completion_date || enrollment.completed_at || enrollment.date_completed,
-      progress: enrollment.progress || enrollment.completion_percentage || 0,
+    // Debug logging to see what fields are available
+    console.log('🔍 Learning plan enrollment raw data fields:', Object.keys(enrollment));
+    console.log('🔍 Sample LP enrollment data:', JSON.stringify(enrollment).substring(0, 500));
+    
+    const formatted = {
+      learningPlanId: enrollment.learning_plan_id || enrollment.id_learning_plan || enrollment.lp_id,
+      learningPlanName: enrollment.learning_plan_name || 
+                       enrollment.name || 
+                       enrollment.title ||
+                       enrollment.lp_name ||
+                       'Unknown Learning Plan',
+      
+      enrollmentStatus: enrollment.status || 
+                       enrollment.enrollment_status || 
+                       enrollment.state ||
+                       enrollment.lp_status ||
+                       'Unknown',
+      
+      // Try multiple field names for enrollment date
+      enrollmentDate: enrollment.enrollment_date || 
+                     enrollment.enrollment_created_at || 
+                     enrollment.date_enrolled || 
+                     enrollment.created_at ||
+                     enrollment.enrolled_at ||
+                     enrollment.date_created ||
+                     enrollment.enrollment_create_date,
+      
+      // Try multiple field names for completion date
+      completionDate: enrollment.date_complete || 
+                     enrollment.enrollment_completion_date || 
+                     enrollment.completion_date || 
+                     enrollment.completed_at || 
+                     enrollment.date_completed ||
+                     enrollment.complete_date ||
+                     enrollment.date_finish,
+      
+      progress: enrollment.progress || enrollment.completion_percentage || enrollment.percentage || 0,
       completedCourses: enrollment.completed_courses || enrollment.courses_completed || 0,
       totalCourses: enrollment.total_courses || enrollment.courses_total || 0,
-      lastAccess: enrollment.last_access || enrollment.last_access_date || null,
-      dueDate: enrollment.enrollment_validity_end_date || enrollment.active_until || enrollment.due_date || enrollment.deadline || null,
-      assignmentType: enrollment.assignment_type || null
+      
+      // Try multiple field names for due date
+      dueDate: enrollment.enrollment_validity_end_date || 
+               enrollment.active_until || 
+               enrollment.due_date || 
+               enrollment.deadline ||
+               enrollment.validity_end_date ||
+               enrollment.end_date ||
+               enrollment.expiry_date,
+      
+      // Try multiple field names for assignment type
+      assignmentType: enrollment.assignment_type || 
+                     enrollment.type || 
+                     enrollment.enrollment_type ||
+                     enrollment.assign_type
     };
+    
+    console.log('🔍 Formatted LP enrollment:', JSON.stringify(formatted));
+    return formatted;
   }
 
   getCourseName(course: any): string {
@@ -1242,11 +1322,15 @@ async function handleUserEnrollments(entities: any) {
         if (formatted.enrollmentDate) {
           try {
             const date = new Date(formatted.enrollmentDate);
-            enrollmentDateText = date.toLocaleDateString('en-US', { 
-              year: 'numeric', 
-              month: 'short', 
-              day: 'numeric' 
-            });
+            if (!isNaN(date.getTime())) {
+              enrollmentDateText = date.toLocaleDateString('en-US', { 
+                year: 'numeric', 
+                month: 'short', 
+                day: 'numeric' 
+              });
+            } else {
+              enrollmentDateText = formatted.enrollmentDate;
+            }
           } catch {
             enrollmentDateText = formatted.enrollmentDate;
           }
@@ -1259,11 +1343,15 @@ async function handleUserEnrollments(entities: any) {
         if (formatted.completionDate) {
           try {
             const date = new Date(formatted.completionDate);
-            completionText = ` | ✅ Completed: ${date.toLocaleDateString('en-US', { 
-              year: 'numeric', 
-              month: 'short', 
-              day: 'numeric' 
-            })}`;
+            if (!isNaN(date.getTime())) {
+              completionText = ` | ✅ Completed: ${date.toLocaleDateString('en-US', { 
+                year: 'numeric', 
+                month: 'short', 
+                day: 'numeric' 
+              })}`;
+            } else {
+              completionText = ` | ✅ Completed: ${formatted.completionDate}`;
+            }
           } catch {
             completionText = ` | ✅ Completed: ${formatted.completionDate}`;
           }
@@ -1274,11 +1362,15 @@ async function handleUserEnrollments(entities: any) {
         if (formatted.dueDate) {
           try {
             const date = new Date(formatted.dueDate);
-            dueText = ` | ⏰ Due: ${date.toLocaleDateString('en-US', { 
-              year: 'numeric', 
-              month: 'short', 
-              day: 'numeric' 
-            })}`;
+            if (!isNaN(date.getTime())) {
+              dueText = ` | ⏰ Due: ${date.toLocaleDateString('en-US', { 
+                year: 'numeric', 
+                month: 'short', 
+                day: 'numeric' 
+              })}`;
+            } else {
+              dueText = ` | ⏰ Due: ${formatted.dueDate}`;
+            }
           } catch {
             dueText = ` | ⏰ Due: ${formatted.dueDate}`;
           }
@@ -1288,6 +1380,18 @@ async function handleUserEnrollments(entities: any) {
         let assignmentText = '';
         if (formatted.assignmentType) {
           assignmentText = ` | 📋 ${formatted.assignmentType}`;
+        }
+        
+        // Debug logging for first few items
+        if (i < 3) {
+          console.log(`🔍 Course ${i + 1} display data:`, {
+            name: formatted.courseName,
+            status: statusText,
+            enrollmentDate: formatted.enrollmentDate,
+            completionDate: formatted.completionDate,
+            dueDate: formatted.dueDate,
+            assignmentType: formatted.assignmentType
+          });
         }
         
         return `${i + 1}. ${statusIcon} **${formatted.courseName}** - *${statusText}*${progressText}${scoreText}
@@ -1335,11 +1439,15 @@ ${formattedCourses}`;
         if (formatted.enrollmentDate) {
           try {
             const date = new Date(formatted.enrollmentDate);
-            enrollmentDateText = date.toLocaleDateString('en-US', { 
-              year: 'numeric', 
-              month: 'short', 
-              day: 'numeric' 
-            });
+            if (!isNaN(date.getTime())) {
+              enrollmentDateText = date.toLocaleDateString('en-US', { 
+                year: 'numeric', 
+                month: 'short', 
+                day: 'numeric' 
+              });
+            } else {
+              enrollmentDateText = formatted.enrollmentDate;
+            }
           } catch {
             enrollmentDateText = formatted.enrollmentDate;
           }
@@ -1352,11 +1460,15 @@ ${formattedCourses}`;
         if (formatted.completionDate) {
           try {
             const date = new Date(formatted.completionDate);
-            completionText = ` | ✅ Completed: ${date.toLocaleDateString('en-US', { 
-              year: 'numeric', 
-              month: 'short', 
-              day: 'numeric' 
-            })}`;
+            if (!isNaN(date.getTime())) {
+              completionText = ` | ✅ Completed: ${date.toLocaleDateString('en-US', { 
+                year: 'numeric', 
+                month: 'short', 
+                day: 'numeric' 
+              })}`;
+            } else {
+              completionText = ` | ✅ Completed: ${formatted.completionDate}`;
+            }
           } catch {
             completionText = ` | ✅ Completed: ${formatted.completionDate}`;
           }
@@ -1367,11 +1479,15 @@ ${formattedCourses}`;
         if (formatted.dueDate) {
           try {
             const date = new Date(formatted.dueDate);
-            dueText = ` | ⏰ Due: ${date.toLocaleDateString('en-US', { 
-              year: 'numeric', 
-              month: 'short', 
-              day: 'numeric' 
-            })}`;
+            if (!isNaN(date.getTime())) {
+              dueText = ` | ⏰ Due: ${date.toLocaleDateString('en-US', { 
+                year: 'numeric', 
+                month: 'short', 
+                day: 'numeric' 
+              })}`;
+            } else {
+              dueText = ` | ⏰ Due: ${formatted.dueDate}`;
+            }
           } catch {
             dueText = ` | ⏰ Due: ${formatted.dueDate}`;
           }
@@ -1381,6 +1497,18 @@ ${formattedCourses}`;
         let assignmentText = '';
         if (formatted.assignmentType) {
           assignmentText = ` | 📋 ${formatted.assignmentType}`;
+        }
+        
+        // Debug logging for first few items
+        if (i < 3) {
+          console.log(`🔍 Learning Plan ${i + 1} display data:`, {
+            name: formatted.learningPlanName,
+            status: statusText,
+            enrollmentDate: formatted.enrollmentDate,
+            completionDate: formatted.completionDate,
+            dueDate: formatted.dueDate,
+            assignmentType: formatted.assignmentType
+          });
         }
         
         return `${i + 1}. ${statusIcon} **${formatted.learningPlanName}** - *${statusText}*${progressText}${coursesText}
