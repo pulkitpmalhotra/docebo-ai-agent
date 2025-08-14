@@ -629,97 +629,6 @@ class DoceboAPI {
 
 let api: DoceboAPI;
 
-export async function POST(request: NextRequest) {
-  try {
-    if (!api) {
-      const config = getConfig();
-      api = new DoceboAPI(config);
-    }
-
-    const body = await request.json();
-    const { message } = body;
-    
-    if (!message || typeof message !== 'string') {
-      return NextResponse.json({
-        response: '❌ Please provide a valid message',
-        success: false,
-        timestamp: new Date().toISOString()
-      }, { status: 400 });
-    }
-
-    console.log(`🤖 Processing: "${message}"`);
-    
-    // Analyze intent using enhanced NLP
-    const analysis = IntentAnalyzer.analyzeIntent(message);
-    console.log(`🎯 Intent: ${analysis.intent}, Confidence: ${analysis.confidence}, Entities:`, analysis.entities);
-    
-    try {
-      switch (analysis.intent) {
-        case 'get_course_info':
-          return await handleCourseInfo(analysis.entities);
-          
-        case 'get_learning_plan_info':
-          return await handleLearningPlanInfo(analysis.entities);
-          
-        case 'search_sessions_in_course':
-          return await handleSessionSearch(analysis.entities);
-          
-        case 'search_materials_in_course':
-          return await handleMaterialSearch(analysis.entities);
-          
-        case 'search_users':
-          return await handleUserSearch(analysis.entities);
-          
-        case 'search_courses':
-          return await handleCourseSearch(analysis.entities);
-          
-        case 'search_learning_plans':
-          return await handleLearningPlanSearch(analysis.entities);
-          
-        case 'docebo_help':
-          return await handleDoceboHelp(analysis.entities);
-          
-        default:
-          return NextResponse.json({
-            response: `🤔 **I'm not sure what you're asking for**
-
-Based on your message: "${message}"
-
-**I can help you with:**
-• **👥 Find Users**: "Find user email@company.com"
-• **📚 Find/Info Courses**: "Find Python courses" or "Course info Working with Data in Python"  
-• **📋 Find/Info Learning Plans**: "Find Python learning plans" or "Learning plan info Getting Started with Python"
-• **🎯 Sessions**: "Search for sessions in course Python Programming"
-• **📖 Materials**: "Search for materials in course Python Programming"
-• **🆘 Help**: "How to enroll users in Docebo"
-
-**Try rephrasing your question or use one of the examples above.**`,
-            success: false,
-            intent: analysis.intent,
-            confidence: analysis.confidence,
-            timestamp: new Date().toISOString()
-          });
-      }
-    } catch (error) {
-      console.error('❌ Processing error:', error);
-      return NextResponse.json({
-        response: `❌ **Error**: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        success: false,
-        timestamp: new Date().toISOString()
-      });
-    }
-
-  } catch (error) {
-    console.error('❌ Chat error:', error);
-    
-    return NextResponse.json({
-      response: `❌ **System Error**: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      success: false,
-      timestamp: new Date().toISOString()
-    }, { status: 500 });
-  }
-}
-
 // Handler functions
 async function handleCourseInfo(entities: any) {
   const identifier = entities.courseId || entities.courseName;
@@ -762,6 +671,63 @@ async function handleCourseInfo(entities: any) {
     });
   } catch (error) {
     return NextResponse.json({
+      response: `❌ **Course Not Found**: Could not find course "${identifier}"
+
+**Suggestions:**
+• Try searching for courses first: "Find ${identifier} courses"
+• Check the course name spelling
+• Use the exact course ID if you have it`,
+      success: false,
+      timestamp: new Date().toISOString()
+    });
+  }
+}
+
+async function handleLearningPlanInfo(entities: any) {
+  const identifier = entities.learningPlanName;
+  
+  if (!identifier) {
+    return NextResponse.json({
+      response: `❌ **Missing Learning Plan**: I need a learning plan name or ID to get information about.
+
+**Examples:**
+• "Learning plan info Getting Started with Python"
+• "Learning plan info Associate Memory Network"
+• "Tell me about learning plan 111"`,
+      success: false,
+      timestamp: new Date().toISOString()
+    });
+  }
+  
+  try {
+    const lp = await api.getLearningPlanDetails(identifier);
+    const lpName = api.getLearningPlanName(lp);
+    const lpId = lp.learning_plan_id || lp.id;
+    const status = lp.is_published ? 'Published ✅' : 'Unpublished ❌';
+    
+    return NextResponse.json({
+      response: `📋 **Learning Plan Details**: ${lpName}
+
+🆔 **ID**: ${lpId}
+📊 **Status**: ${status}
+🎯 **Code**: ${lp.code || 'Not specified'}
+⭐ **Credits**: ${lp.credits || 'No credits assigned'}
+
+📈 **Enrollment Statistics**:
+• **👥 Users Enrolled**: ${lp.assigned_enrollments_count || 0}
+• **📚 Courses**: ${lp.assigned_courses_count || 0}
+• **📂 Catalogs**: ${lp.assigned_catalogs_count || 0}
+
+📅 **Created**: ${lp.created_on || 'Not available'}
+📅 **Updated**: ${lp.updated_on || 'Not available'}
+
+**Learning plan found successfully!**`,
+      success: true,
+      data: lp,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    return NextResponse.json({
       response: `❌ **Learning Plan Not Found**: Could not find learning plan "${identifier}"
 
 **Suggestions:**
@@ -785,70 +751,6 @@ async function handleSessionSearch(entities: any) {
 **Examples:**
 • "Search for sessions in course id 944"
 • "Search for sessions in course Python Programming"
-• "Find Day 1 sessions in course Working with Data in Python"`,
-      success: false,
-      timestamp: new Date().toISOString()
-    });
-  }
-  
-  try {
-    const result = await api.searchSessionsInCourse(courseIdentifier, sessionFilter);
-    
-    if (result.totalSessions === 0) {
-      return NextResponse.json({
-        response: `🎯 **No Sessions Found**: Course "${api.getCourseName(result.course)}" has no sessions${sessionFilter ? ` matching "${sessionFilter}"` : ''}
-
-**Course Details:**
-• **Name**: ${api.getCourseName(result.course)}
-• **ID**: ${result.course.id || result.course.course_id}`,
-        success: false,
-        timestamp: new Date().toISOString()
-      });
-    }
-    
-    const sessionList = result.sessions.slice(0, 15).map((session: any, i: number) => {
-      const sessionName = api.getSessionName(session);
-      const sessionId = session.id || session.session_id || 'N/A';
-      const instructor = session.instructor || 'Not assigned';
-      const startDate = session.start_date || session.date_begin || 'Not scheduled';
-      
-      return `${i + 1}. **${sessionName}** (ID: ${sessionId})
-   👨‍🏫 ${instructor} | 📅 ${startDate}`;
-    }).join('\n\n');
-    
-    return NextResponse.json({
-      response: `🎯 **Sessions in Course**: ${api.getCourseName(result.course)}
-
-📚 **Course ID**: ${result.course.id || result.course.course_id}
-${sessionFilter ? `🔍 **Filter**: "${sessionFilter}"\n` : ''}
-📊 **Total Sessions**: ${result.totalSessions}
-
-${sessionList}${result.totalSessions > 15 ? `\n\n... and ${result.totalSessions - 15} more sessions` : ''}`,
-      success: true,
-      totalCount: result.totalSessions,
-      timestamp: new Date().toISOString()
-    });
-    
-  } catch (error) {
-    return NextResponse.json({
-      response: `❌ **Error**: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      success: false,
-      timestamp: new Date().toISOString()
-    });
-  }
-}
-
-async function handleMaterialSearch(entities: any) {
-  const courseIdentifier = entities.courseId || entities.courseName;
-  const materialFilter = entities.materialFilter;
-  
-  if (!courseIdentifier) {
-    return NextResponse.json({
-      response: `❌ **Missing Course**: I need a course name or ID to search for materials.
-
-**Examples:**
-• "Search for materials in course id 944"
-• "Search for materials in course Python Programming"
 • "Find Python materials in course Working with Data in Python"`,
       success: false,
       timestamp: new Date().toISOString()
@@ -1116,6 +1018,97 @@ For immediate assistance, please visit:
   });
 }
 
+export async function POST(request: NextRequest) {
+  try {
+    if (!api) {
+      const config = getConfig();
+      api = new DoceboAPI(config);
+    }
+
+    const body = await request.json();
+    const { message } = body;
+    
+    if (!message || typeof message !== 'string') {
+      return NextResponse.json({
+        response: '❌ Please provide a valid message',
+        success: false,
+        timestamp: new Date().toISOString()
+      }, { status: 400 });
+    }
+
+    console.log(`🤖 Processing: "${message}"`);
+    
+    // Analyze intent using enhanced NLP
+    const analysis = IntentAnalyzer.analyzeIntent(message);
+    console.log(`🎯 Intent: ${analysis.intent}, Confidence: ${analysis.confidence}, Entities:`, analysis.entities);
+    
+    try {
+      switch (analysis.intent) {
+        case 'get_course_info':
+          return await handleCourseInfo(analysis.entities);
+          
+        case 'get_learning_plan_info':
+          return await handleLearningPlanInfo(analysis.entities);
+          
+        case 'search_sessions_in_course':
+          return await handleSessionSearch(analysis.entities);
+          
+        case 'search_materials_in_course':
+          return await handleMaterialSearch(analysis.entities);
+          
+        case 'search_users':
+          return await handleUserSearch(analysis.entities);
+          
+        case 'search_courses':
+          return await handleCourseSearch(analysis.entities);
+          
+        case 'search_learning_plans':
+          return await handleLearningPlanSearch(analysis.entities);
+          
+        case 'docebo_help':
+          return await handleDoceboHelp(analysis.entities);
+          
+        default:
+          return NextResponse.json({
+            response: `🤔 **I'm not sure what you're asking for**
+
+Based on your message: "${message}"
+
+**I can help you with:**
+• **👥 Find Users**: "Find user email@company.com"
+• **📚 Find/Info Courses**: "Find Python courses" or "Course info Working with Data in Python"  
+• **📋 Find/Info Learning Plans**: "Find Python learning plans" or "Learning plan info Getting Started with Python"
+• **🎯 Sessions**: "Search for sessions in course Python Programming"
+• **📖 Materials**: "Search for materials in course Python Programming"
+• **🆘 Help**: "How to enroll users in Docebo"
+
+**Try rephrasing your question or use one of the examples above.**`,
+            success: false,
+            intent: analysis.intent,
+            confidence: analysis.confidence,
+            timestamp: new Date().toISOString()
+          });
+      }
+    } catch (error) {
+      console.error('❌ Processing error:', error);
+      return NextResponse.json({
+        response: `❌ **Error**: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        success: false,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+  } catch (error) {
+    console.error('❌ Chat error:', error);
+    
+    return NextResponse.json({
+      response: `❌ **System Error**: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      success: false,
+      timestamp: new Date().toISOString()
+    }, { status: 500 });
+  }
+}
+
 export async function GET() {
   return NextResponse.json({
     status: 'Enhanced Docebo Chat API with NLP',
@@ -1151,61 +1144,68 @@ export async function GET() {
       'Help requests: "How to enroll users in Docebo"'
     ]
   });
-}Response.json({
-      response: `❌ **Course Not Found**: Could not find course "${identifier}"
-
-**Suggestions:**
-• Try searching for courses first: "Find ${identifier} courses"
-• Check the course name spelling
-• Use the exact course ID if you have it`,
-      success: false,
-      timestamp: new Date().toISOString()
-    });
-  }
-}
-
-async function handleLearningPlanInfo(entities: any) {
-  const identifier = entities.learningPlanName;
-  
-  if (!identifier) {
-    return NextResponse.json({
-      response: `❌ **Missing Learning Plan**: I need a learning plan name or ID to get information about.
-
-**Examples:**
-• "Learning plan info Getting Started with Python"
-• "Learning plan info Associate Memory Network"
-• "Tell me about learning plan 111"`,
+}d Day 1 sessions in course Working with Data in Python"`,
       success: false,
       timestamp: new Date().toISOString()
     });
   }
   
   try {
-    const lp = await api.getLearningPlanDetails(identifier);
-    const lpName = api.getLearningPlanName(lp);
-    const lpId = lp.learning_plan_id || lp.id;
-    const status = lp.is_published ? 'Published ✅' : 'Unpublished ❌';
+    const result = await api.searchSessionsInCourse(courseIdentifier, sessionFilter);
+    
+    if (result.totalSessions === 0) {
+      return NextResponse.json({
+        response: `🎯 **No Sessions Found**: Course "${api.getCourseName(result.course)}" has no sessions${sessionFilter ? ` matching "${sessionFilter}"` : ''}
+
+**Course Details:**
+• **Name**: ${api.getCourseName(result.course)}
+• **ID**: ${result.course.id || result.course.course_id}`,
+        success: false,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    const sessionList = result.sessions.slice(0, 15).map((session: any, i: number) => {
+      const sessionName = api.getSessionName(session);
+      const sessionId = session.id || session.session_id || 'N/A';
+      const instructor = session.instructor || 'Not assigned';
+      const startDate = session.start_date || session.date_begin || 'Not scheduled';
+      
+      return `${i + 1}. **${sessionName}** (ID: ${sessionId})
+   👨‍🏫 ${instructor} | 📅 ${startDate}`;
+    }).join('\n\n');
     
     return NextResponse.json({
-      response: `📋 **Learning Plan Details**: ${lpName}
+      response: `🎯 **Sessions in Course**: ${api.getCourseName(result.course)}
 
-🆔 **ID**: ${lpId}
-📊 **Status**: ${status}
-🎯 **Code**: ${lp.code || 'Not specified'}
-⭐ **Credits**: ${lp.credits || 'No credits assigned'}
+📚 **Course ID**: ${result.course.id || result.course.course_id}
+${sessionFilter ? `🔍 **Filter**: "${sessionFilter}"\n` : ''}
+📊 **Total Sessions**: ${result.totalSessions}
 
-📈 **Enrollment Statistics**:
-• **👥 Users Enrolled**: ${lp.assigned_enrollments_count || 0}
-• **📚 Courses**: ${lp.assigned_courses_count || 0}
-• **📂 Catalogs**: ${lp.assigned_catalogs_count || 0}
-
-📅 **Created**: ${lp.created_on || 'Not available'}
-📅 **Updated**: ${lp.updated_on || 'Not available'}
-
-**Learning plan found successfully!**`,
+${sessionList}${result.totalSessions > 15 ? `\n\n... and ${result.totalSessions - 15} more sessions` : ''}`,
       success: true,
-      data: lp,
+      totalCount: result.totalSessions,
       timestamp: new Date().toISOString()
     });
+    
   } catch (error) {
-    return Next
+    return NextResponse.json({
+      response: `❌ **Error**: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      success: false,
+      timestamp: new Date().toISOString()
+    });
+  }
+}
+
+async function handleMaterialSearch(entities: any) {
+  const courseIdentifier = entities.courseId || entities.courseName;
+  const materialFilter = entities.materialFilter;
+  
+  if (!courseIdentifier) {
+    return NextResponse.json({
+      response: `❌ **Missing Course**: I need a course name or ID to search for materials.
+
+**Examples:**
+• "Search for materials in course id 944"
+• "Search for materials in course Python Programming"
+• "Fin
