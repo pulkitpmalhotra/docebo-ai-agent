@@ -648,7 +648,7 @@ class DoceboAPI {
 let api: DoceboAPI;
 // Part 3: Handler Functions
 
-// Final polished handleCourseInfo function
+// Enhanced handleCourseInfo with enrollment count and update data
 async function handleCourseInfo(entities: any) {
   const identifier = entities.courseId || entities.courseName;
   
@@ -710,6 +710,9 @@ async function handleCourseInfo(entities: any) {
     const rating = course.rating?.average || course.rating?.value || course.average_rating || 'Not rated';
     const ratingText = rating !== 'Not rated' ? `${rating}/5` : 'Not rated';
     
+    // ENROLLMENT COUNT - Add this specific field
+    const enrolledCount = course.enrolled_count !== undefined ? course.enrolled_count : 'Not available';
+    
     // Dates
     const createdDate = course.created_on || 'Not available';
     const modifiedDate = course.updated_on || 'Not available';
@@ -727,13 +730,24 @@ async function handleCourseInfo(entities: any) {
       course.header_layout?.name || course.header_layout?.type || 'Custom layout' : 
       course.header_layout || 'Default';
     
-    // Skills formatting with bullet points
+    // Skills formatting
     const skills = course.skills?.length > 0 ? 
       course.skills.map((skill: any) => skill.name || skill).slice(0, 5).join(', ') : 
       'Not specified';
     
-    // Creator information
+    // Creator and updater information
     const createdBy = course.created_by?.fullname || course.created_by?.name || 'Not available';
+    
+    // UPDATE DATA - Extract updated by fullname from update_data
+    const updatedBy = course.update_data?.updated_by?.fullname || 
+                     course.updated_by?.fullname || 
+                     course.update_data?.updated_by?.name ||
+                     course.updated_by?.name ||
+                     'Not available';
+    
+    const updatedById = course.update_data?.updated_by?.id || 
+                       course.updated_by?.id || 
+                       'Not available';
     
     return NextResponse.json({
       response: `📚 **Course Details**: ${courseName}
@@ -744,9 +758,6 @@ async function handleCourseInfo(entities: any) {
 🔗 **UID**: ${uid}
 ⭐ **Credits**: ${credits}
 
-📝 **Description**: 
-${description}
-
 🔗 **Course Information**:
 • **Type**: ${courseType}
 • **Language**: ${language}
@@ -756,16 +767,23 @@ ${description}
 
 🎯 **Skills**: ${skills}
 
+📈 **Enrollment Statistics**:
+• **👥 Enrolled Count**: ${enrolledCount}
+
 🎨 **Media & Layout**:
 • **Thumbnail**: ${thumbnail}
 • **Cover Image**: ${cover}
 • **Header Layout**: ${headerLayout}
 
-📅 **Timeline**:
+📅 **Timeline & Contributors**:
 • **Created**: ${createdDate}
 • **Created By**: ${createdBy}
 • **Last Updated**: ${modifiedDate}
+• **Updated By**: ${updatedBy}${updatedById !== 'Not available' ? ` (ID: ${updatedById})` : ''}
 • **Average Completion Time**: ${avgCompletionTime}
+
+📝 **Description**: 
+${description}
 
 **Course found successfully!**`,
       success: true,
