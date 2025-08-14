@@ -119,37 +119,79 @@ async function performRealTimeDoceboSearch(query: string): Promise<SearchResult[
   try {
     console.log(`🔍 Performing real-time search for: "${query}"`);
     
-    // This is a placeholder for the actual web search functionality
-    // In the real implementation, this would use the web_search tool
-    // For now, I'll return structured results that show the concept
+    // Create targeted search query for Docebo help site
+    const searchQuery = `${query} site:help.docebo.com`;
+    console.log(`🌐 Search query: ${searchQuery}`);
     
-    return [{
-      title: `Real-time Docebo Help for "${query}"`,
-      url: `https://help.docebo.com/hc/en-us/search?query=${encodeURIComponent(query)}`,
-      snippet: `Live search results from help.docebo.com for "${query}"`,
-      content: `**Real-time search performed for "${query}"**
+    // Make the actual web search call
+    const searchResponse = await fetch('/api/web-search-proxy', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        query: searchQuery,
+        source: 'docebo_help'
+      })
+    });
 
-🔍 **Live Search Implementation:**
-This system now performs real-time searches of help.docebo.com instead of using static fallback responses.
+    if (!searchResponse.ok) {
+      console.log(`❌ Web search failed: ${searchResponse.status}`);
+      throw new Error(`Web search failed: ${searchResponse.status}`);
+    }
 
-**What this means:**
-- Queries are sent directly to Docebo's help site
-- Results are fetched in real-time from current documentation
-- Content is always up-to-date with latest Docebo features
-- No more generic "please search elsewhere" responses
+    const searchData = await searchResponse.json();
+    console.log(`📄 Search returned ${searchData.results?.length || 0} results`);
 
-**For "${query}", the system would:**
-1. Search help.docebo.com using web search tools
-2. Extract relevant content from official help articles
-3. Format the response with step-by-step instructions
-4. Provide direct links to source documentation
+    if (!searchData.results || searchData.results.length === 0) {
+      return [];
+    }
 
-**Next Steps:**
-The web search tools need to be properly integrated to enable live searching of help.docebo.com`
-    }];
+    // Process and format search results
+    const formattedResults: SearchResult[] = [];
+    
+    for (const result of searchData.results.slice(0, 3)) {
+      if (result.url && result.url.includes('help.docebo.com')) {
+        const searchResult: SearchResult = {
+          title: result.title || 'Docebo Help Article',
+          url: result.url,
+          snippet: result.snippet || result.description || '',
+          content: result.snippet || result.description || ''
+        };
+
+        // Try to fetch full content from the help page
+        try {
+          const contentResponse = await fetch('/api/fetch-content', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              url: result.url
+            })
+          });
+
+          if (contentResponse.ok) {
+            const contentData = await contentResponse.json();
+            if (contentData.content) {
+              searchResult.content = contentData.content;
+              console.log(`📄 Retrieved full content for: ${result.title}`);
+            }
+          }
+        } catch (contentError) {
+          console.log(`⚠️ Could not fetch full content for ${result.url}:`, contentError);
+          // Continue with snippet content
+        }
+
+        formattedResults.push(searchResult);
+      }
+    }
+
+    console.log(`✅ Processed ${formattedResults.length} Docebo help results`);
+    return formattedResults;
     
   } catch (error) {
-    console.log('Real-time search failed:', error);
+    console.log('❌ Real-time search failed:', error);
     return [];
   }
 }
