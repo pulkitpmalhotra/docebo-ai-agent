@@ -4,10 +4,6 @@ export async function POST(request: NextRequest) {
   try {
     const { url } = await request.json();
     
-    // This is where you'd call Claude's actual web_fetch tool
-    // const content = await web_fetch(url);
-    
-    // For now, return empty content until web_fetch is available
     return NextResponse.json({
       content: '',
       message: 'Web fetch tool not yet integrated'
@@ -15,7 +11,7 @@ export async function POST(request: NextRequest) {
     
   } catch (error) {
     return NextResponse.json({
-      error: error.message
+      error: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 });
   }
 }
