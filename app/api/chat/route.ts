@@ -1,4 +1,18 @@
-// app/api/chat/route.ts - Real-time Docebo Help Search System
+function extractTrainingMaterial(message: string): string | null {
+  const quotedMatch = message.match(/"([^"]+)"/);
+  if (quotedMatch) return quotedMatch[1];
+  
+  const bracketMatch = message.match(/\[([^\]]+)\]/);
+  if (bracketMatch) return bracketMatch[1];
+  
+  const materialInfoMatch = message.match(/(?:material info|training material info)\s+(.+)/i);
+  if (materialInfoMatch) return materialInfoMatch[1].trim();
+  
+  const materialMatch = message.match(/find\s+(.+?)\s+(?:material|training material)/i);
+  if (materialMatch) return materialMatch[1].trim();
+  
+  return null;
+}// app/api/chat/route.ts - Real-time Docebo Help Search System
 import { NextRequest, NextResponse } from 'next/server';
 
 // Environment configuration
@@ -37,15 +51,17 @@ const PATTERNS = {
            (lower.includes('search') && (lower.includes('learning plan') || lower.includes('lp'))) ||
            lower.includes('learning plan');
   },
-  searchSessions: (msg: string) => {
+  searchSessionsInCourse: (msg: string) => {
     const lower = msg.toLowerCase();
-    return (lower.includes('find') && lower.includes('session')) ||
-           (lower.includes('search') && lower.includes('session'));
+    return (lower.includes('search') && lower.includes('sessions') && lower.includes('course')) ||
+           (lower.includes('find') && lower.includes('sessions') && lower.includes('course')) ||
+           (lower.includes('sessions in course'));
   },
-  searchTrainingMaterials: (msg: string) => {
+  searchMaterialsInCourse: (msg: string) => {
     const lower = msg.toLowerCase();
-    return (lower.includes('find') && (lower.includes('training material') || lower.includes('material'))) ||
-           (lower.includes('search') && (lower.includes('training material') || lower.includes('material')));
+    return (lower.includes('search') && (lower.includes('training materials') || lower.includes('materials')) && lower.includes('course')) ||
+           (lower.includes('find') && (lower.includes('training materials') || lower.includes('materials')) && lower.includes('course')) ||
+           (lower.includes('materials in course'));
   },
   doceboHelp: (msg: string) => {
     const lower = msg.toLowerCase();
@@ -91,12 +107,19 @@ const PATTERNS = {
             !lower.includes('learning plan') && !lower.includes('session') && 
             !lower.includes('training material');
   },
-  getLearningPlanInfo: (msg: string) => {
+  getSessionInfo: (msg: string) => {
     const lower = msg.toLowerCase();
-    return (lower.includes('learning plan info') || lower.includes('lp info') || 
-            lower.includes('tell me about learning plan')) && !lower.includes('course') &&
-            !lower.includes('user') && !lower.includes('session') && 
+    return (lower.includes('session info') || lower.includes('session details') || 
+            lower.includes('tell me about session')) && !lower.includes('course') &&
+            !lower.includes('user') && !lower.includes('learning plan') && 
             !lower.includes('training material');
+  },
+  getTrainingMaterialInfo: (msg: string) => {
+    const lower = msg.toLowerCase();
+    return (lower.includes('material info') || lower.includes('training material info') || 
+            lower.includes('tell me about material') || lower.includes('tell me about training material')) && 
+            !lower.includes('course') && !lower.includes('user') && !lower.includes('learning plan') && 
+            !lower.includes('session');
   },
   userQuestion: (msg: string) => {
     const lower = msg.toLowerCase();
@@ -328,7 +351,49 @@ function extractSession(message: string): string | null {
   return null;
 }
 
-function extractTrainingMaterial(message: string): string | null {
+function extractCourseFromCommand(message: string): { courseId: string | null; sessionFilter?: string; materialFilter?: string } {
+  const lower = message.toLowerCase();
+  
+  // Extract course ID (numeric)
+  const courseIdMatch = message.match(/course\s+id\s+(\d+)/i);
+  if (courseIdMatch) {
+    return { courseId: courseIdMatch[1] };
+  }
+  
+  // Extract course name/code
+  const courseMatch = message.match(/course\s+([^"\s][^,\n.!?]*?)(?:\s+(?:sessions|materials|training materials))?$/i) ||
+                     message.match(/in\s+course\s+([^"\s][^,\n.!?]*?)(?:\s+(?:sessions|materials|training materials))?$/i);
+  
+  if (courseMatch) {
+    const courseIdentifier = courseMatch[1].trim();
+    
+    // Check if there's a session/material filter
+    let sessionFilter = null;
+    let materialFilter = null;
+    
+    if (lower.includes('sessions')) {
+      const sessionFilterMatch = message.match(/(?:search for|find)\s+(.+?)\s+sessions\s+in\s+course/i);
+      if (sessionFilterMatch) {
+        sessionFilter = sessionFilterMatch[1].trim();
+      }
+    }
+    
+    if (lower.includes('materials') || lower.includes('training materials')) {
+      const materialFilterMatch = message.match(/(?:search for|find)\s+(.+?)\s+(?:training materials|materials)\s+in\s+course/i);
+      if (materialFilterMatch) {
+        materialFilter = materialFilterMatch[1].trim();
+      }
+    }
+    
+    return { 
+      courseId: courseIdentifier,
+      sessionFilter,
+      materialFilter
+    };
+  }
+  
+  return { courseId: null };
+}
   const quotedMatch = message.match(/"([^"]+)"/);
   if (quotedMatch) return quotedMatch[1];
   
@@ -345,8 +410,6 @@ function extractTrainingMaterial(message: string): string | null {
 }
 
 // Docebo API client
-// Clean DoceboAPI class - replace the existing class in /api/chat/route.ts
-
 class DoceboAPI {
   private config: any;
   private accessToken?: string;
@@ -588,9 +651,33 @@ class DoceboAPI {
       rawData: learningPlan // Include raw data for debugging
     };
   }
-
+  
   async getUserDetails(email: string): Promise<any> {
     const users = await this.apiRequest('/manage/v1/user', {
+      search_text: email,
+      page_size: 5
+    });
+    
+    const user = users.data?.items?.find((u: any) => u.email.toLowerCase() === email.toLowerCase());
+    
+    if (!user) {
+      throw new Error(`User not found: ${email}`);
+    }
+
+    return {
+      id: user.user_id || user.id,
+      fullname: user.fullname || `${user.firstname || ''} ${user.lastname || ''}`.trim() || 'Not available',
+      email: user.email,
+      username: user.username || 'Not available',
+      status: user.status === '1' ? 'Active' : user.status === '0' ? 'Inactive' : `Status: ${user.status}`,
+      level: user.level === 'godadmin' ? 'Superadmin' : user.level || 'User',
+      creationDate: user.register_date || user.creation_date || user.created_at || 'Not available',
+      lastAccess: user.last_access_date || user.last_access || user.last_login || 'Not available',
+      timezone: user.timezone || 'Not specified',
+      language: user.language || user.lang_code || 'Not specified',
+      department: user.department || 'Not specified'
+    };
+  }
       search_text: email,
       page_size: 5
     });
@@ -668,6 +755,7 @@ export async function POST(request: NextRequest) {
     const learningPlan = extractLearningPlan(message);
     const session = extractSession(message);
     const trainingMaterial = extractTrainingMaterial(message);
+    const courseCommand = extractCourseFromCommand(message);
     
     // 1. DOCEBO HELP - Real-time search with NO fallback responses
     if (PATTERNS.doceboHelp(message)) {
@@ -835,7 +923,128 @@ ${lpDetails.thumbnailUrl ? `🖼️ **Thumbnail**: Available` : '🖼️ **Thumb
       }
     }
 
-    // 4. USER SEARCH
+    // 4. SESSION INFO
+    if (PATTERNS.getSessionInfo(message)) {
+      if (!session) {
+        return NextResponse.json({
+          response: `❌ **Missing Session**: I need a session name or ID to get information about.
+
+**Examples:**
+• "Session info Python Training Session"
+• "Tell me about session Advanced Programming"
+• "Session info 123"`,
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      try {
+        const sessionDetails = await api.getSessionDetails(session);
+        
+        const statusText = sessionDetails.status || 'Unknown';
+        const participantsText = sessionDetails.maxParticipants ? 
+          `${sessionDetails.currentParticipants || 0}/${sessionDetails.maxParticipants}` : 
+          `${sessionDetails.currentParticipants || 'Unknown'}`;
+
+        return NextResponse.json({
+          response: `🎯 **Session Details**: ${sessionDetails.name}
+
+🆔 **ID**: ${sessionDetails.id}
+📚 **Course**: ${sessionDetails.course} ${sessionDetails.courseId ? `(ID: ${sessionDetails.courseId})` : ''}
+
+👨‍🏫 **Instructor**: ${sessionDetails.instructor}
+📊 **Status**: ${statusText}
+
+📅 **Schedule**:
+• **Start**: ${sessionDetails.startDate}
+• **End**: ${sessionDetails.endDate}
+• **Location**: ${sessionDetails.location}
+
+👥 **Participants**: ${participantsText}
+
+📝 **Description**:
+${sessionDetails.description}
+
+${sessionDetails.note ? `\n⚠️ **Note**: ${sessionDetails.note}` : ''}
+
+**API Search Used**: Session search → Details lookup`,
+          success: true,
+          data: sessionDetails,
+          timestamp: new Date().toISOString()
+        });
+      } catch (error) {
+        return NextResponse.json({
+          response: `❌ **Error**: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+    }
+
+    // 5. TRAINING MATERIAL INFO
+    if (PATTERNS.getTrainingMaterialInfo(message)) {
+      if (!trainingMaterial) {
+        return NextResponse.json({
+          response: `❌ **Missing Training Material**: I need a material name or ID to get information about.
+
+**Examples:**
+• "Material info Python Programming Guide"
+• "Training material info Advanced SQL"
+• "Tell me about material 456"`,
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      try {
+        const materialDetails = await api.getTrainingMaterialDetails(trainingMaterial);
+        
+        const sizeText = materialDetails.fileSize && materialDetails.fileSize !== 'Unknown' ? 
+          `${materialDetails.fileSize} bytes` : 'Size not available';
+        const durationText = materialDetails.duration && materialDetails.duration !== 'Unknown' ? 
+          `${materialDetails.duration}` : 'Duration not specified';
+
+        return NextResponse.json({
+          response: `📖 **Training Material Details**: ${materialDetails.name}
+
+🆔 **ID**: ${materialDetails.id}
+📁 **Type**: ${materialDetails.type}
+📚 **Course**: ${materialDetails.course} ${materialDetails.courseId ? `(ID: ${materialDetails.courseId})` : ''}
+
+📄 **File Information**:
+• **Name**: ${materialDetails.fileName}
+• **Size**: ${sizeText}
+• **Duration**: ${durationText}
+
+👤 **Author**: ${materialDetails.author}
+📊 **Status**: ${materialDetails.status}
+
+📅 **Timeline**:
+• **Created**: ${materialDetails.createdDate || 'Not available'}
+• **Updated**: ${materialDetails.updatedDate || 'Not available'}
+
+📝 **Description**:
+${materialDetails.description}
+
+${materialDetails.url ? `🔗 **URL**: Available` : '🔗 **URL**: Not available'}
+
+${materialDetails.note ? `\n⚠️ **Note**: ${materialDetails.note}` : ''}
+
+**API Search Used**: Training material search → Details lookup`,
+          success: true,
+          data: materialDetails,
+          timestamp: new Date().toISOString()
+        });
+      } catch (error) {
+        return NextResponse.json({
+          response: `❌ **Error**: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+    }
+
+    // 6. USER SEARCH
     if (PATTERNS.searchUsers(message)) {
       const searchTerm = email || message.replace(/find|user|search/gi, '').trim();
       
@@ -901,7 +1110,7 @@ ${userList}${users.length > 20 ? `\n\n... and ${users.length - 20} more users` :
       }
     }
     
-    // 5. COURSE SEARCH
+    // 7. COURSE SEARCH
     if (PATTERNS.searchCourses(message)) {
       const searchTerm = course || message.replace(/find|search|course/gi, '').trim();
       
@@ -942,7 +1151,7 @@ ${courseList}${courses.length > 20 ? `\n\n... and ${courses.length - 20} more co
       });
     }
 
-    // 6. LEARNING PLAN SEARCH - UPDATED
+    // 8. LEARNING PLAN SEARCH - UPDATED
     if (PATTERNS.searchLearningPlans(message)) {
       let searchTerm = learningPlan;
       
@@ -1055,86 +1264,157 @@ ${planList}${learningPlans.length > 20 ? `\n\n... and ${learningPlans.length - 2
       });
     }
 
-    // 7. SESSION SEARCH
-    if (PATTERNS.searchSessions(message)) {
-      const searchTerm = session || message.replace(/find|search|session/gi, '').trim();
-      
-      if (!searchTerm || searchTerm.length < 2) {
+    // 9. SESSIONS IN COURSE SEARCH
+    if (PATTERNS.searchSessionsInCourse(message)) {
+      if (!courseCommand.courseId) {
         return NextResponse.json({
-          response: `❌ **Missing Search Term**: I need a session name to search for.`,
-          success: false,
-          timestamp: new Date().toISOString()
-        });
-      }
-      
-      const sessions = await api.searchSessions(searchTerm, 50);
-      
-      if (sessions.length === 0) {
-        return NextResponse.json({
-          response: `🎯 **No Sessions Found**: No sessions match "${searchTerm}"`,
-          success: false,
-          timestamp: new Date().toISOString()
-        });
-      }
-      
-      const displayCount = Math.min(sessions.length, 20);
-      const sessionList = sessions.slice(0, displayCount).map((session, i) => {
-        const sessionName = api.getSessionName(session);
-        const sessionId = session.id || session.session_id || 'N/A';
-        const status = session.status || session.session_status || 'Unknown';
-        const statusIcon = status === 'active' ? '✅' : status === 'inactive' ? '❌' : '❓';
-        return `${i + 1}. ${statusIcon} **${sessionName}** (ID: ${sessionId}) - *${status}*`;
-      }).join('\n');
-      
-      return NextResponse.json({
-        response: `🎯 **Session Search Results**: Found ${sessions.length} sessions (Showing ${displayCount})
+          response: `❌ **Missing Course Information**: I need a course ID or name to search for sessions.
 
-${sessionList}${sessions.length > 20 ? `\n\n... and ${sessions.length - 20} more sessions` : ''}`,
-        success: true,
-        totalCount: sessions.length,
-        timestamp: new Date().toISOString()
-      });
+**Examples:**
+• "Search for sessions in course id 944"
+• "Search for sessions in course ABC"
+• "Search for Day 1 sessions in course Python Programming"
+• "Find sessions in course id 123"`,
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      try {
+        const result = await api.searchSessionsInCourse(courseCommand.courseId, courseCommand.sessionFilter);
+        
+        if (result.totalSessions === 0) {
+          return NextResponse.json({
+            response: `🎯 **No Sessions Found**: Course "${result.course.title || result.course.name}" has no sessions${courseCommand.sessionFilter ? ` matching "${courseCommand.sessionFilter}"` : ''}
+
+**Course Details:**
+• **Name**: ${result.course.title || result.course.name}
+• **ID**: ${result.course.id || result.course.course_id}
+
+${result.note ? `\n⚠️ **Note**: ${result.note}` : ''}`,
+            success: false,
+            course: result.course,
+            timestamp: new Date().toISOString()
+          });
+        }
+        
+        const displayCount = Math.min(result.totalSessions, 20);
+        const sessionList = result.sessions.slice(0, displayCount).map((session: any, i: number) => {
+          const sessionName = api.getSessionName(session);
+          const sessionId = session.id || session.session_id || 'N/A';
+          const instructor = session.instructor || session.instructor_name || 'Not assigned';
+          const startDate = session.start_date || session.date_begin || 'Not scheduled';
+          const status = session.status || session.session_status || 'Unknown';
+          
+          const statusIcon = status.toLowerCase() === 'active' ? '✅' : 
+                           status.toLowerCase() === 'inactive' ? '❌' : 
+                           status.toLowerCase() === 'completed' ? '🏁' : '❓';
+          
+          return `${i + 1}. ${statusIcon} **${sessionName}** (ID: ${sessionId})
+   👨‍🏫 Instructor: ${instructor}
+   📅 Start: ${startDate}
+   📊 Status: ${status}`;
+        }).join('\n\n');
+        
+        return NextResponse.json({
+          response: `🎯 **Sessions in Course**: ${result.course.title || result.course.name} (Found ${result.totalSessions})
+
+📚 **Course ID**: ${result.course.id || result.course.course_id}
+${courseCommand.sessionFilter ? `🔍 **Filter**: "${courseCommand.sessionFilter}"\n` : ''}
+
+${sessionList}${result.totalSessions > 20 ? `\n\n... and ${result.totalSessions - 20} more sessions` : ''}
+
+**API Endpoint Used**: \`${result.endpoint}\``,
+          success: true,
+          totalCount: result.totalSessions,
+          course: result.course,
+          sessions: result.sessions,
+          timestamp: new Date().toISOString()
+        });
+        
+      } catch (error) {
+        return NextResponse.json({
+          response: `❌ **Error**: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
     }
 
-    // 8. TRAINING MATERIAL SEARCH
-    if (PATTERNS.searchTrainingMaterials(message)) {
-      const searchTerm = trainingMaterial || message.replace(/find|search|training material|material/gi, '').trim();
-      
-      if (!searchTerm || searchTerm.length < 2) {
+    // 10. TRAINING MATERIALS IN COURSE SEARCH
+    if (PATTERNS.searchMaterialsInCourse(message)) {
+      if (!courseCommand.courseId) {
         return NextResponse.json({
-          response: `❌ **Missing Search Term**: I need a material name to search for.`,
-          success: false,
-          timestamp: new Date().toISOString()
-        });
-      }
-      
-      const materials = await api.searchTrainingMaterials(searchTerm, 50);
-      
-      if (materials.length === 0) {
-        return NextResponse.json({
-          response: `📖 **No Training Materials Found**: No materials match "${searchTerm}"`,
-          success: false,
-          timestamp: new Date().toISOString()
-        });
-      }
-      
-      const displayCount = Math.min(materials.length, 20);
-      const materialList = materials.slice(0, displayCount).map((material, i) => {
-        const materialName = api.getMaterialName(material);
-        const materialId = material.id || material.material_id || 'N/A';
-        const type = material.type || material.material_type || 'Unknown';
-        const typeIcon = type === 'video' ? '🎥' : type === 'pdf' ? '📄' : type === 'scorm' ? '📦' : '📖';
-        return `${i + 1}. ${typeIcon} **${materialName}** (ID: ${materialId}) - *${type}*`;
-      }).join('\n');
-      
-      return NextResponse.json({
-        response: `📖 **Training Material Search Results**: Found ${materials.length} materials (Showing ${displayCount})
+          response: `❌ **Missing Course Information**: I need a course ID or name to search for training materials.
 
-${materialList}${materials.length > 20 ? `\n\n... and ${materials.length - 20} more materials` : ''}`,
-        success: true,
-        totalCount: materials.length,
-        timestamp: new Date().toISOString()
-      });
+**Examples:**
+• "Search for training materials in course id 944"
+• "Search for materials in course ABC"
+• "Search for Python training materials in course Programming 101"
+• "Find materials in course id 123"`,
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      try {
+        const result = await api.searchTrainingMaterialsInCourse(courseCommand.courseId, courseCommand.materialFilter);
+        
+        if (result.totalMaterials === 0) {
+          return NextResponse.json({
+            response: `📖 **No Training Materials Found**: Course "${result.course.title || result.course.name}" has no training materials${courseCommand.materialFilter ? ` matching "${courseCommand.materialFilter}"` : ''}
+
+**Course Details:**
+• **Name**: ${result.course.title || result.course.name}
+• **ID**: ${result.course.id || result.course.course_id}
+
+${result.note ? `\n⚠️ **Note**: ${result.note}` : ''}`,
+            success: false,
+            course: result.course,
+            timestamp: new Date().toISOString()
+          });
+        }
+        
+        const displayCount = Math.min(result.totalMaterials, 20);
+        const materialList = result.materials.slice(0, displayCount).map((material: any, i: number) => {
+          const materialName = api.getMaterialName(material);
+          const materialId = material.id || material.material_id || material.lo_id || 'N/A';
+          const type = material.type || material.material_type || material.lo_type || 'Unknown';
+          const fileSize = material.file_size || material.size || 'Unknown size';
+          
+          const typeIcon = type.toLowerCase() === 'video' ? '🎥' : 
+                          type.toLowerCase() === 'pdf' ? '📄' : 
+                          type.toLowerCase() === 'scorm' ? '📦' : 
+                          type.toLowerCase() === 'html' ? '🌐' : '📖';
+          
+          return `${i + 1}. ${typeIcon} **${materialName}** (ID: ${materialId})
+   📁 Type: ${type}
+   📏 Size: ${fileSize}`;
+        }).join('\n\n');
+        
+        return NextResponse.json({
+          response: `📖 **Training Materials in Course**: ${result.course.title || result.course.name} (Found ${result.totalMaterials})
+
+📚 **Course ID**: ${result.course.id || result.course.course_id}
+${courseCommand.materialFilter ? `🔍 **Filter**: "${courseCommand.materialFilter}"\n` : ''}
+
+${materialList}${result.totalMaterials > 20 ? `\n\n... and ${result.totalMaterials - 20} more materials` : ''}
+
+**API Endpoint Used**: \`${result.endpoint}\``,
+          success: true,
+          totalCount: result.totalMaterials,
+          course: result.course,
+          materials: result.materials,
+          timestamp: new Date().toISOString()
+        });
+        
+      } catch (error) {
+        return NextResponse.json({
+          response: `❌ **Error**: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
     }
     
     // FALLBACK: Just return basic usage info (NO generic responses)
@@ -1154,11 +1434,15 @@ I can help you with:
 • **Learning plan details**: "Learning plan info Associate Memory Network"
 • **Endpoint**: \`/learningplan/v1/learningplans\`
 
-## 🎯 **Sessions**
-• **Find sessions**: "Find Python sessions"
+## 🎯 **Sessions (Course-based)**
+• **Find sessions in course**: "Search for sessions in course id 944"
+• **Find specific sessions**: "Search for Day 1 sessions in course ABC"
+• **Session details**: "Session info Python Training Session"
 
-## 📖 **Training Materials**
-• **Find materials**: "Find Python training materials"
+## 📖 **Training Materials (Course-based)**
+• **Find materials in course**: "Search for training materials in course id 944"
+• **Find specific materials**: "Search for Python materials in course ABC"
+• **Material details**: "Material info Python Programming Guide"
 
 ## 🌐 **Real-time Docebo Help**
 • **Ask ANY question** and I'll search help.docebo.com live
@@ -1199,9 +1483,10 @@ export async function GET() {
       'User search and details',
       'Course search and details', 
       'Learning plan search (FIXED: /learningplan/v1/learningplans)',
-      'Learning plan detailed info (NEW)',
-      'Session search',
-      'Training material search',
+      'Learning plan detailed info',
+      'Session search in courses (UPDATED - Course-based)',
+      'Training material search in courses (UPDATED - Course-based)',
+      'Session and material detailed info',
       'Help search (Manual mode - Web integration pending)',
       'No generic fallback responses'
     ],
