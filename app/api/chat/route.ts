@@ -369,7 +369,7 @@ class DoceboAPI {
       }
     }
     
-    const courses = await this.searchCourses(identifier, 20);
+    const courses = await this.searchCourses(identifier, 100);
     const course = courses.find((c: any) => 
       c.id?.toString() === identifier ||
       c.course_id?.toString() === identifier ||
@@ -415,7 +415,7 @@ class DoceboAPI {
       }
     }
     
-    const learningPlans = await this.searchLearningPlans(identifier, 20);
+    const learningPlans = await this.searchLearningPlans(identifier, 100);
     const lp = learningPlans.find((plan: any) => 
       plan.learning_plan_id?.toString() === identifier ||
       plan.id?.toString() === identifier ||
@@ -518,7 +518,7 @@ class DoceboAPI {
     };
   }
 
-  async searchUsers(searchText: string, limit: number = 20): Promise<any[]> {
+  async searchUsers(searchText: string, limit: number = 100): Promise<any[]> {
     const result = await this.apiRequest('/manage/v1/user', {
       search_text: searchText,
       page_size: Math.min(limit, 200)
@@ -526,7 +526,7 @@ class DoceboAPI {
     return result.data?.items || [];
   }
 
-  async searchCourses(searchText: string, limit: number = 20): Promise<any[]> {
+  async searchCourses(searchText: string, limit: number = 100): Promise<any[]> {
     const result = await this.apiRequest('/course/v1/courses', {
       search_text: searchText,
       page_size: Math.min(limit, 200)
@@ -534,7 +534,7 @@ class DoceboAPI {
     return result.data?.items || [];
   }
 
-  async searchLearningPlans(searchText: string, limit: number = 20): Promise<any[]> {
+  async searchLearningPlans(searchText: string, limit: number = 100): Promise<any[]> {
     try {
       const result = await this.apiRequest('/learningplan/v1/learningplans', {
         search_text: searchText,
@@ -860,7 +860,7 @@ async function handleSessionSearch(entities: any) {
       });
     }
     
-    const sessionList = result.sessions.slice(0, 15).map((session: any, i: number) => {
+    const sessionList = result.sessions.slice(0, 100).map((session: any, i: number) => {
       const sessionName = api.getSessionName(session);
       const sessionId = session.id || session.session_id || 'N/A';
       const instructor = session.instructor || 'Not assigned';
@@ -877,7 +877,7 @@ async function handleSessionSearch(entities: any) {
 ${sessionFilter ? `🔍 **Filter**: "${sessionFilter}"\n` : ''}
 📊 **Total Sessions**: ${result.totalSessions}
 
-${sessionList}${result.totalSessions > 15 ? `\n\n... and ${result.totalSessions - 15} more sessions` : ''}`,
+${sessionList}${result.totalSessions > 100 ? `\n\n... and ${result.totalSessions - 100} more sessions` : ''}`,
       success: true,
       totalCount: result.totalSessions,
       timestamp: new Date().toISOString()
@@ -924,7 +924,7 @@ async function handleMaterialSearch(entities: any) {
       });
     }
     
-    const materialList = result.materials.slice(0, 15).map((material: any, i: number) => {
+    const materialList = result.materials.slice(0, 100).map((material: any, i: number) => {
       const materialName = api.getMaterialName(material);
       const materialId = material.id || material.material_id || 'N/A';
       const type = material.type || material.material_type || 'Unknown';
@@ -944,7 +944,7 @@ async function handleMaterialSearch(entities: any) {
 ${materialFilter ? `🔍 **Filter**: "${materialFilter}"\n` : ''}
 📊 **Total Materials**: ${result.totalMaterials}
 
-${materialList}${result.totalMaterials > 15 ? `\n\n... and ${result.totalMaterials - 15} more materials` : ''}`,
+${materialList}${result.totalMaterials > 100 ? `\n\n... and ${result.totalMaterials - 100} more materials` : ''}`,
       success: true,
       totalCount: result.totalMaterials,
       timestamp: new Date().toISOString()
@@ -995,7 +995,7 @@ async function handleUserSearch(entities: any) {
         timestamp: new Date().toISOString()
       });
     } else {
-      const users = await api.searchUsers(searchTerm, 20);
+      const users = await api.searchUsers(searchTerm, 100);
       
       if (users.length === 0) {
         return NextResponse.json({
@@ -1005,7 +1005,7 @@ async function handleUserSearch(entities: any) {
         });
       }
       
-      const userList = users.slice(0, 15).map((user, i) => {
+      const userList = users.slice(0, 100).map((user, i) => {
         const statusIcon = user.status === '1' ? '✅' : '❌';
         return `${i + 1}. ${statusIcon} **${user.fullname}** (${user.email})`;
       }).join('\n');
@@ -1013,7 +1013,7 @@ async function handleUserSearch(entities: any) {
       return NextResponse.json({
         response: `👥 **User Search Results**: Found ${users.length} users
 
-${userList}${users.length > 15 ? `\n\n... and ${users.length - 15} more users` : ''}`,
+${userList}${users.length > 100 ? `\n\n... and ${users.length - 100} more users` : ''}`,
         success: true,
         totalCount: users.length,
         timestamp: new Date().toISOString()
@@ -1045,7 +1045,7 @@ async function handleCourseSearch(entities: any) {
   }
   
   try {
-    const courses = await api.searchCourses(searchTerm, 20);
+    const courses = await api.searchCourses(searchTerm, 100);
     
     if (courses.length === 0) {
       return NextResponse.json({
@@ -1055,7 +1055,7 @@ async function handleCourseSearch(entities: any) {
       });
     }
     
-    const courseList = courses.slice(0, 15).map((course, i) => {
+    const courseList = courses.slice(0, 100).map((course, i) => {
       const courseName = api.getCourseName(course);
       const courseId = course.id || course.course_id || 'N/A';
       
@@ -1075,7 +1075,7 @@ async function handleCourseSearch(entities: any) {
     return NextResponse.json({
       response: `📚 **Course Search Results**: Found ${courses.length} courses
 
-${courseList}${courses.length > 15 ? `\n\n... and ${courses.length - 15} more courses` : ''}
+${courseList}${courses.length > 100 ? `\n\n... and ${courses.length - 100} more courses` : ''}
 
 **Search Term**: "${searchTerm}"`,
       success: true,
@@ -1108,7 +1108,7 @@ async function handleLearningPlanSearch(entities: any) {
   }
   
   try {
-    const learningPlans = await api.searchLearningPlans(searchTerm, 20);
+    const learningPlans = await api.searchLearningPlans(searchTerm, 100);
     
     if (learningPlans.length === 0) {
       return NextResponse.json({
@@ -1123,7 +1123,7 @@ async function handleLearningPlanSearch(entities: any) {
       });
     }
     
-    const planList = learningPlans.slice(0, 15).map((plan, i) => {
+    const planList = learningPlans.slice(0, 100).map((plan, i) => {
       const planName = api.getLearningPlanName(plan);
       const planId = plan.learning_plan_id || plan.id || 'N/A';
       const status = plan.is_published ? 'Published ✅' : 'Unpublished ❌';
@@ -1136,7 +1136,7 @@ async function handleLearningPlanSearch(entities: any) {
     return NextResponse.json({
       response: `📚 **Learning Plan Search Results**: Found ${learningPlans.length} learning plans
 
-${planList}${learningPlans.length > 15 ? `\n\n... and ${learningPlans.length - 15} more learning plans` : ''}
+${planList}${learningPlans.length > 100 ? `\n\n... and ${learningPlans.length - 100} more learning plans` : ''}
 
 **API Endpoint Used**: \`/learningplan/v1/learningplans\``,
       success: true,
