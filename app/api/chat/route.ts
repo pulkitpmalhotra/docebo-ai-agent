@@ -20,6 +20,8 @@ function getConfig() {
 }
 
 // Enhanced intent detection
+// Fixed IntentAnalyzer class - replace the existing one
+
 class IntentAnalyzer {
   static analyzeIntent(message: string): {
     intent: string;
@@ -201,28 +203,21 @@ class IntentAnalyzer {
   }
   
   static extractCourseName(message: string): string | null {
+    // FIXED: Better course name extraction patterns
     const patterns = [
-      /(?:course|course info|course details)\s+(.+?)(?:\s+(?:id|ID)\s*:?\s*\d+)?$/i,
-      /(?:in course|course named|course called)\s+(.+?)(?:\s|$)/i,
+      // "Course info Working with Data in Python" -> "Working with Data in Python"
+      /(?:course\s+info\s+|course\s+details\s+|course\s+information\s+)(.+?)(?:\s+(?:id|ID)\s*:?\s*\d+)?$/i,
+      
+      // "Tell me about course Python Programming" -> "Python Programming"  
+      /(?:tell me about course\s+|info about course\s+)(.+?)(?:\s+(?:id|ID)\s*:?\s*\d+)?$/i,
+      
+      // "in course Working with Data" -> "Working with Data"
+      /(?:in course\s+|course named\s+|course called\s+)(.+?)(?:\s|$)/i,
+      
+      // Quoted strings: "Working with Data in Python"
       /"([^"]+)"/,
-      /\[([^\]]+)\]/
-    ];
-    
-    for (const pattern of patterns) {
-      const match = message.match(pattern);
-      if (match && match[1] && match[1].length > 2) {
-        return match[1].trim();
-      }
-    }
-    return null;
-  }
-  
-  static extractLearningPlanName(message: string): string | null {
-    const patterns = [
-      /(?:learning plan info|lp info|plan info)\s+(.+)/i,
-      /(?:learning plan|lp)\s+(.+?)(?:\s|$)/i,
-      /(?:info|details)\s+(.+?)(?:\s+learning plan)?$/i,
-      /"([^"]+)"/,
+      
+      // Bracketed strings: [Working with Data in Python]
       /\[([^\]]+)\]/
     ];
     
@@ -230,7 +225,40 @@ class IntentAnalyzer {
       const match = message.match(pattern);
       if (match && match[1] && match[1].length > 2) {
         let name = match[1].trim();
-        if (!name.match(/^(for|about|on|in|the|a|an)$/i)) {
+        // Clean up any remaining keywords
+        name = name.replace(/^(info|details|about|course)\s+/i, '');
+        return name;
+      }
+    }
+    return null;
+  }
+  
+  static extractLearningPlanName(message: string): string | null {
+    const patterns = [
+      // "Learning plan info Getting Started with Python" -> "Getting Started with Python"
+      /(?:learning plan info\s+|lp info\s+|plan info\s+)(.+)/i,
+      
+      // "Tell me about learning plan Python" -> "Python"
+      /(?:tell me about learning plan\s+|learning plan details\s+)(.+)/i,
+      
+      // "Info Getting Started with Python" -> "Getting Started with Python"
+      /(?:info\s+|details\s+)(.+?)(?:\s+learning plan)?$/i,
+      
+      // Quoted strings
+      /"([^"]+)"/,
+      
+      // Bracketed strings  
+      /\[([^\]]+)\]/
+    ];
+    
+    for (const pattern of patterns) {
+      const match = message.match(pattern);
+      if (match && match[1] && match[1].length > 2) {
+        let name = match[1].trim();
+        // Clean up common false positives
+        if (!name.match(/^(for|about|on|in|the|a|an|info|details)$/i)) {
+          // Remove any remaining keywords
+          name = name.replace(/^(info|details|about|learning plan)\s+/i, '');
           return name;
         }
       }
