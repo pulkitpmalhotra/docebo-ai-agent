@@ -1,5 +1,5 @@
 // app/api/chat/route.ts - Enhanced with enrollment management
-import { NextRequest, NextResponse }
+import { NextRequest, NextResponse } from 'next/server';
 
 // All remaining existing handler functions
 async function handleLearningPlanInfo(entities: any) {
