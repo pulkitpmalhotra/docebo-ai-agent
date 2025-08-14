@@ -829,7 +829,7 @@ ${sessionList}${result.totalSessions > 20 ? `\n\n... and ${result.totalSessions 
       }
     }
 
-    // 10. TRAINING MATERIALS IN COURSE SEARCH
+// 10. TRAINING MATERIALS IN COURSE SEARCH
     if (PATTERNS.searchMaterialsInCourse(message)) {
       if (!courseCommand.courseId) {
         return NextResponse.json({
@@ -896,8 +896,14 @@ ${materialList}${result.totalMaterials > 20 ? `\n\n... and ${result.totalMateria
           timestamp: new Date().toISOString()
         });
         
-      } catch (error) {// app/api/chat/route.ts - Real-time Docebo Help Search System
-import { NextRequest, NextResponse } from 'next/server';
+      } catch (error) {
+        return NextResponse.json({
+          response: `❌ **Error**: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+    }
 
 // Environment configuration
 function validateEnvironmentVariable(name: string, value: string | undefined): string {
