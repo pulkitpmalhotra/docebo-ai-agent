@@ -156,7 +156,7 @@ export class DoceboAPI {
     
     if (/^\d+$/.test(identifier)) {
       try {
-        const directResult = await this.apiRequest(`/course/v1/courses/${identifier}`);
+        const directResult = await this.apiRequest(`/course/v1/courses/${identifier}`, 'GET');
         if (directResult.data) {
           console.log(`✅ Found course by direct ID: ${identifier}`);
           return directResult.data;
@@ -186,7 +186,7 @@ export class DoceboAPI {
     
     if (/^\d+$/.test(identifier)) {
       try {
-        const directResult = await this.apiRequest(`/learningplan/v1/learningplans/${identifier}`);
+        const directResult = await this.apiRequest(`/learningplan/v1/learningplans/${identifier}`, 'GET');
         if (directResult.data) {
           console.log(`✅ Found learning plan by direct ID: ${identifier}`);
           return directResult.data;
@@ -212,58 +212,58 @@ export class DoceboAPI {
   }
 
   async searchUsers(searchText: string, limit: number = 100): Promise<any[]> {
-  const result = await this.apiRequest('/manage/v1/user', 'GET', null, {
-    search_text: searchText,
-    page_size: Math.min(limit, 200)
-  });
-  return result.data?.items || [];
-}
-
-async searchCourses(searchText: string, limit: number = 100): Promise<any[]> {
-  const result = await this.apiRequest('/course/v1/courses', 'GET', null, {
-    search_text: searchText,
-    page_size: Math.min(limit, 200)
-  });
-  return result.data?.items || [];
-}
-
-async searchLearningPlans(searchText: string, limit: number = 100): Promise<any[]> {
-  try {
-    const result = await this.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
+    const result = await this.apiRequest('/manage/v1/user', 'GET', null, {
       search_text: searchText,
-      page_size: Math.min(limit, 200),
-      sort_attr: 'title',
-      sort_dir: 'asc'
+      page_size: Math.min(limit, 200)
     });
-    
-    if (result.data?.items?.length > 0) {
-      return result.data.items;
-    }
-    
-    const allResult = await this.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
-      page_size: Math.min(limit * 2, 200),
-      sort_attr: 'title',
-      sort_dir: 'asc'
+    return result.data?.items || [];
+  }
+
+  async searchCourses(searchText: string, limit: number = 100): Promise<any[]> {
+    const result = await this.apiRequest('/course/v1/courses', 'GET', null, {
+      search_text: searchText,
+      page_size: Math.min(limit, 200)
     });
-    
-    if (allResult.data?.items?.length > 0) {
-      const filteredPlans = allResult.data.items.filter((lp: any) => {
-        const name = this.getLearningPlanName(lp).toLowerCase();
-        const description = (lp.description || '').toLowerCase();
-        return name.includes(searchText.toLowerCase()) || 
-               description.includes(searchText.toLowerCase());
+    return result.data?.items || [];
+  }
+
+  async searchLearningPlans(searchText: string, limit: number = 100): Promise<any[]> {
+    try {
+      const result = await this.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
+        search_text: searchText,
+        page_size: Math.min(limit, 200),
+        sort_attr: 'title',
+        sort_dir: 'asc'
       });
       
-      return filteredPlans.slice(0, limit);
+      if (result.data?.items?.length > 0) {
+        return result.data.items;
+      }
+      
+      const allResult = await this.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
+        page_size: Math.min(limit * 2, 200),
+        sort_attr: 'title',
+        sort_dir: 'asc'
+      });
+      
+      if (allResult.data?.items?.length > 0) {
+        const filteredPlans = allResult.data.items.filter((lp: any) => {
+          const name = this.getLearningPlanName(lp).toLowerCase();
+          const description = (lp.description || '').toLowerCase();
+          return name.includes(searchText.toLowerCase()) || 
+                 description.includes(searchText.toLowerCase());
+        });
+        
+        return filteredPlans.slice(0, limit);
+      }
+      
+      return [];
+      
+    } catch (error) {
+      console.error(`❌ Learning plan search failed:`, error);
+      return [];
     }
-    
-    return [];
-    
-  } catch (error) {
-    console.error(`❌ Learning plan search failed:`, error);
-    return [];
   }
-}
 
   // ============================================================================
   // USER DETAILS AND ENROLLMENT DATA
@@ -271,9 +271,9 @@ async searchLearningPlans(searchText: string, limit: number = 100): Promise<any[
 
   async getUserDetails(email: string): Promise<UserDetails> {
     const users = await this.apiRequest('/manage/v1/user', 'GET', null, {
-  search_text: email,
-  page_size: 5
-});
+      search_text: email,
+      page_size: 5
+    });
     
     const user = users.data?.items?.find((u: any) => u.email.toLowerCase() === email.toLowerCase());
     
@@ -354,7 +354,7 @@ async searchLearningPlans(searchText: string, limit: number = 100): Promise<any[
     for (const endpoint of endpoints) {
       try {
         console.log(`🔍 Trying learning plan enrollment endpoint: ${endpoint}`);
-        const result = await this.apiRequest('/endpoint', 'GET', null, { params })
+        const result = await this.apiRequest(endpoint, 'GET');
         
         if (result.data?.items?.length > 0) {
           console.log(`✅ Found ${result.data.items.length} learning plan enrollments from ${endpoint}`);
@@ -431,7 +431,7 @@ async searchLearningPlans(searchText: string, limit: number = 100): Promise<any[
     const courseId = course.id || course.course_id;
     
     try {
-      const detailsResult = await this.apiRequest(`/course/v1/courses/${courseId}`);
+      const detailsResult = await this.apiRequest(`/course/v1/courses/${courseId}`, 'GET');
       if (detailsResult.data) {
         return detailsResult.data;
       }
@@ -447,7 +447,7 @@ async searchLearningPlans(searchText: string, limit: number = 100): Promise<any[
     
     if (/^\d+$/.test(identifier)) {
       try {
-        const directResult = await this.apiRequest(`/learningplan/v1/learningplans/${identifier}`);
+        const directResult = await this.apiRequest(`/learningplan/v1/learningplans/${identifier}`, 'GET');
         if (directResult.data) {
           console.log(`✅ Found learning plan by direct ID: ${identifier}`);
           return directResult.data;
