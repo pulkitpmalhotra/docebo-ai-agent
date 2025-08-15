@@ -1,4 +1,4 @@
-// app/api/chat/handlers/search.ts - Search handlers
+// app/api/chat/handlers/search.ts - Enhanced search handlers with manager info
 import { NextResponse } from 'next/server';
 import { DoceboAPI } from '../docebo-api';
 import { APIResponse } from '../types';
@@ -30,42 +30,78 @@ export class SearchHandlers {
         });
       }
 
-      // If exact email match, provide detailed user info
+      // If exact email match, provide detailed user info with manager
       if (email && users.length === 1 && users[0].email?.toLowerCase() === email.toLowerCase()) {
         const user = users[0];
         
-        return NextResponse.json({
-          response: `👤 **User Details**: ${user.fullname || `${user.firstname} ${user.lastname}`}
+        // Get enhanced user details including manager info
+        const enhancedUserDetails = await api.getEnhancedUserDetails(user.user_id || user.id);
+        
+        let responseMessage = `👤 **User Details**: ${enhancedUserDetails.fullname}
 
-📧 **Email**: ${user.email}
-🔑 **Username**: ${user.username || 'Not available'}
-🆔 **User ID**: ${user.user_id || user.id}
-📊 **Status**: ${user.status === '1' ? 'Active' : user.status === '0' ? 'Inactive' : user.status}
-👑 **Level**: ${user.level === 'godadmin' ? 'Superadmin' : user.level || 'User'}
-🏢 **Department**: ${user.department || 'Not specified'}
-🌍 **Language**: ${user.language || user.lang_code || 'Not specified'}
-🕐 **Timezone**: ${user.timezone || 'Not specified'}
-📅 **Created**: ${user.register_date || user.creation_date || 'Not available'}
-🔄 **Last Access**: ${user.last_access_date || user.last_access || 'Not available'}`,
+🆔 **User ID**: ${enhancedUserDetails.id}
+📧 **Email**: ${enhancedUserDetails.email}
+🔑 **Username**: ${enhancedUserDetails.username}
+📊 **Status**: ${enhancedUserDetails.status}
+👑 **Level**: ${enhancedUserDetails.level}
+🏢 **Department**: ${enhancedUserDetails.department}
+🌍 **Language**: ${enhancedUserDetails.language}
+🕐 **Timezone**: ${enhancedUserDetails.timezone}
+📅 **Created**: ${enhancedUserDetails.creationDate}
+🔄 **Last Access**: ${enhancedUserDetails.lastAccess}`;
+
+        // Add manager information if available
+        if (enhancedUserDetails.manager) {
+          responseMessage += `\n\n👥 **Management Structure**:
+📋 **Direct Manager**: ${enhancedUserDetails.manager.fullname}
+📧 **Manager Email**: ${enhancedUserDetails.manager.email}`;
+        } else {
+          responseMessage += `\n\n👥 **Management Structure**:
+📋 **Direct Manager**: Not assigned or not available`;
+        }
+
+        return NextResponse.json({
+          response: responseMessage,
           success: true,
           data: {
-            user: user,
+            user: enhancedUserDetails,
             totalCount: 1,
-            isDetailedView: true
+            isDetailedView: true,
+            hasManagerInfo: !!enhancedUserDetails.manager
           },
           totalCount: 1,
           timestamp: new Date().toISOString()
         });
       }
 
-      // Multiple users found - show list
-      const userList = users.slice(0, 20).map((user: any, index: number) => {
-        const name = user.fullname || `${user.firstname || ''} ${user.lastname || ''}`.trim() || 'No name';
+      // Multiple users found - show list with basic manager info
+      const enhancedUsers = await Promise.all(
+        users.slice(0, 10).map(async (user: any) => {
+          try {
+            const enhancedDetails = await api.getEnhancedUserDetails(user.user_id || user.id);
+            return enhancedDetails;
+          } catch (error) {
+            // If enhanced details fail, return basic user info
+            console.warn(`Failed to get enhanced details for user ${user.user_id}:`, error);
+            return {
+              ...user,
+              manager: null,
+              fullname: user.fullname || `${user.firstname || ''} ${user.lastname || ''}`.trim() || 'No name'
+            };
+          }
+        })
+      );
+
+      const userList = enhancedUsers.map((user: any, index: number) => {
+        const name = user.fullname || 'No name';
         const email = user.email || 'No email';
         const status = user.status === '1' ? '🟢 Active' : user.status === '0' ? '🔴 Inactive' : '⚪ Unknown';
         const level = user.level === 'godadmin' ? '👑 Admin' : user.level || 'User';
+        const manager = user.manager ? `👥 Manager: ${user.manager.fullname}` : '👥 No manager assigned';
         
-        return `${index + 1}. **${name}** (${email})\n   ${status} • ${level} • ID: ${user.user_id || user.id}`;
+        return `${index + 1}. **${name}** (${email})
+   🆔 ID: ${user.id} • ${status} • ${level}
+   ${manager}`;
       }).join('\n\n');
 
       return NextResponse.json({
@@ -73,14 +109,15 @@ export class SearchHandlers {
 
 ${userList}
 
-${users.length > 20 ? `\n... and ${users.length - 20} more users` : ''}
+${users.length > 10 ? `\n... and ${users.length - 10} more users` : ''}
 
-💡 **Tip**: Search with an exact email for detailed user information.`,
+💡 **Tip**: Search with an exact email for detailed user information including manager details.`,
         success: true,
         data: {
-          users: users,
+          users: enhancedUsers,
           totalCount: users.length,
-          query: query
+          query: query,
+          hasManagerInfo: true
         },
         totalCount: users.length,
         timestamp: new Date().toISOString()
