@@ -1,5 +1,26 @@
 // __tests__/api/intent-analyzer.test.js
-import { IntentAnalyzer } from '../../app/api/chat/intent-analyzer'
+import { IntentAnalyzer   static extractMultipleEmails(message: string): string[] {
+    const emailRegex = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g;
+    const emails = message.match(emailRegex) || [];
+    return [...new Set(emails.map(email => email.toLowerCase()))];
+  }
+  
+  static parseTeamReference(message: string): { teamName?: string } {
+    const teamPatterns = [
+      /\b(marketing|sales|hr|engineering|finance|support|admin|management)\s+team\b/i,
+      /\b(developers?|managers?|admins?|analysts?)\b/i
+    ];
+
+    for (const pattern of teamPatterns) {
+      const match = message.match(pattern);
+      if (match) {
+        return { teamName: match[1] };
+      }
+    }
+
+    return {};
+  }
+} from '../../app/api/chat/intent-analyzer'
 
 describe('IntentAnalyzer', () => {
   describe('analyzeIntent', () => {
