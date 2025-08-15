@@ -288,4 +288,14 @@ describe('IntentAnalyzer', () => {
           { text: 'Learning plan info Data Science', expected: 'Data Science' },
           { text: 'LP info "Leadership Development"', expected: 'Leadership Development' },
           { text: 'Plan info [Python Fundamentals]', expected: 'Python Fundamentals' },
-          { text
+          { text: 'Info Associate Memory Network', expected: 'Associate Memory Network' }
+        ]
+
+        testCases.forEach(({ text, expected }) => {
+          const result = IntentAnalyzer.extractLearningPlanName(text)
+          expect(result).toBe(expected)
+        })
+      })
+    })
+  })
+})
