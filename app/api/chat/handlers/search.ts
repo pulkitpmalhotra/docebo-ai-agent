@@ -1,4 +1,4 @@
-// app/api/chat/handlers/search.ts - Enhanced search handlers with manager info
+// app/api/chat/handlers/search.ts - Enhanced search handlers with manager info and better error handling
 import { NextResponse } from 'next/server';
 import { DoceboAPI } from '../docebo-api';
 import { APIResponse } from '../types';
@@ -32,7 +32,7 @@ export class SearchHandlers {
           });
         }
 
-        // If searching by email, provide detailed user info
+        // If searching by email, provide detailed user info with manager
         if (email && users.length >= 1) {
           const user = users.find((u: any) => u.email?.toLowerCase() === email.toLowerCase()) || users[0];
           
@@ -45,7 +45,7 @@ export class SearchHandlers {
           });
           
           try {
-            // Try to get enhanced user details with fallback
+            // Get enhanced user details including manager info
             const enhancedUserDetails = await api.getEnhancedUserDetails(user.user_id || user.id);
             
             let responseMessage = `👤 **User Details**: ${enhancedUserDetails.fullname}
@@ -72,7 +72,7 @@ export class SearchHandlers {
             }
 
             // Add additional fields if available
-            if (enhancedUserDetails.additionalFields) {
+            if (enhancedUserDetails.additionalFields && Object.keys(enhancedUserDetails.additionalFields).length > 0) {
               responseMessage += `\n\n📋 **Additional Information**:`;
               if (enhancedUserDetails.additionalFields.jobTitle) {
                 responseMessage += `\n💼 **Job Title**: ${enhancedUserDetails.additionalFields.jobTitle}`;
@@ -97,7 +97,6 @@ export class SearchHandlers {
               totalCount: 1,
               timestamp: new Date().toISOString()
             });
-            
           } catch (detailsError) {
             console.error('❌ Error getting enhanced user details:', detailsError);
             
@@ -138,10 +137,10 @@ export class SearchHandlers {
 
 ⚠️ **Note**: Using basic user information. Enhanced details (manager info, additional fields) are not available due to API limitations or missing permissions.
 
-💡 **Troubleshooting**: 
-• Some Docebo instances don't support additional field endpoints
-• Manager information may not be configured in additional fields
-• API permissions may be limited for enhanced user data`;
+💡 **Possible reasons**: 
+• Additional field endpoints not available on this Docebo instance
+• Manager information not configured in user additional fields
+• API permissions limited for enhanced user data`;
 
             return NextResponse.json({
               response: fallbackResponse,
@@ -160,39 +159,89 @@ export class SearchHandlers {
           }
         }
 
-        // Multiple users found - show list
-        const userList = users.slice(0, 10).map((user: any, index: number) => {
-          const name = user.fullname || `${user.firstname || ''} ${user.lastname || ''}`.trim() || 'No name';
-          const email = user.email || 'No email';
-          const status = user.status === '1' || user.status === 1 ? '🟢 Active' : 
-                        user.status === '0' || user.status === 0 ? '🔴 Inactive' : '⚪ Unknown';
-          const level = user.level === 'godadmin' ? '👑 Superadmin' : 
-                       user.level === 'powUser' ? '👑 Power User' :
-                       user.level || 'User';
-          
-          return `${index + 1}. **${name}** (${email})
-   🆔 ID: ${user.user_id || user.id} • ${status} • ${level}`;
-        }).join('\n\n');
+        // Multiple users found - show list with basic manager info
+        try {
+          const enhancedUsers = await Promise.all(
+            users.slice(0, 10).map(async (user: any) => {
+              try {
+                const enhancedDetails = await api.getEnhancedUserDetails(user.user_id || user.id);
+                return enhancedDetails;
+              } catch (error) {
+                console.warn(`Failed to get enhanced details for user ${user.user_id}:`, error);
+                return {
+                  id: (user.user_id || user.id || 'Unknown').toString(),
+                  fullname: user.fullname || `${user.firstname || ''} ${user.lastname || ''}`.trim() || 'No name',
+                  email: user.email || 'No email',
+                  status: user.status === '1' ? 'Active' : user.status === '0' ? 'Inactive' : 'Unknown',
+                  level: user.level || 'User',
+                  manager: null
+                };
+              }
+            })
+          );
 
-        return NextResponse.json({
-          response: `👥 **User Search Results**: "${query}" (${users.length} found)
+          const userList = enhancedUsers.map((user: any, index: number) => {
+            const name = user.fullname || 'No name';
+            const email = user.email || 'No email';
+            const status = user.status === 'Active' ? '🟢 Active' : user.status === 'Inactive' ? '🔴 Inactive' : '⚪ Unknown';
+            const level = user.level === 'Superadmin' ? '👑 Admin' : user.level || 'User';
+            const manager = user.manager ? `👥 Manager: ${user.manager.fullname}` : '👥 No manager assigned';
+            
+            return `${index + 1}. **${name}** (${email})
+   🆔 ID: ${user.id} • ${status} • ${level}
+   ${manager}`;
+          }).join('\n\n');
+
+          return NextResponse.json({
+            response: `👥 **User Search Results**: "${query}" (${users.length} found)
 
 ${userList}
 
 ${users.length > 10 ? `\n... and ${users.length - 10} more users` : ''}
 
 💡 **Tip**: Search with an exact email for detailed user information including manager details.`,
-          success: true,
-          data: {
-            users: users.slice(0, 10),
+            success: true,
+            data: {
+              users: enhancedUsers,
+              totalCount: users.length,
+              query: query,
+              hasManagerInfo: true
+            },
             totalCount: users.length,
-            query: query,
-            hasManagerInfo: false
-          },
-          totalCount: users.length,
-          timestamp: new Date().toISOString()
-        });
+            timestamp: new Date().toISOString()
+          });
+        } catch (listError) {
+          console.error('❌ Error processing user list:', listError);
+          
+          // Fallback to basic user list
+          const basicUserList = users.slice(0, 10).map((user: any, index: number) => {
+            const name = user.fullname || `${user.firstname || ''} ${user.lastname || ''}`.trim() || 'No name';
+            const email = user.email || 'No email';
+            const status = user.status === '1' ? '🟢 Active' : user.status === '0' ? '🔴 Inactive' : '⚪ Unknown';
+            const level = user.level === 'godadmin' ? '👑 Admin' : user.level || 'User';
+            
+            return `${index + 1}. **${name}** (${email})\n   🆔 ID: ${user.user_id || user.id} • ${status} • ${level}`;
+          }).join('\n\n');
 
+          return NextResponse.json({
+            response: `👥 **User Search Results**: "${query}" (${users.length} found)
+
+${basicUserList}
+
+${users.length > 10 ? `\n... and ${users.length - 10} more users` : ''}
+
+⚠️ **Note**: Using basic user information due to API limitations.`,
+            success: true,
+            data: {
+              users: users.slice(0, 10),
+              totalCount: users.length,
+              query: query,
+              fallbackMode: true
+            },
+            totalCount: users.length,
+            timestamp: new Date().toISOString()
+          });
+        }
       } catch (searchError) {
         console.error('❌ User search API error:', searchError);
         
@@ -205,10 +254,7 @@ ${users.length > 10 ? `\n... and ${users.length - 10} more users` : ''}
 • Check your API credentials and permissions
 • Verify the user exists in the system
 • Try searching with a different term
-• Contact your Docebo administrator
-
-**API Endpoints Tried**:
-• /manage/v1/user (primary search endpoint)`,
+• Contact your Docebo administrator`,
           success: false,
           timestamp: new Date().toISOString()
         });
@@ -218,9 +264,7 @@ ${users.length > 10 ? `\n... and ${users.length - 10} more users` : ''}
       console.error('❌ User search handler error:', error);
       
       return NextResponse.json({
-        response: `❌ **User Search Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
-
-Please try again or contact support if the issue persists.`,
+        response: `❌ **User Search Failed**: ${error instanceof Error ? error.message : 'Unknown error'}`,
         success: false,
         timestamp: new Date().toISOString()
       });
