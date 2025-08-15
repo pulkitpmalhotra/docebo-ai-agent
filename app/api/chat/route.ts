@@ -26,8 +26,6 @@ catch (error) {
       endpoint: 'none_available',
       success: false
     };
-  }
-
   async getUserLearningPlanEnrollments(userId: string): Promise<any> {
     console.log(`📋 Getting learning plan enrollments for user: ${userId}`);
     
