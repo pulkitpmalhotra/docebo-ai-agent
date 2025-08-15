@@ -25,7 +25,6 @@ import {
 } from 'lucide-react';
 import CSVUpload from '../components/CSVUpload';
 
-
 interface Message {
   id: string;
   type: 'user' | 'assistant';
@@ -607,15 +606,6 @@ What would you like to do today?`,
                     )}
                   </div>
                   <div className="flex items-center space-x-2">
-                    {message.type === 'user' && !favoriteCommands.includes(message.content) && (
-                      <button
-                        onClick={() => addToFavorites(message.content)}
-                        className="text-gray-400 hover:text-yellow-500 transition-colors"
-                        title="Add to favorites"
-                      >
-                        <Star className="w-4 h-4" />
-                      </button>
-                    )}
                     {(message.isBulkOperation || message.totalCount) && (
                       <button
                         onClick={() => exportResults(message)}
@@ -633,6 +623,20 @@ What would you like to do today?`,
                       <Copy className="w-4 h-4" />
                     </button>
                   </div>
+                </div>
+              )}
+              
+              {/* Add to favorites button - FIXED VERSION */}
+              {message.type === 'user' && !favoriteCommands.includes(message.content) && (
+                <div className="mt-2 pt-2 border-t border-blue-500">
+                  <button
+                    onClick={() => addToFavorites(message.content)}
+                    className="text-blue-200 hover:text-white transition-colors text-xs flex items-center space-x-1"
+                    title="Add to favorites"
+                  >
+                    <Star className="w-3 h-3" />
+                    <span>Add to favorites</span>
+                  </button>
                 </div>
               )}
             </div>
