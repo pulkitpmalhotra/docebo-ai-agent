@@ -11,7 +11,7 @@ interface RateLimitOptions {
 }
 
 interface SecurityOptions {
-  rateLimit?: RateLimitOptions;
+  rateLimit?: RateLimitOptions | false;
   validateInput?: boolean;
   sanitizeOutput?: boolean;
   requireApiKey?: boolean;
@@ -231,9 +231,10 @@ export function withSecurity(
 ) {
   return async (request: NextRequest): Promise<NextResponse> => {
     try {
-      // Apply rate limiting
+      // Apply rate limiting (check if explicitly disabled)
       if (options.rateLimit !== false) {
-        const rateLimitResponse = rateLimit(options.rateLimit)(request);
+        const rateLimitConfig = options.rateLimit || DEFAULT_RATE_LIMIT;
+        const rateLimitResponse = rateLimit(rateLimitConfig)(request);
         if (rateLimitResponse) {
           return applyCorsHeaders(applySecurityHeaders(rateLimitResponse));
         }
