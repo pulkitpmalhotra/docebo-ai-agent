@@ -1,4 +1,4 @@
-// app/api/chat/docebo-api.ts - Enhanced Docebo API client with manager info
+// app/api/chat/docebo-api.ts - Enhanced Docebo API client with manager info and better error handling
 import { DoceboConfig, UserDetails, EnrollmentData, FormattedEnrollment } from './types';
 
 interface EnhancedUserDetails extends UserDetails {
@@ -125,11 +125,6 @@ export class DoceboAPI {
     }
   }
 
-  // Improved version for app/api/chat/docebo-api.ts - Better error handling for additional user info
-
-export class DoceboAPI {
-  // ... existing methods ...
-
   private async getUserAdditionalInfo(userId: string): Promise<{
     managerId?: string;
     additionalFields?: {
@@ -159,7 +154,10 @@ export class DoceboAPI {
                      userData.managerId || 
                      userData.manager || 
                      userData.direct_manager ||
-                     userData.manager_user_id;
+                     userData.manager_user_id ||
+                     userData.manager_username ||
+                     (userData.manager_first_name && userData.manager_last_name ? 
+                       `${userData.manager_first_name} ${userData.manager_last_name}` : undefined);
           
           // Extract additional fields from the main response
           if (userData.job_title || userData.jobTitle) {
@@ -172,13 +170,13 @@ export class DoceboAPI {
             additionalFields.location = userData.location || userData.office_location;
           }
 
-          console.log(`📋 Found manager ID from primary endpoint: ${managerId || 'None'}`);
+          console.log(`📋 Found manager info from primary endpoint: ${managerId || 'None'}`);
         }
       } catch (primaryError) {
         console.warn(`⚠️ Primary endpoint failed for user ${userId}:`, primaryError);
       }
 
-      // Try to get additional fields if available
+      // Try additional field endpoints only if we don't have enough info
       const additionalFieldEndpoints = [
         `/manage/v1/user/${userId}/additional_fields`,
         `/manage/v1/user/${userId}/profile`,
@@ -197,7 +195,7 @@ export class DoceboAPI {
             if (Array.isArray(result.data)) {
               // Handle array of additional fields
               result.data.forEach((field: any) => {
-                this.processAdditionalField(field, additionalFields, managerId);
+                this.processAdditionalField(field, additionalFields);
               });
             } else if (result.data.additional_fields) {
               // Handle nested additional_fields object
@@ -231,15 +229,13 @@ export class DoceboAPI {
     }
   }
 
-  private processAdditionalField(field: any, additionalFields: any, managerId?: string): void {
+  private processAdditionalField(field: any, additionalFields: any): void {
     // Common field title patterns for job title
     const jobTitlePatterns = ['job title', 'job_title', 'title', 'position', 'role'];
     // Common field title patterns for employee ID
     const employeeIdPatterns = ['employee id', 'employee_id', 'emp_id', 'staff_id', 'person_id'];
     // Common field title patterns for location
     const locationPatterns = ['location', 'office', 'site', 'workplace', 'office_location'];
-    // Common field title patterns for manager
-    const managerPatterns = ['manager', 'supervisor', 'boss', 'direct_manager', 'manager_email'];
 
     const fieldTitle = (field.title || field.name || '').toLowerCase();
     const fieldValue = field.value || field.default_value;
@@ -251,11 +247,6 @@ export class DoceboAPI {
         additionalFields.employeeId = fieldValue;
       } else if (locationPatterns.some(pattern => fieldTitle.includes(pattern))) {
         additionalFields.location = fieldValue;
-      } else if (managerPatterns.some(pattern => fieldTitle.includes(pattern))) {
-        // Update manager ID if found in additional fields
-        if (!managerId && fieldValue) {
-          managerId = fieldValue;
-        }
       }
     }
   }
@@ -358,8 +349,6 @@ export class DoceboAPI {
     }
   }
 
-  // ... rest of the DoceboAPI class methods remain the same
-}
   // ============================================================================
   // ENROLLMENT MANAGEMENT METHODS
   // ============================================================================
