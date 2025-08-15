@@ -1,4 +1,4 @@
-// app/api/chat/handlers/enrollment.ts - Enrollment management handlers
+// app/api/chat/handlers/enrollment.ts - Enhanced enrollment handlers with assignment types and validity dates
 import { NextResponse } from 'next/server';
 import { DoceboAPI } from '../docebo-api';
 import { APIResponse } from '../types';
@@ -7,11 +7,11 @@ export class EnrollmentHandlers {
   
   static async handleEnrollUserInCourse(entities: any, api: DoceboAPI): Promise<NextResponse> {
     try {
-      const { email, courseName, action } = entities;
+      const { email, courseName, assignmentType, startValidity, endValidity } = entities;
       
       if (!email || !courseName) {
         return NextResponse.json({
-          response: '❌ **Missing Information**: I need both a user email and course name to process enrollment.\n\n**Example**: "Enroll john@company.com in course Python Programming"',
+          response: '❌ **Missing Information**: I need both a user email and course name to process enrollment.\n\n**Enhanced Example**: "Enroll john@company.com in course Python Programming with assignment type required from 2024-01-15 to 2024-12-31"',
           success: false,
           timestamp: new Date().toISOString()
         });
@@ -36,21 +36,37 @@ export class EnrollmentHandlers {
       const courseId = course.id || course.course_id || course.idCourse;
       const displayCourseName = api.getCourseName(course);
 
-      // Enroll user
-      const enrollmentResult = await api.enrollUserInCourse(user.user_id || user.id, courseId, {
+      // Prepare enrollment options with enhanced parameters
+      const enrollmentOptions = {
         level: 'student',
-        assignmentType: 'required'
-      });
+        assignmentType: assignmentType || 'required',
+        startValidity: startValidity,
+        endValidity: endValidity
+      };
 
-      return NextResponse.json({
-        response: `✅ **Enrollment Successful**
+      // Enroll user
+      const enrollmentResult = await api.enrollUserInCourse(user.user_id || user.id, courseId, enrollmentOptions);
+
+      let responseMessage = `✅ **Course Enrollment Successful**
 
 👤 **User**: ${user.fullname} (${email})
 📚 **Course**: ${displayCourseName}
 🔗 **Course ID**: ${courseId}
-📅 **Enrolled**: ${new Date().toLocaleDateString()}
+📋 **Assignment Type**: ${enrollmentOptions.assignmentType.toUpperCase()}
+📅 **Enrolled**: ${new Date().toLocaleDateString()}`;
 
-The user has been successfully enrolled in the course.`,
+      // Add validity information if provided
+      if (startValidity) {
+        responseMessage += `\n📅 **Start Validity**: ${startValidity}`;
+      }
+      if (endValidity) {
+        responseMessage += `\n📅 **End Validity**: ${endValidity}`;
+      }
+
+      responseMessage += '\n\nThe user has been successfully enrolled in the course with the specified parameters.';
+
+      return NextResponse.json({
+        response: responseMessage,
         success: true,
         data: {
           user: {
@@ -62,6 +78,7 @@ The user has been successfully enrolled in the course.`,
             id: courseId,
             name: displayCourseName
           },
+          enrollmentOptions: enrollmentOptions,
           enrollmentResult: enrollmentResult
         },
         timestamp: new Date().toISOString()
@@ -76,7 +93,9 @@ The user has been successfully enrolled in the course.`,
 Please check:
 • User email exists in the system
 • Course name is correct
-• User doesn't already have an enrollment conflict
+• Assignment type is "required" or "optional"
+• Validity dates are in YYYY-MM-DD format
+• End validity is after start validity
 • You have permission to enroll users`,
         success: false,
         timestamp: new Date().toISOString()
@@ -86,11 +105,11 @@ Please check:
 
   static async handleEnrollUserInLearningPlan(entities: any, api: DoceboAPI): Promise<NextResponse> {
     try {
-      const { email, learningPlanName, action } = entities;
+      const { email, learningPlanName, assignmentType, startValidity, endValidity } = entities;
       
       if (!email || !learningPlanName) {
         return NextResponse.json({
-          response: '❌ **Missing Information**: I need both a user email and learning plan name to process enrollment.\n\n**Example**: "Enroll sarah@company.com in learning plan Data Science"',
+          response: '❌ **Missing Information**: I need both a user email and learning plan name to process enrollment.\n\n**Enhanced Example**: "Enroll sarah@company.com in learning plan Data Science with assignment type optional from 2024-02-01 to 2024-11-30"',
           success: false,
           timestamp: new Date().toISOString()
         });
@@ -115,20 +134,36 @@ Please check:
       const learningPlanId = learningPlan.learning_plan_id || learningPlan.id;
       const displayLearningPlanName = api.getLearningPlanName(learningPlan);
 
-      // Enroll user
-      const enrollmentResult = await api.enrollUserInLearningPlan(user.user_id || user.id, learningPlanId, {
-        assignmentType: 'required'
-      });
+      // Prepare enrollment options with enhanced parameters
+      const enrollmentOptions = {
+        assignmentType: assignmentType || 'required',
+        startValidity: startValidity,
+        endValidity: endValidity
+      };
 
-      return NextResponse.json({
-        response: `✅ **Learning Plan Enrollment Successful**
+      // Enroll user
+      const enrollmentResult = await api.enrollUserInLearningPlan(user.user_id || user.id, learningPlanId, enrollmentOptions);
+
+      let responseMessage = `✅ **Learning Plan Enrollment Successful**
 
 👤 **User**: ${user.fullname} (${email})
 📋 **Learning Plan**: ${displayLearningPlanName}
 🔗 **Learning Plan ID**: ${learningPlanId}
-📅 **Enrolled**: ${new Date().toLocaleDateString()}
+📋 **Assignment Type**: ${enrollmentOptions.assignmentType.toUpperCase()}
+📅 **Enrolled**: ${new Date().toLocaleDateString()}`;
 
-The user has been successfully enrolled in the learning plan.`,
+      // Add validity information if provided
+      if (startValidity) {
+        responseMessage += `\n📅 **Start Validity**: ${startValidity}`;
+      }
+      if (endValidity) {
+        responseMessage += `\n📅 **End Validity**: ${endValidity}`;
+      }
+
+      responseMessage += '\n\nThe user has been successfully enrolled in the learning plan with the specified parameters.';
+
+      return NextResponse.json({
+        response: responseMessage,
         success: true,
         data: {
           user: {
@@ -140,6 +175,7 @@ The user has been successfully enrolled in the learning plan.`,
             id: learningPlanId,
             name: displayLearningPlanName
           },
+          enrollmentOptions: enrollmentOptions,
           enrollmentResult: enrollmentResult
         },
         timestamp: new Date().toISOString()
@@ -154,7 +190,9 @@ The user has been successfully enrolled in the learning plan.`,
 Please check:
 • User email exists in the system
 • Learning plan name is correct
-• User doesn't already have an enrollment conflict
+• Assignment type is "required" or "optional"
+• Validity dates are in YYYY-MM-DD format
+• End validity is after start validity
 • You have permission to enroll users in learning plans`,
         success: false,
         timestamp: new Date().toISOString()
