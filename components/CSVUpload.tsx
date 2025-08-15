@@ -1,4 +1,4 @@
-// components/CSVUpload.tsx - CSV Upload Component with validation and preview
+// components/CSVUpload.tsx - Enhanced CSV Upload with validity dates and assignment types
 'use client';
 
 import React, { useState, useRef, useCallback } from 'react';
@@ -12,7 +12,9 @@ import {
   Users,
   BookOpen,
   Eye,
-  Play
+  Play,
+  Calendar,
+  Clock
 } from 'lucide-react';
 
 interface CSVData {
@@ -40,14 +42,22 @@ const CSVUpload: React.FC<CSVUploadProps> = ({ onProcessCSV, isProcessing = fals
     const validRows: string[][] = [];
     const invalidRows: Array<{ row: string[]; errors: string[]; index: number }> = [];
 
-    // Define required columns based on operation
+    // Define required columns based on operation (enhanced with validity dates)
     const requiredColumns = {
       course_enrollment: ['email', 'course'],
       lp_enrollment: ['email', 'learning_plan'],
       unenrollment: ['email', 'resource']
     };
 
+    // Define optional columns (enhanced)
+    const optionalColumns = {
+      course_enrollment: ['assignment_type', 'start_validity', 'end_validity'],
+      lp_enrollment: ['assignment_type', 'start_validity', 'end_validity'],
+      unenrollment: ['resource_type']
+    };
+
     const required = requiredColumns[operationType as keyof typeof requiredColumns];
+    const optional = optionalColumns[operationType as keyof typeof optionalColumns] || [];
     const headerLower = headers.map(h => h.toLowerCase().trim());
 
     // Check if all required columns exist
@@ -59,6 +69,10 @@ const CSVUpload: React.FC<CSVUploadProps> = ({ onProcessCSV, isProcessing = fals
     // Get column indices
     const emailIndex = headerLower.indexOf('email');
     const resourceIndex = headerLower.indexOf(required[1]);
+    const assignmentTypeIndex = headerLower.indexOf('assignment_type');
+    const startValidityIndex = headerLower.indexOf('start_validity');
+    const endValidityIndex = headerLower.indexOf('end_validity');
+    const resourceTypeIndex = headerLower.indexOf('resource_type');
 
     rows.forEach((row, index) => {
       const errors: string[] = [];
@@ -77,6 +91,46 @@ const CSVUpload: React.FC<CSVUploadProps> = ({ onProcessCSV, isProcessing = fals
         errors.push(`${required[1].replace('_', ' ')} is required`);
       }
 
+      // Validate assignment type (if provided)
+      if (assignmentTypeIndex >= 0 && row[assignmentTypeIndex]) {
+        const assignmentType = row[assignmentTypeIndex]?.trim().toLowerCase();
+        if (assignmentType && !['required', 'optional'].includes(assignmentType)) {
+          errors.push('Assignment type must be "required" or "optional"');
+        }
+      }
+
+      // Validate start validity date (if provided)
+      if (startValidityIndex >= 0 && row[startValidityIndex]) {
+        const startDate = row[startValidityIndex]?.trim();
+        if (startDate && !isValidDate(startDate)) {
+          errors.push('Start validity must be a valid date (YYYY-MM-DD format)');
+        }
+      }
+
+      // Validate end validity date (if provided)
+      if (endValidityIndex >= 0 && row[endValidityIndex]) {
+        const endDate = row[endValidityIndex]?.trim();
+        if (endDate && !isValidDate(endDate)) {
+          errors.push('End validity must be a valid date (YYYY-MM-DD format)');
+        }
+        
+        // Check that end date is after start date
+        if (startValidityIndex >= 0 && row[startValidityIndex] && endDate && isValidDate(endDate)) {
+          const startDate = row[startValidityIndex]?.trim();
+          if (startDate && isValidDate(startDate) && new Date(endDate) <= new Date(startDate)) {
+            errors.push('End validity must be after start validity');
+          }
+        }
+      }
+
+      // Validate resource type for unenrollment (if provided)
+      if (operationType === 'unenrollment' && resourceTypeIndex >= 0 && row[resourceTypeIndex]) {
+        const resourceType = row[resourceTypeIndex]?.trim().toLowerCase();
+        if (resourceType && !['course', 'learning_plan'].includes(resourceType)) {
+          errors.push('Resource type must be "course" or "learning_plan"');
+        }
+      }
+
       if (errors.length > 0) {
         invalidRows.push({ row, errors, index: index + 1 });
       } else {
@@ -92,6 +146,15 @@ const CSVUpload: React.FC<CSVUploadProps> = ({ onProcessCSV, isProcessing = fals
       invalidRows
     };
   }, []);
+
+  const isValidDate = (dateString: string): boolean => {
+    // Check YYYY-MM-DD format
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(dateString)) return false;
+    
+    const date = new Date(dateString);
+    return date instanceof Date && !isNaN(date.getTime());
+  };
 
   const parseCSV = useCallback((text: string): { headers: string[]; rows: string[][] } => {
     const lines = text.split('\n').filter(line => line.trim());
@@ -166,9 +229,20 @@ const CSVUpload: React.FC<CSVUploadProps> = ({ onProcessCSV, isProcessing = fals
 
   const downloadTemplate = () => {
     const templates = {
-      course_enrollment: 'email,course,assignment_type\njohn@company.com,Python Programming,required\nsarah@company.com,Data Science Basics,optional',
-      lp_enrollment: 'email,learning_plan,assignment_type\njohn@company.com,Leadership Development,required\nsarah@company.com,Technical Skills,optional',
-      unenrollment: 'email,resource,resource_type\njohn@company.com,Old Training Course,course\nsarah@company.com,Outdated Learning Path,learning_plan'
+      course_enrollment: `email,course,assignment_type,start_validity,end_validity
+john@company.com,Python Programming,required,2024-01-15,2024-12-31
+sarah@company.com,Data Science Basics,optional,2024-02-01,2024-11-30
+mike@company.com,Excel Advanced,required,2024-01-01,2024-06-30`,
+
+      lp_enrollment: `email,learning_plan,assignment_type,start_validity,end_validity
+john@company.com,Leadership Development,required,2024-01-15,2024-12-31
+sarah@company.com,Technical Skills,optional,2024-02-01,2024-11-30
+mike@company.com,Management Training,required,2024-01-01,2024-06-30`,
+
+      unenrollment: `email,resource,resource_type
+john@company.com,Old Training Course,course
+sarah@company.com,Outdated Learning Path,learning_plan
+mike@company.com,Deprecated Program,course`
     };
 
     const content = templates[operation];
@@ -198,7 +272,7 @@ const CSVUpload: React.FC<CSVUploadProps> = ({ onProcessCSV, isProcessing = fals
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <button
             onClick={() => setOperation('course_enrollment')}
-            className={`p-3 rounded-lg border-2 transition-colors ${
+            className={`p-4 rounded-lg border-2 transition-colors ${
               operation === 'course_enrollment'
                 ? 'border-blue-500 bg-blue-50 text-blue-700'
                 : 'border-gray-200 hover:border-gray-300'
@@ -206,12 +280,16 @@ const CSVUpload: React.FC<CSVUploadProps> = ({ onProcessCSV, isProcessing = fals
           >
             <BookOpen className="w-5 h-5 mx-auto mb-2" />
             <div className="font-medium">Course Enrollment</div>
-            <div className="text-xs text-gray-500">Enroll users in courses</div>
+            <div className="text-xs text-gray-500 mt-1">Enroll users in courses</div>
+            <div className="flex items-center justify-center mt-2 space-x-2">
+              <Calendar className="w-3 h-3 text-gray-400" />
+              <span className="text-xs text-gray-400">With validity dates</span>
+            </div>
           </button>
           
           <button
             onClick={() => setOperation('lp_enrollment')}
-            className={`p-3 rounded-lg border-2 transition-colors ${
+            className={`p-4 rounded-lg border-2 transition-colors ${
               operation === 'lp_enrollment'
                 ? 'border-purple-500 bg-purple-50 text-purple-700'
                 : 'border-gray-200 hover:border-gray-300'
@@ -219,12 +297,16 @@ const CSVUpload: React.FC<CSVUploadProps> = ({ onProcessCSV, isProcessing = fals
           >
             <Users className="w-5 h-5 mx-auto mb-2" />
             <div className="font-medium">Learning Plan Enrollment</div>
-            <div className="text-xs text-gray-500">Enroll users in learning plans</div>
+            <div className="text-xs text-gray-500 mt-1">Enroll users in learning plans</div>
+            <div className="flex items-center justify-center mt-2 space-x-2">
+              <Calendar className="w-3 h-3 text-gray-400" />
+              <span className="text-xs text-gray-400">With validity dates</span>
+            </div>
           </button>
           
           <button
             onClick={() => setOperation('unenrollment')}
-            className={`p-3 rounded-lg border-2 transition-colors ${
+            className={`p-4 rounded-lg border-2 transition-colors ${
               operation === 'unenrollment'
                 ? 'border-red-500 bg-red-50 text-red-700'
                 : 'border-gray-200 hover:border-gray-300'
@@ -232,7 +314,11 @@ const CSVUpload: React.FC<CSVUploadProps> = ({ onProcessCSV, isProcessing = fals
           >
             <X className="w-5 h-5 mx-auto mb-2" />
             <div className="font-medium">Unenrollment</div>
-            <div className="text-xs text-gray-500">Remove users from resources</div>
+            <div className="text-xs text-gray-500 mt-1">Remove users from resources</div>
+            <div className="flex items-center justify-center mt-2 space-x-2">
+              <Clock className="w-3 h-3 text-gray-400" />
+              <span className="text-xs text-gray-400">Immediate removal</span>
+            </div>
           </button>
         </div>
       </div>
@@ -357,7 +443,7 @@ const CSVUpload: React.FC<CSVUploadProps> = ({ onProcessCSV, isProcessing = fals
                             <tr key={index} className="border-b">
                               {row.map((cell, cellIndex) => (
                                 <td key={cellIndex} className="px-3 py-2 border text-gray-700">
-                                  {cell}
+                                  {cell || '-'}
                                 </td>
                               ))}
                             </tr>
@@ -409,33 +495,40 @@ const CSVUpload: React.FC<CSVUploadProps> = ({ onProcessCSV, isProcessing = fals
         )}
       </div>
 
-      {/* Instructions */}
+      {/* Enhanced Instructions */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <h5 className="font-medium text-blue-800 mb-2">CSV Format Requirements</h5>
-        <div className="text-sm text-blue-700 space-y-1">
+        <h5 className="font-medium text-blue-800 mb-2">Enhanced CSV Format Requirements</h5>
+        <div className="text-sm text-blue-700 space-y-2">
           {operation === 'course_enrollment' && (
-            <>
+            <div className="space-y-1">
               <div>• <strong>Required columns:</strong> email, course</div>
-              <div>• <strong>Optional columns:</strong> assignment_type (required/optional)</div>
-              <div>• <strong>Example:</strong> john@company.com, Python Programming, required</div>
-            </>
+              <div>• <strong>Optional columns:</strong> assignment_type (required/optional), start_validity (YYYY-MM-DD), end_validity (YYYY-MM-DD)</div>
+              <div>• <strong>Example:</strong> john@company.com, Python Programming, required, 2024-01-15, 2024-12-31</div>
+              <div>• <strong>Validity dates:</strong> Control when enrollment becomes active and expires</div>
+            </div>
           )}
           {operation === 'lp_enrollment' && (
-            <>
+            <div className="space-y-1">
               <div>• <strong>Required columns:</strong> email, learning_plan</div>
-              <div>• <strong>Optional columns:</strong> assignment_type (required/optional)</div>
-              <div>• <strong>Example:</strong> sarah@company.com, Leadership Development, required</div>
-            </>
+              <div>• <strong>Optional columns:</strong> assignment_type (required/optional), start_validity (YYYY-MM-DD), end_validity (YYYY-MM-DD)</div>
+              <div>• <strong>Example:</strong> sarah@company.com, Leadership Development, required, 2024-02-01, 2024-11-30</div>
+              <div>• <strong>Validity dates:</strong> Control when learning plan access becomes active and expires</div>
+            </div>
           )}
           {operation === 'unenrollment' && (
-            <>
+            <div className="space-y-1">
               <div>• <strong>Required columns:</strong> email, resource</div>
               <div>• <strong>Optional columns:</strong> resource_type (course/learning_plan)</div>
               <div>• <strong>Example:</strong> mike@company.com, Old Training Course, course</div>
-            </>
+              <div>• <strong>Note:</strong> Unenrollment is immediate and doesn't use validity dates</div>
+            </div>
           )}
-          <div>• Headers are case-insensitive</div>
-          <div>• Maximum 1000 rows per file</div>
+          <div className="pt-2 border-t border-blue-200 space-y-1">
+            <div>• <strong>Date format:</strong> YYYY-MM-DD (e.g., 2024-01-15)</div>
+            <div>• <strong>Headers are case-insensitive</strong></div>
+            <div>• <strong>Maximum 1000 rows per file</strong></div>
+            <div>• <strong>End validity must be after start validity</strong></div>
+          </div>
         </div>
       </div>
     </div>
