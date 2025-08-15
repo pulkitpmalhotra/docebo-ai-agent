@@ -308,7 +308,7 @@ async searchLearningPlans(searchText: string, limit: number = 100): Promise<any[
     for (const endpoint of endpoints) {
       try {
         console.log(`🔍 Trying course enrollment endpoint: ${endpoint}`);
-        const result = await this.apiRequest(endpoint);
+        const result = await this.apiRequest('/endpoint', 'GET', null, { params })
         
         if (result.data?.items?.length > 0) {
           console.log(`✅ Found ${result.data.items.length} course enrollments from ${endpoint}`);
@@ -354,7 +354,7 @@ async searchLearningPlans(searchText: string, limit: number = 100): Promise<any[
     for (const endpoint of endpoints) {
       try {
         console.log(`🔍 Trying learning plan enrollment endpoint: ${endpoint}`);
-        const result = await this.apiRequest(endpoint);
+        const result = await this.apiRequest('/endpoint', 'GET', null, { params })
         
         if (result.data?.items?.length > 0) {
           console.log(`✅ Found ${result.data.items.length} learning plan enrollments from ${endpoint}`);
