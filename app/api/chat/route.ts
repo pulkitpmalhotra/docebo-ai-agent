@@ -5,6 +5,7 @@ import { IntentAnalyzer } from './intent-analyzer';
 import { DoceboAPI } from './docebo-api';
 import { getConfig } from './utils/config';
 import { handlers } from './handlers';
+import { BulkEnrollmentHandlers } from './handlers/bulk-enrollment';
 
 let api: DoceboAPI;
 
@@ -38,7 +39,18 @@ async function chatHandler(request: NextRequest): Promise<NextResponse> {
     // Route to appropriate handler
     try {
       switch (analysis.intent) {
-        // Enrollment Management
+        // Bulk Enrollment Management - NEW!
+        case 'bulk_enroll_course':
+          return await BulkEnrollmentHandlers.handleBulkCourseEnrollment(analysis.entities, api);
+          
+        case 'bulk_enroll_learning_plan':
+          return await BulkEnrollmentHandlers.handleBulkLearningPlanEnrollment(analysis.entities, api);
+          
+        case 'bulk_unenroll_course':
+        case 'bulk_unenroll_learning_plan':
+          return await BulkEnrollmentHandlers.handleBulkUnenrollment(analysis.entities, api);
+        
+        // Individual Enrollment Management
         case 'enroll_user_in_course':
           return await handlers.enrollment.handleEnrollUserInCourse(analysis.entities, api);
           
@@ -83,13 +95,19 @@ async function chatHandler(request: NextRequest): Promise<NextResponse> {
           return NextResponse.json({
             response: `🤔 **I can help you with enrollment management!**
 
-**✅ NEW: Enrollment Features**
+**🚀 NEW: Bulk Enrollment Features**
+• **Bulk Course Enrollment**: "Enroll john@co.com,sarah@co.com,mike@co.com in course Python Programming"
+• **Bulk Learning Plan Enrollment**: "Enroll marketing team in learning plan Leadership Development"
+• **Bulk Unenrollment**: "Remove john@co.com,sarah@co.com from course Excel Training"
+• **Team Management**: "Enroll sales team in course Customer Service Excellence"
+
+**✅ Individual Enrollment Features**
 • **Enroll in Course**: "Enroll john@company.com in course Python Programming"
 • **Enroll in Learning Plan**: "Enroll sarah@company.com in learning plan Data Science"
 • **Unenroll from Course**: "Unenroll mike@company.com from course Excel Training"
 • **Unenroll from Learning Plan**: "Remove user@company.com from learning plan Leadership"
 
-**📊 Existing Features:**
+**📊 Information & Search Features:**
 • **Check Enrollment**: "Check if john@company.com is enrolled in course Python Programming"
 • **User Enrollments**: "User enrollments mike@company.com"
 • **Find Users**: "Find user email@company.com"
@@ -98,6 +116,11 @@ async function chatHandler(request: NextRequest): Promise<NextResponse> {
 • **Course Info**: "Course info Working with Data in Python"
 • **Learning Plan Info**: "Learning plan info Getting Started with Python"
 • **Docebo Help**: "How to enroll users in Docebo"
+
+**💡 Examples of bulk commands:**
+• "Enroll alice@co.com,bob@co.com,charlie@co.com in course Security Training"
+• "Bulk enroll marketing team in learning plan Digital Marketing"
+• "Remove support team from course Old Process Training"
 
 **Try one of the examples above!**`,
             success: false,
