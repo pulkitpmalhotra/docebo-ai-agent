@@ -125,6 +125,11 @@ export class DoceboAPI {
     }
   }
 
+  // Improved version for app/api/chat/docebo-api.ts - Better error handling for additional user info
+
+export class DoceboAPI {
+  // ... existing methods ...
+
   private async getUserAdditionalInfo(userId: string): Promise<{
     managerId?: string;
     additionalFields?: {
@@ -134,69 +139,157 @@ export class DoceboAPI {
       directReports?: number;
     };
   }> {
+    console.log(`🔍 Getting additional user info for ID: ${userId}`);
+    
     try {
-      // Try multiple endpoints to get manager/additional info
-      const endpoints = [
-        `/manage/v1/user/${userId}`,
-        `/manage/v1/user/${userId}/additional_fields`,
-        `/manage/v1/user/${userId}/profile`
-      ];
-
       let managerId: string | undefined;
       let additionalFields: any = {};
 
-      for (const endpoint of endpoints) {
+      // Primary endpoint - try to get basic user details first
+      try {
+        console.log(`🔍 Trying primary endpoint: /manage/v1/user/${userId}`);
+        const userResult = await this.apiRequest(`/manage/v1/user/${userId}`);
+        
+        if (userResult.data) {
+          const userData = userResult.data;
+          console.log(`✅ Primary endpoint successful for user ${userId}`);
+          
+          // Look for manager information in main user data
+          managerId = userData.manager_id || 
+                     userData.managerId || 
+                     userData.manager || 
+                     userData.direct_manager ||
+                     userData.manager_user_id;
+          
+          // Extract additional fields from the main response
+          if (userData.job_title || userData.jobTitle) {
+            additionalFields.jobTitle = userData.job_title || userData.jobTitle;
+          }
+          if (userData.employee_id || userData.employeeId) {
+            additionalFields.employeeId = userData.employee_id || userData.employeeId;
+          }
+          if (userData.location || userData.office_location) {
+            additionalFields.location = userData.location || userData.office_location;
+          }
+
+          console.log(`📋 Found manager ID from primary endpoint: ${managerId || 'None'}`);
+        }
+      } catch (primaryError) {
+        console.warn(`⚠️ Primary endpoint failed for user ${userId}:`, primaryError);
+      }
+
+      // Try to get additional fields if available
+      const additionalFieldEndpoints = [
+        `/manage/v1/user/${userId}/additional_fields`,
+        `/manage/v1/user/${userId}/profile`,
+        `/manage/v1/user/${userId}/fields`
+      ];
+
+      for (const endpoint of additionalFieldEndpoints) {
         try {
-          console.log(`🔍 Trying endpoint: ${endpoint}`);
+          console.log(`🔍 Trying additional fields endpoint: ${endpoint}`);
           const result = await this.apiRequest(endpoint);
           
           if (result.data) {
-            const userData = result.data;
+            console.log(`✅ Additional fields endpoint successful: ${endpoint}`);
             
-            // Look for manager information in various field names
-            if (userData.manager_id || userData.managerId || userData.manager || userData.direct_manager) {
-              managerId = userData.manager_id || userData.managerId || userData.manager || userData.direct_manager;
-              console.log(`👥 Found manager ID: ${managerId}`);
-            }
-
-            // Look for additional user fields
-            if (userData.job_title || userData.jobTitle) {
-              additionalFields.jobTitle = userData.job_title || userData.jobTitle;
-            }
-            if (userData.employee_id || userData.employeeId) {
-              additionalFields.employeeId = userData.employee_id || userData.employeeId;
-            }
-            if (userData.location || userData.office_location) {
-              additionalFields.location = userData.location || userData.office_location;
-            }
-
-            // Also check for manager info in custom fields
-            if (userData.custom_fields || userData.additional_fields) {
-              const customFields = userData.custom_fields || userData.additional_fields;
-              
-              // Look for manager in custom fields
-              Object.keys(customFields).forEach(key => {
-                const lowerKey = key.toLowerCase();
-                if (lowerKey.includes('manager') || lowerKey.includes('supervisor') || lowerKey.includes('boss')) {
-                  if (!managerId && customFields[key]) {
-                    managerId = customFields[key];
-                  }
-                }
+            // Process additional fields based on endpoint response structure
+            if (Array.isArray(result.data)) {
+              // Handle array of additional fields
+              result.data.forEach((field: any) => {
+                this.processAdditionalField(field, additionalFields, managerId);
               });
+            } else if (result.data.additional_fields) {
+              // Handle nested additional_fields object
+              Object.entries(result.data.additional_fields).forEach(([key, value]) => {
+                this.processAdditionalFieldKeyValue(key, value, additionalFields);
+              });
+            } else {
+              // Handle direct field mapping
+              this.processDirectFields(result.data, additionalFields);
             }
             
+            // Found additional fields, no need to try other endpoints
+            break;
           }
-        } catch (endpointError) {
-          console.log(`❌ Endpoint ${endpoint} failed:`, endpointError);
+        } catch (error) {
+          console.log(`❌ Additional fields endpoint ${endpoint} failed:`, error);
           continue;
         }
       }
 
+      console.log(`📋 Final additional info for user ${userId}:`, {
+        managerId: managerId || 'None',
+        additionalFields: Object.keys(additionalFields).length > 0 ? additionalFields : 'None'
+      });
+
       return { managerId, additionalFields };
+      
     } catch (error) {
-      console.warn(`Could not get additional user info for ${userId}:`, error);
+      console.warn(`⚠️ Could not get additional user info for ${userId}:`, error);
       return {};
     }
+  }
+
+  private processAdditionalField(field: any, additionalFields: any, managerId?: string): void {
+    // Common field title patterns for job title
+    const jobTitlePatterns = ['job title', 'job_title', 'title', 'position', 'role'];
+    // Common field title patterns for employee ID
+    const employeeIdPatterns = ['employee id', 'employee_id', 'emp_id', 'staff_id', 'person_id'];
+    // Common field title patterns for location
+    const locationPatterns = ['location', 'office', 'site', 'workplace', 'office_location'];
+    // Common field title patterns for manager
+    const managerPatterns = ['manager', 'supervisor', 'boss', 'direct_manager', 'manager_email'];
+
+    const fieldTitle = (field.title || field.name || '').toLowerCase();
+    const fieldValue = field.value || field.default_value;
+
+    if (fieldValue) {
+      if (jobTitlePatterns.some(pattern => fieldTitle.includes(pattern))) {
+        additionalFields.jobTitle = fieldValue;
+      } else if (employeeIdPatterns.some(pattern => fieldTitle.includes(pattern))) {
+        additionalFields.employeeId = fieldValue;
+      } else if (locationPatterns.some(pattern => fieldTitle.includes(pattern))) {
+        additionalFields.location = fieldValue;
+      } else if (managerPatterns.some(pattern => fieldTitle.includes(pattern))) {
+        // Update manager ID if found in additional fields
+        if (!managerId && fieldValue) {
+          managerId = fieldValue;
+        }
+      }
+    }
+  }
+
+  private processAdditionalFieldKeyValue(key: string, value: any, additionalFields: any): void {
+    if (!value) return;
+
+    const keyLower = key.toLowerCase();
+    
+    if (keyLower.includes('job') || keyLower.includes('title') || keyLower.includes('position')) {
+      additionalFields.jobTitle = value;
+    } else if (keyLower.includes('employee') || keyLower.includes('emp_id') || keyLower.includes('staff')) {
+      additionalFields.employeeId = value;
+    } else if (keyLower.includes('location') || keyLower.includes('office') || keyLower.includes('site')) {
+      additionalFields.location = value;
+    }
+  }
+
+  private processDirectFields(data: any, additionalFields: any): void {
+    // Direct field mapping for common field names
+    const fieldMappings = {
+      jobTitle: ['job_title', 'jobTitle', 'title', 'position', 'role'],
+      employeeId: ['employee_id', 'employeeId', 'emp_id', 'staff_id', 'person_id'],
+      location: ['location', 'office_location', 'workplace', 'site', 'office']
+    };
+
+    Object.entries(fieldMappings).forEach(([targetField, sourceFields]) => {
+      for (const sourceField of sourceFields) {
+        if (data[sourceField]) {
+          additionalFields[targetField] = data[sourceField];
+          break;
+        }
+      }
+    });
   }
 
   private async getManagerDetails(managerId: string): Promise<{
@@ -209,6 +302,7 @@ export class DoceboAPI {
       
       // If managerId is an email, search by email
       if (managerId.includes('@')) {
+        console.log(`📧 Manager ID appears to be email: ${managerId}`);
         const managers = await this.searchUsers(managerId, 5);
         const manager = managers.find((u: any) => u.email?.toLowerCase() === managerId.toLowerCase());
         
@@ -222,6 +316,7 @@ export class DoceboAPI {
       } else {
         // Try direct user lookup by ID
         try {
+          console.log(`🆔 Looking up manager by ID: ${managerId}`);
           const managerResult = await this.apiRequest(`/manage/v1/user/${managerId}`);
           if (managerResult.data) {
             const manager = managerResult.data;
@@ -232,32 +327,39 @@ export class DoceboAPI {
             };
           }
         } catch (error) {
-          console.log(`Direct manager lookup failed, trying search...`);
+          console.log(`❌ Direct manager lookup failed, trying search...`);
           
           // Fallback: search for users and try to find by ID
-          const allUsers = await this.searchUsers('', 100);
-          const manager = allUsers.find((u: any) => 
-            (u.user_id || u.id)?.toString() === managerId.toString()
-          );
-          
-          if (manager) {
-            return {
-              id: manager.user_id || manager.id,
-              fullname: manager.fullname || `${manager.firstname || ''} ${manager.lastname || ''}`.trim() || 'Manager',
-              email: manager.email || 'Not available'
-            };
+          try {
+            const allUsers = await this.searchUsers('', 200);
+            const manager = allUsers.find((u: any) => 
+              (u.user_id || u.id)?.toString() === managerId.toString()
+            );
+            
+            if (manager) {
+              return {
+                id: manager.user_id || manager.id,
+                fullname: manager.fullname || `${manager.firstname || ''} ${manager.lastname || ''}`.trim() || 'Manager',
+                email: manager.email || 'Not available'
+              };
+            }
+          } catch (searchError) {
+            console.warn(`⚠️ Manager search fallback failed:`, searchError);
           }
         }
       }
       
-      console.warn(`Manager with ID ${managerId} not found`);
+      console.warn(`⚠️ Manager with ID ${managerId} not found`);
       return null;
+      
     } catch (error) {
-      console.error(`Error getting manager details for ${managerId}:`, error);
+      console.error(`❌ Error getting manager details for ${managerId}:`, error);
       return null;
     }
   }
 
+  // ... rest of the DoceboAPI class methods remain the same
+}
   // ============================================================================
   // ENROLLMENT MANAGEMENT METHODS
   // ============================================================================
