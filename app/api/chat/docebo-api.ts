@@ -452,25 +452,40 @@ export class DoceboAPI {
   // ============================================================================
 
   async getUserDetails(identifier: string): Promise<UserDetails> {
+    console.log(`🔍 Getting user details for: ${identifier}`);
+    
     // If identifier is an email, search first
     if (identifier.includes('@')) {
+      console.log(`📧 Searching by email: ${identifier}`);
       const users = await this.apiRequest('/manage/v1/user', 'GET', null, {
         search_text: identifier,
-        page_size: 5
+        page_size: 10
       });
       
-      const user = users.data?.items?.find((u: any) => u.email.toLowerCase() === identifier.toLowerCase());
+      console.log(`🔍 Search returned ${users.data?.items?.length || 0} users`);
       
-      if (!user) {
+      if (users.data?.items?.length > 0) {
+        // Look for exact email match first
+        let user = users.data.items.find((u: any) => u.email?.toLowerCase() === identifier.toLowerCase());
+        
+        // If no exact match, take the first user (partial match)
+        if (!user) {
+          user = users.data.items[0];
+          console.log(`⚠️ No exact email match, using first result: ${user.email}`);
+        }
+        
+        console.log(`✅ Found user:`, JSON.stringify(user, null, 2));
+        return this.formatUserDetails(user);
+      } else {
         throw new Error(`User not found: ${identifier}`);
       }
-
-      return this.formatUserDetails(user);
     } else {
       // Direct lookup by ID
+      console.log(`🆔 Looking up by ID: ${identifier}`);
       try {
         const userResult = await this.apiRequest(`/manage/v1/user/${identifier}`);
         if (userResult.data) {
+          console.log(`✅ Found user by ID:`, JSON.stringify(userResult.data, null, 2));
           return this.formatUserDetails(userResult.data);
         }
       } catch (error) {
@@ -492,18 +507,42 @@ export class DoceboAPI {
   }
 
   private formatUserDetails(user: any): UserDetails {
+    console.log(`📝 Formatting user details:`, JSON.stringify(user, null, 2));
+    
     return {
-      id: user.user_id || user.id,
-      fullname: user.fullname || `${user.firstname || ''} ${user.lastname || ''}`.trim() || 'Not available',
-      email: user.email,
-      username: user.username || 'Not available',
-      status: user.status === '1' ? 'Active' : user.status === '0' ? 'Inactive' : `Status: ${user.status}`,
-      level: user.level === 'godadmin' ? 'Superadmin' : user.level || 'User',
-      creationDate: user.register_date || user.creation_date || user.created_at || 'Not available',
-      lastAccess: user.last_access_date || user.last_access || user.last_login || 'Not available',
-      timezone: user.timezone || 'Not specified',
-      language: user.language || user.lang_code || 'Not specified',
-      department: user.department || 'Not specified'
+      id: (user.user_id || user.id || user.idUser || 'Unknown').toString(),
+      fullname: user.fullname || 
+                `${user.firstname || user.first_name || ''} ${user.lastname || user.last_name || ''}`.trim() || 
+                user.name || 
+                'Not available',
+      email: user.email || 'Not available',
+      username: user.username || user.userid || 'Not available',
+      status: user.status === '1' || user.status === 1 ? 'Active' : 
+              user.status === '0' || user.status === 0 ? 'Inactive' : 
+              user.status ? `Status: ${user.status}` : 'Unknown',
+      level: user.level === 'godadmin' ? 'Superadmin' : 
+             user.level === 'powUser' ? 'Power User' :
+             user.level || 'User',
+      creationDate: user.register_date || 
+                    user.creation_date || 
+                    user.created_at || 
+                    user.date_created ||
+                    user.signup_date ||
+                    'Not available',
+      lastAccess: user.last_access_date || 
+                  user.last_access || 
+                  user.last_login || 
+                  user.lastAccess ||
+                  'Not available',
+      timezone: user.timezone || user.time_zone || 'Not specified',
+      language: user.language || 
+                user.lang_code || 
+                user.locale ||
+                'Not specified',
+      department: user.department || 
+                  user.orgchart_desc ||
+                  user.branch ||
+                  'Not specified'
     };
   }
 
