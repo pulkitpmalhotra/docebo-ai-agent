@@ -161,6 +161,7 @@ Please check:
           const formatted = api.formatCourseEnrollment(enrollment);
           let statusIcon = '📚';
           if (formatted.enrollmentStatus === 'completed') statusIcon = '✅';
+          else if (formatted.enrollmentStatus === 'in_progress') statusIcon = '🔄';
           else if (formatted.enrollmentStatus === 'suspended') statusIcon = '🚫';
           
           return `${index + 1}. ${statusIcon} **${formatted.enrollmentStatus.toUpperCase()}** - ${formatted.courseName}${formatted.progress ? ` (${formatted.progress}%)` : ''}${formatted.score ? ` [Score: ${formatted.score}]` : ''}`;
@@ -489,5 +490,4 @@ Please try asking a specific question about Docebo functionality.`,
       });
     }
   }
-}d.enrollmentStatus === 'in_progress') statusIcon = '🔄';
-          else if (formatte
+}
