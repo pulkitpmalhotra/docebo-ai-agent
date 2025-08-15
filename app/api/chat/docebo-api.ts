@@ -270,10 +270,10 @@ async searchLearningPlans(searchText: string, limit: number = 100): Promise<any[
   // ============================================================================
 
   async getUserDetails(email: string): Promise<UserDetails> {
-    const users = await this.apiRequest('/manage/v1/user', {
-      search_text: email,
-      page_size: 5
-    });
+    const users = await this.apiRequest('/manage/v1/user', 'GET', null, {
+  search_text: email,
+  page_size: 5
+});
     
     const user = users.data?.items?.find((u: any) => u.email.toLowerCase() === email.toLowerCase());
     
