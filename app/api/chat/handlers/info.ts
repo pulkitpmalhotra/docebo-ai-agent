@@ -161,5 +161,333 @@ Please check:
           const formatted = api.formatCourseEnrollment(enrollment);
           let statusIcon = '📚';
           if (formatted.enrollmentStatus === 'completed') statusIcon = '✅';
+          else if (formatted.enrollmentStatus === 'suspended') statusIcon = '🚫';
+          
+          return `${index + 1}. ${statusIcon} **${formatted.enrollmentStatus.toUpperCase()}** - ${formatted.courseName}${formatted.progress ? ` (${formatted.progress}%)` : ''}${formatted.score ? ` [Score: ${formatted.score}]` : ''}`;
+        }).join('\n');
+
+        responseMessage += `\n\n📚 **Courses** (${enrollmentData.totalCourses}):\n${courseList}`;
+        
+        if (enrollmentData.totalCourses > 15) {
+          responseMessage += `\n... and ${enrollmentData.totalCourses - 15} more courses`;
+        }
+      }
+
+      // Show learning plans
+      if (enrollmentData.totalLearningPlans > 0) {
+        const lpList = enrollmentData.learningPlans.enrollments.slice(0, 10).map((enrollment: any, index: number) => {
+          const formatted = api.formatLearningPlanEnrollment(enrollment);
+          let statusIcon = '📋';
+          if (formatted.enrollmentStatus === 'completed') statusIcon = '✅';
           else if (formatted.enrollmentStatus === 'in_progress') statusIcon = '🔄';
+          else if (formatted.enrollmentStatus === 'enrolled') statusIcon = '📝';
+          
+          const progressText = formatted.totalCourses ? 
+            ` (${formatted.completedCourses || 0}/${formatted.totalCourses} courses)` : '';
+          
+          return `${index + 1}. ${statusIcon} **${formatted.enrollmentStatus.toUpperCase()}** - ${formatted.learningPlanName}${progressText}`;
+        }).join('\n');
+
+        responseMessage += `\n\n📋 **Learning Plans** (${enrollmentData.totalLearningPlans}):\n${lpList}`;
+        
+        if (enrollmentData.totalLearningPlans > 10) {
+          responseMessage += `\n... and ${enrollmentData.totalLearningPlans - 10} more learning plans`;
+        }
+      }
+
+      // Add endpoint information
+      responseMessage += `\n\n🔗 **Data Sources**:
+• Courses: ${enrollmentData.courses.endpoint || 'Multiple endpoints tried'}
+• Learning Plans: ${enrollmentData.learningPlans.endpoint || 'Multiple endpoints tried'}`;
+
+      if (!enrollmentData.success && enrollmentData.totalCourses === 0 && enrollmentData.totalLearningPlans === 0) {
+        responseMessage += `\n\n⚠️ **Note**: No enrollment data could be retrieved. This might be due to:
+• API endpoint access limitations
+• User has no enrollments
+• Data structure differences`;
+      }
+
+      return NextResponse.json({
+        response: responseMessage,
+        success: true,
+        data: {
+          user: userDetails,
+          enrollments: enrollmentData,
+          totalCourses: enrollmentData.totalCourses,
+          totalLearningPlans: enrollmentData.totalLearningPlans
+        },
+        totalCount: enrollmentData.totalCourses + enrollmentData.totalLearningPlans,
+        timestamp: new Date().toISOString()
+      });
+
+    } catch (error) {
+      console.error('❌ User enrollments error:', error);
+      
+      return NextResponse.json({
+        response: `❌ **User Enrollments Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
+
+Please check:
+• User email is correct and exists in the system
+• You have permission to view user enrollment data`,
+        success: false,
+        timestamp: new Date().toISOString()
+      });
+    }
+  }
+
+  static async handleCourseInfo(entities: any, api: DoceboAPI): Promise<NextResponse> {
+    try {
+      const { courseId, courseName } = entities;
+      const identifier = courseId || courseName;
+      
+      if (!identifier) {
+        return NextResponse.json({
+          response: '❌ **Missing Information**: Please provide a course name or ID.\n\n**Example**: "Course info Python Programming"',
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      console.log(`📚 Getting course info: ${identifier}`);
+
+      const courseDetails = await api.getCourseDetails(identifier);
+      const courseDisplayName = api.getCourseName(courseDetails);
+      
+      let responseMessage = `📚 **Course Information**: ${courseDisplayName}
+
+🆔 **Course ID**: ${courseDetails.id || courseDetails.course_id || courseDetails.idCourse || 'Not available'}
+📝 **Name**: ${courseDisplayName}
+📂 **Type**: ${courseDetails.course_type || courseDetails.type || 'Not specified'}
+📊 **Status**: ${courseDetails.status || courseDetails.course_status || 'Not specified'}`;
+
+      if (courseDetails.description) {
+        responseMessage += `\n📄 **Description**: ${courseDetails.description.length > 200 ? courseDetails.description.substring(0, 200) + '...' : courseDetails.description}`;
+      }
+
+      if (courseDetails.code) {
+        responseMessage += `\n🔗 **Course Code**: ${courseDetails.code}`;
+      }
+
+      if (courseDetails.language) {
+        responseMessage += `\n🌍 **Language**: ${courseDetails.language}`;
+      }
+
+      if (courseDetails.credits || courseDetails.credit) {
+        responseMessage += `\n🎓 **Credits**: ${courseDetails.credits || courseDetails.credit}`;
+      }
+
+      if (courseDetails.duration || courseDetails.estimated_duration) {
+        responseMessage += `\n⏱️ **Duration**: ${courseDetails.duration || courseDetails.estimated_duration}`;
+      }
+
+      if (courseDetails.enrollment_count || courseDetails.enrolled_users) {
+        responseMessage += `\n👥 **Enrollments**: ${courseDetails.enrollment_count || courseDetails.enrolled_users}`;
+      }
+
+      if (courseDetails.completion_tracking !== undefined) {
+        responseMessage += `\n📈 **Completion Tracking**: ${courseDetails.completion_tracking ? 'Enabled' : 'Disabled'}`;
+      }
+
+      if (courseDetails.creation_date || courseDetails.created_at) {
+        responseMessage += `\n📅 **Created**: ${courseDetails.creation_date || courseDetails.created_at}`;
+      }
+
+      responseMessage += `\n\n💡 **Next Steps**: 
+• "Who is enrolled in ${courseDisplayName}" to see enrollments
+• "Enroll [user] in course ${courseDisplayName}" to enroll users`;
+
+      return NextResponse.json({
+        response: responseMessage,
+        success: true,
+        data: {
+          course: courseDetails,
+          courseName: courseDisplayName,
+          courseId: courseDetails.id || courseDetails.course_id || courseDetails.idCourse
+        },
+        timestamp: new Date().toISOString()
+      });
+
+    } catch (error) {
+      console.error('❌ Course info error:', error);
+      
+      return NextResponse.json({
+        response: `❌ **Course Information Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
+
+Please check:
+• Course name or ID is correct
+• Course exists in the system
+• You have permission to view course information`,
+        success: false,
+        timestamp: new Date().toISOString()
+      });
+    }
+  }
+
+  static async handleLearningPlanInfo(entities: any, api: DoceboAPI): Promise<NextResponse> {
+    try {
+      const { learningPlanName } = entities;
+      
+      if (!learningPlanName) {
+        return NextResponse.json({
+          response: '❌ **Missing Information**: Please provide a learning plan name.\n\n**Example**: "Learning plan info Data Science Program"',
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      console.log(`📋 Getting learning plan info: ${learningPlanName}`);
+
+      const learningPlanDetails = await api.getLearningPlanDetails(learningPlanName);
+      const displayName = api.getLearningPlanName(learningPlanDetails);
+      
+      let responseMessage = `📋 **Learning Plan Information**: ${displayName}
+
+🆔 **Learning Plan ID**: ${learningPlanDetails.learning_plan_id || learningPlanDetails.id || 'Not available'}
+📝 **Name**: ${displayName}
+📊 **Status**: ${learningPlanDetails.status || learningPlanDetails.learning_plan_status || learningPlanDetails.lp_status || 'Not specified'}`;
+
+      if (learningPlanDetails.description) {
+        responseMessage += `\n📄 **Description**: ${learningPlanDetails.description.length > 200 ? learningPlanDetails.description.substring(0, 200) + '...' : learningPlanDetails.description}`;
+      }
+
+      if (learningPlanDetails.code) {
+        responseMessage += `\n🔗 **Code**: ${learningPlanDetails.code}`;
+      }
+
+      if (learningPlanDetails.enrollment_count || learningPlanDetails.enrolled_users || learningPlanDetails.total_enrollments) {
+        responseMessage += `\n👥 **Enrollments**: ${learningPlanDetails.enrollment_count || learningPlanDetails.enrolled_users || learningPlanDetails.total_enrollments}`;
+      }
+
+      if (learningPlanDetails.course_count || learningPlanDetails.total_courses) {
+        responseMessage += `\n📚 **Courses**: ${learningPlanDetails.course_count || learningPlanDetails.total_courses}`;
+      }
+
+      if (learningPlanDetails.mandatory_courses !== undefined) {
+        responseMessage += `\n✅ **Mandatory Courses**: ${learningPlanDetails.mandatory_courses}`;
+      }
+
+      if (learningPlanDetails.optional_courses !== undefined) {
+        responseMessage += `\n📝 **Optional Courses**: ${learningPlanDetails.optional_courses}`;
+      }
+
+      if (learningPlanDetails.validity_start || learningPlanDetails.start_date) {
+        responseMessage += `\n📅 **Start Date**: ${learningPlanDetails.validity_start || learningPlanDetails.start_date}`;
+      }
+
+      if (learningPlanDetails.validity_end || learningPlanDetails.end_date) {
+        responseMessage += `\n📅 **End Date**: ${learningPlanDetails.validity_end || learningPlanDetails.end_date}`;
+      }
+
+      if (learningPlanDetails.creation_date || learningPlanDetails.created_at) {
+        responseMessage += `\n📅 **Created**: ${learningPlanDetails.creation_date || learningPlanDetails.created_at}`;
+      }
+
+      responseMessage += `\n\n💡 **Next Steps**: 
+• "Enroll [user] in learning plan ${displayName}" to enroll users
+• "Find courses" to search for related courses
+
+*Using endpoint: /learningplan/v1/learningplans*`;
+
+      return NextResponse.json({
+        response: responseMessage,
+        success: true,
+        data: {
+          learningPlan: learningPlanDetails,
+          learningPlanName: displayName,
+          learningPlanId: learningPlanDetails.learning_plan_id || learningPlanDetails.id
+        },
+        timestamp: new Date().toISOString()
+      });
+
+    } catch (error) {
+      console.error('❌ Learning plan info error:', error);
+      
+      return NextResponse.json({
+        response: `❌ **Learning Plan Information Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
+
+Please check:
+• Learning plan name is correct
+• Learning plan exists in the system
+• You have permission to view learning plan information
+
+*Note*: Using endpoint /learningplan/v1/learningplans`,
+        success: false,
+        timestamp: new Date().toISOString()
+      });
+    }
+  }
+
+  static async handleDoceboHelp(entities: any, api: DoceboAPI): Promise<NextResponse> {
+    try {
+      const { query } = entities;
+      
+      let responseMessage = `🆘 **Docebo Help**
+
+I can help you with various Docebo administration tasks:
+
+**📚 Enrollment Management**:
+• "Enroll john@company.com in course Python Programming"
+• "Enroll sarah@company.com in learning plan Data Science"
+• "Unenroll mike@company.com from course Excel Training"
+• "Remove user@company.com from learning plan Leadership"
+
+**🔍 Search Functions**:
+• "Find user mike@company.com" - Get user details
+• "Find Python courses" - Search for courses
+• "Find Python learning plans" - Search learning plans
+
+**📊 Information & Status**:
+• "Check if john@company.com is enrolled in course Python"
+• "User enrollments mike@company.com" - See all enrollments
+• "Course info Python Programming" - Get course details
+• "Learning plan info Data Science" - Get learning plan details
+
+**🔧 System Information**:
+• All operations use the Docebo API with proper authentication
+• Learning plans use endpoint: /learningplan/v1/learningplans
+• User data includes status, department, and access information`;
+
+      if (query && query.length > 10) {
+        responseMessage += `\n\n**Your Query**: "${query}"
+
+For specific help with "${query}", try asking more specific questions like:
+• "How to enroll users in ${query}"
+• "Find courses about ${query}"
+• "User permissions for ${query}"`;
+      }
+
+      responseMessage += `\n\n**🌐 Additional Resources**:
+• [Docebo Help Center](https://help.docebo.com)
+• [API Documentation](https://help.docebo.com/hc/en-us/sections/360004313314-API)
+• [User Management Guide](https://help.docebo.com/hc/en-us/sections/360004274394-User-Management)
+
+**💡 Tips**:
+• Use exact email addresses for user operations
+• Course and learning plan names are search-friendly
+• All operations provide detailed feedback and error messages`;
+
+      return NextResponse.json({
+        response: responseMessage,
+        success: true,
+        helpRequest: true,
+        data: {
+          query: query,
+          helpType: 'docebo_general'
+        },
+        timestamp: new Date().toISOString()
+      });
+
+    } catch (error) {
+      console.error('❌ Docebo help error:', error);
+      
+      return NextResponse.json({
+        response: `❌ **Help System Error**: ${error instanceof Error ? error.message : 'Unknown error'}
+
+Please try asking a specific question about Docebo functionality.`,
+        success: false,
+        timestamp: new Date().toISOString()
+      });
+    }
+  }
+}d.enrollmentStatus === 'in_progress') statusIcon = '🔄';
           else if (formatte
