@@ -607,7 +607,7 @@ What would you like to do today?`,
                     )}
                   </div>
                   <div className="flex items-center space-x-2">
-                    {!favoriteCommands.includes(message.content) && message.type === 'user' && (
+                    {message.type === 'user' && !favoriteCommands.includes(message.content) && (
                       <button
                         onClick={() => addToFavorites(message.content)}
                         className="text-gray-400 hover:text-yellow-500 transition-colors"
