@@ -1,5 +1,6 @@
-// app/api/chat/route.ts - Main endpoint handler
+// app/api/chat/route.ts - Main endpoint handler with security
 import { NextRequest, NextResponse } from 'next/server';
+import { withSecurity } from '../middleware/security';
 import { IntentAnalyzer } from './intent-analyzer';
 import { DoceboAPI } from './docebo-api';
 import { getConfig } from './utils/config';
@@ -7,7 +8,8 @@ import { handlers } from './handlers';
 
 let api: DoceboAPI;
 
-export async function POST(request: NextRequest) {
+// Main handler function
+async function chatHandler(request: NextRequest): Promise<NextResponse> {
   try {
     // Initialize API client if needed
     if (!api) {
@@ -124,7 +126,18 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function GET() {
+// Apply security middleware to POST requests
+export const POST = withSecurity(chatHandler, {
+  rateLimit: {
+    maxRequests: 30, // 30 requests per minute for chat
+    windowMs: 60 * 1000
+  },
+  validateInput: true,
+  sanitizeOutput: true
+});
+
+// GET endpoint for API info (with lighter security)
+export const GET = withSecurity(async (request: NextRequest) => {
   return NextResponse.json({
     status: 'Enhanced Docebo Chat API with Complete Enrollment Management',
     version: '4.0.0',
@@ -136,7 +149,9 @@ export async function GET() {
       'User search and details',
       'Course and learning plan search',
       'Natural language processing',
-      'Modular architecture'
+      'Modular architecture',
+      'Security middleware with rate limiting',
+      'Input validation and sanitization'
     ],
     api_endpoints_used: {
       'users': '/manage/v1/user',
@@ -153,6 +168,19 @@ export async function GET() {
       'Check enrollment status: "Check if john@company.com is enrolled in course Python"',
       'Check completion: "Has sarah@company.com completed learning plan Data Science?"',
       'View all enrollments: "User enrollments mike@company.com"'
+    ],
+    security_features: [
+      'Rate limiting (30 requests/minute)',
+      'Input validation and sanitization',
+      'CORS headers',
+      'Security headers',
+      'Error handling'
     ]
   });
-}
+}, {
+  rateLimit: {
+    maxRequests: 100, // More lenient for GET requests
+    windowMs: 60 * 1000
+  },
+  validateInput: false // No input validation needed for GET
+});
