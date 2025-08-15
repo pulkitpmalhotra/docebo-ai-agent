@@ -2,14 +2,25 @@
   "name": "docebo-ai-agent",
   "version": "1.0.0",
   "private": true,
-  "description": "AI-powered Docebo administration assistant - Phase 1 MVP",
+  "description": "AI-powered Docebo administration assistant with enrollment management",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "lint:fix": "next lint --fix",
     "type-check": "tsc --noEmit",
-    "test": "echo \"Phase 1 MVP - No tests configured yet\" && exit 0"
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:ci": "jest --ci --coverage --watchAll=false",
+    "security:audit": "npm audit",
+    "security:fix": "npm audit fix",
+    "prebuild": "npm run type-check && npm run lint",
+    "postbuild": "echo 'Build completed successfully'",
+    "clean": "rm -rf .next && rm -rf node_modules/.cache",
+    "deploy:vercel": "vercel --prod",
+    "health-check": "curl -f http://localhost:3000/api/health || exit 1"
   },
   "dependencies": {
     "@google/generative-ai": "^0.2.1",
@@ -21,12 +32,18 @@
     "zod": "^3.22.4"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.1.5",
+    "@testing-library/react": "^14.1.2",
+    "@testing-library/user-event": "^14.5.1",
+    "@types/jest": "^29.5.8",
     "@types/node": "^20.10.5",
     "@types/react": "^18.2.45",
     "@types/react-dom": "^18.2.18",
     "autoprefixer": "^10.4.16",
     "eslint": "^8.56.0",
     "eslint-config-next": "14.0.4",
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0",
     "postcss": "^8.4.32",
     "tailwindcss": "^3.4.0"
   },
@@ -38,8 +55,84 @@
     "docebo",
     "lms",
     "ai",
-    "assistant", 
+    "assistant",
     "enrollment",
-    "education"
-  ]
+    "education",
+    "nextjs",
+    "typescript",
+    "chat",
+    "nlp"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/docebo-ai-agent.git"
+  },
+  "homepage": "https://github.com/yourusername/docebo-ai-agent#readme",
+  "bugs": {
+    "url": "https://github.com/yourusername/docebo-ai-agent/issues"
+  },
+  "license": "MIT",
+  "author": {
+    "name": "Your Name",
+    "email": "your.email@company.com"
+  },
+  "contributors": [
+    {
+      "name": "Your Name",
+      "email": "your.email@company.com",
+      "role": "Lead Developer"
+    }
+  ],
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/yourusername"
+  },
+  "config": {
+    "commitizen": {
+      "path": "./node_modules/cz-conventional-changelog"
+    }
+  },
+  "jest": {
+    "testEnvironment": "jsdom",
+    "setupFilesAfterEnv": [
+      "<rootDir>/jest.setup.js"
+    ],
+    "moduleNameMapping": {
+      "^@/(.*)$": "<rootDir>/$1"
+    },
+    "testPathIgnorePatterns": [
+      "<rootDir>/.next/",
+      "<rootDir>/node_modules/"
+    ],
+    "collectCoverageFrom": [
+      "app/**/*.{js,jsx,ts,tsx}",
+      "!app/**/*.d.ts",
+      "!app/**/layout.tsx",
+      "!app/**/loading.tsx",
+      "!app/**/not-found.tsx",
+      "!app/**/page.tsx"
+    ],
+    "coverageReporters": [
+      "text",
+      "lcov",
+      "html"
+    ],
+    "coverageDirectory": "coverage",
+    "testMatch": [
+      "**/__tests__/**/*.(js|jsx|ts|tsx)",
+      "**/*.(test|spec).(js|jsx|ts|tsx)"
+    ]
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  }
 }
