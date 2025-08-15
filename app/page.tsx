@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import CSVUpload from '../components/CSVUpload';
 
+
 interface Message {
   id: string;
   type: 'user' | 'assistant';
