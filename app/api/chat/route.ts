@@ -8,14 +8,14 @@ const result = await this.apiRequest(endpoint);
                    enrollment.id_user?.toString() === userId.toString();
           });
           
-          return {
-            enrollments: userEnrollments,
-            totalCount: userEnrollments.length,
-            endpoint: endpoint,
-            success: true
-          };
+         return {
+  enrollments: userEnrollments,
+  totalCount: userEnrollments.length,
+  endpoint: endpoint,
+  success: true
+};
         }
-      } catch (error) {
+catch (error) {
         console.log(`❌ Course enrollment endpoint ${endpoint} failed:`, error);
         continue;
       }
