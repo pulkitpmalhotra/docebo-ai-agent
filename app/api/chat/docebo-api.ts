@@ -1,5 +1,19 @@
-// app/api/chat/docebo-api.ts - Docebo API client with enrollment management
+// app/api/chat/docebo-api.ts - Enhanced Docebo API client with manager info
 import { DoceboConfig, UserDetails, EnrollmentData, FormattedEnrollment } from './types';
+
+interface EnhancedUserDetails extends UserDetails {
+  manager?: {
+    id: string;
+    fullname: string;
+    email: string;
+  } | null;
+  additionalFields?: {
+    jobTitle?: string;
+    employeeId?: string;
+    location?: string;
+    directReports?: number;
+  };
+}
 
 export class DoceboAPI {
   private config: DoceboConfig;
@@ -74,6 +88,174 @@ export class DoceboAPI {
     }
 
     return await response.json();
+  }
+
+  // ============================================================================
+  // ENHANCED USER DETAILS WITH MANAGER INFORMATION
+  // ============================================================================
+
+  async getEnhancedUserDetails(userId: string): Promise<EnhancedUserDetails> {
+    console.log(`👤 Getting enhanced user details for ID: ${userId}`);
+    
+    try {
+      // Get basic user details
+      const userDetails = await this.getUserDetails(userId);
+      
+      // Get additional user information including manager
+      const enhancedInfo = await this.getUserAdditionalInfo(userId);
+      
+      // Get manager details if manager ID is available
+      let managerDetails = null;
+      if (enhancedInfo.managerId) {
+        try {
+          managerDetails = await this.getManagerDetails(enhancedInfo.managerId);
+        } catch (error) {
+          console.warn(`Could not fetch manager details for manager ID ${enhancedInfo.managerId}:`, error);
+        }
+      }
+
+      return {
+        ...userDetails,
+        manager: managerDetails,
+        additionalFields: enhancedInfo.additionalFields
+      };
+    } catch (error) {
+      console.error(`Error getting enhanced user details for ${userId}:`, error);
+      throw error;
+    }
+  }
+
+  private async getUserAdditionalInfo(userId: string): Promise<{
+    managerId?: string;
+    additionalFields?: {
+      jobTitle?: string;
+      employeeId?: string;
+      location?: string;
+      directReports?: number;
+    };
+  }> {
+    try {
+      // Try multiple endpoints to get manager/additional info
+      const endpoints = [
+        `/manage/v1/user/${userId}`,
+        `/manage/v1/user/${userId}/additional_fields`,
+        `/manage/v1/user/${userId}/profile`
+      ];
+
+      let managerId: string | undefined;
+      let additionalFields: any = {};
+
+      for (const endpoint of endpoints) {
+        try {
+          console.log(`🔍 Trying endpoint: ${endpoint}`);
+          const result = await this.apiRequest(endpoint);
+          
+          if (result.data) {
+            const userData = result.data;
+            
+            // Look for manager information in various field names
+            if (userData.manager_id || userData.managerId || userData.manager || userData.direct_manager) {
+              managerId = userData.manager_id || userData.managerId || userData.manager || userData.direct_manager;
+              console.log(`👥 Found manager ID: ${managerId}`);
+            }
+
+            // Look for additional user fields
+            if (userData.job_title || userData.jobTitle) {
+              additionalFields.jobTitle = userData.job_title || userData.jobTitle;
+            }
+            if (userData.employee_id || userData.employeeId) {
+              additionalFields.employeeId = userData.employee_id || userData.employeeId;
+            }
+            if (userData.location || userData.office_location) {
+              additionalFields.location = userData.location || userData.office_location;
+            }
+
+            // Also check for manager info in custom fields
+            if (userData.custom_fields || userData.additional_fields) {
+              const customFields = userData.custom_fields || userData.additional_fields;
+              
+              // Look for manager in custom fields
+              Object.keys(customFields).forEach(key => {
+                const lowerKey = key.toLowerCase();
+                if (lowerKey.includes('manager') || lowerKey.includes('supervisor') || lowerKey.includes('boss')) {
+                  if (!managerId && customFields[key]) {
+                    managerId = customFields[key];
+                  }
+                }
+              });
+            }
+            
+          }
+        } catch (endpointError) {
+          console.log(`❌ Endpoint ${endpoint} failed:`, endpointError);
+          continue;
+        }
+      }
+
+      return { managerId, additionalFields };
+    } catch (error) {
+      console.warn(`Could not get additional user info for ${userId}:`, error);
+      return {};
+    }
+  }
+
+  private async getManagerDetails(managerId: string): Promise<{
+    id: string;
+    fullname: string;
+    email: string;
+  } | null> {
+    try {
+      console.log(`👥 Getting manager details for ID: ${managerId}`);
+      
+      // If managerId is an email, search by email
+      if (managerId.includes('@')) {
+        const managers = await this.searchUsers(managerId, 5);
+        const manager = managers.find((u: any) => u.email?.toLowerCase() === managerId.toLowerCase());
+        
+        if (manager) {
+          return {
+            id: manager.user_id || manager.id,
+            fullname: manager.fullname || `${manager.firstname || ''} ${manager.lastname || ''}`.trim() || 'Manager',
+            email: manager.email
+          };
+        }
+      } else {
+        // Try direct user lookup by ID
+        try {
+          const managerResult = await this.apiRequest(`/manage/v1/user/${managerId}`);
+          if (managerResult.data) {
+            const manager = managerResult.data;
+            return {
+              id: manager.user_id || manager.id || managerId,
+              fullname: manager.fullname || `${manager.firstname || ''} ${manager.lastname || ''}`.trim() || 'Manager',
+              email: manager.email || 'Not available'
+            };
+          }
+        } catch (error) {
+          console.log(`Direct manager lookup failed, trying search...`);
+          
+          // Fallback: search for users and try to find by ID
+          const allUsers = await this.searchUsers('', 100);
+          const manager = allUsers.find((u: any) => 
+            (u.user_id || u.id)?.toString() === managerId.toString()
+          );
+          
+          if (manager) {
+            return {
+              id: manager.user_id || manager.id,
+              fullname: manager.fullname || `${manager.firstname || ''} ${manager.lastname || ''}`.trim() || 'Manager',
+              email: manager.email || 'Not available'
+            };
+          }
+        }
+      }
+      
+      console.warn(`Manager with ID ${managerId} not found`);
+      return null;
+    } catch (error) {
+      console.error(`Error getting manager details for ${managerId}:`, error);
+      return null;
+    }
   }
 
   // ============================================================================
@@ -269,18 +451,47 @@ export class DoceboAPI {
   // USER DETAILS AND ENROLLMENT DATA
   // ============================================================================
 
-  async getUserDetails(email: string): Promise<UserDetails> {
-    const users = await this.apiRequest('/manage/v1/user', 'GET', null, {
-      search_text: email,
-      page_size: 5
-    });
-    
-    const user = users.data?.items?.find((u: any) => u.email.toLowerCase() === email.toLowerCase());
-    
-    if (!user) {
-      throw new Error(`User not found: ${email}`);
-    }
+  async getUserDetails(identifier: string): Promise<UserDetails> {
+    // If identifier is an email, search first
+    if (identifier.includes('@')) {
+      const users = await this.apiRequest('/manage/v1/user', 'GET', null, {
+        search_text: identifier,
+        page_size: 5
+      });
+      
+      const user = users.data?.items?.find((u: any) => u.email.toLowerCase() === identifier.toLowerCase());
+      
+      if (!user) {
+        throw new Error(`User not found: ${identifier}`);
+      }
 
+      return this.formatUserDetails(user);
+    } else {
+      // Direct lookup by ID
+      try {
+        const userResult = await this.apiRequest(`/manage/v1/user/${identifier}`);
+        if (userResult.data) {
+          return this.formatUserDetails(userResult.data);
+        }
+      } catch (error) {
+        console.warn(`Direct user lookup failed for ${identifier}, trying search...`);
+      }
+      
+      // Fallback to search
+      const users = await this.searchUsers(identifier, 10);
+      const user = users.find((u: any) => 
+        (u.user_id || u.id)?.toString() === identifier.toString()
+      );
+      
+      if (!user) {
+        throw new Error(`User not found: ${identifier}`);
+      }
+
+      return this.formatUserDetails(user);
+    }
+  }
+
+  private formatUserDetails(user: any): UserDetails {
     return {
       id: user.user_id || user.id,
       fullname: user.fullname || `${user.firstname || ''} ${user.lastname || ''}`.trim() || 'Not available',
