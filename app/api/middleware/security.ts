@@ -17,19 +17,35 @@ interface SecurityOptions {
   requireApiKey?: boolean;
 }
 
+// Helper function to get client IP
+function getClientIP(request: NextRequest): string {
+  // Try various headers for IP address
+  const forwarded = request.headers.get('x-forwarded-for');
+  const realIp = request.headers.get('x-real-ip');
+  const cfConnectingIp = request.headers.get('cf-connecting-ip');
+  
+  if (forwarded) {
+    // x-forwarded-for can contain multiple IPs, get the first one
+    return forwarded.split(',')[0].trim();
+  }
+  
+  if (realIp) {
+    return realIp;
+  }
+  
+  if (cfConnectingIp) {
+    return cfConnectingIp;
+  }
+  
+  // Fallback to unknown if no IP can be determined
+  return 'unknown';
+}
+
 // Default rate limiting configuration
 const DEFAULT_RATE_LIMIT: RateLimitOptions = {
   maxRequests: parseInt(process.env.API_RATE_LIMIT || '100', 10),
   windowMs: 60 * 1000, // 1 minute
-  keyGenerator: (request: NextRequest) => {
-    // Use IP address or a default key
-    const forwarded = request.headers.get('x-forwarded-for');
-    const ip = forwarded ? forwarded.split(',')[0] : 
-               request.headers.get('x-real-ip') || 
-               request.ip || 
-               'unknown';
-    return ip;
-  }
+  keyGenerator: (request: NextRequest) => getClientIP(request)
 };
 
 /**
