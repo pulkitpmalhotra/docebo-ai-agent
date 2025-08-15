@@ -1,4 +1,4 @@
-// app/api/chat/types.ts - TypeScript interfaces and types
+// app/api/chat/types.ts - Enhanced TypeScript interfaces and types
 
 export interface IntentAnalysis {
   intent: string;
@@ -26,6 +26,21 @@ export interface UserDetails {
   timezone: string;
   language: string;
   department: string;
+}
+
+export interface EnhancedUserDetails extends UserDetails {
+  manager?: {
+    id: string;
+    fullname: string;
+    email: string;
+    department?: string;
+  } | null;
+  additionalFields?: {
+    jobTitle?: string;
+    employeeId?: string;
+    location?: string;
+    directReports?: number;
+  };
 }
 
 export interface EnrollmentData {
@@ -70,4 +85,20 @@ export interface APIResponse {
   timestamp: string;
   totalCount?: number;
   helpRequest?: boolean;
+}
+
+export interface ManagerDetails {
+  id: string;
+  fullname: string;
+  email: string;
+  department?: string;
+  jobTitle?: string;
+  directReports?: number;
+}
+
+export interface UserSearchResult {
+  user: EnhancedUserDetails;
+  hasManagerInfo: boolean;
+  totalCount: number;
+  isDetailedView: boolean;
 }
