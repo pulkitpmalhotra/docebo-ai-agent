@@ -19,7 +19,6 @@ catch (error) {
         console.log(`❌ Course enrollment endpoint ${endpoint} failed:`, error);
         continue;
       }
-    }
     
     return {
       enrollments: [],
