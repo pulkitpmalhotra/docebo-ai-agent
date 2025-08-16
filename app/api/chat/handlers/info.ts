@@ -236,7 +236,7 @@ Please check:
     }
   }
 
-  static async handleCourseInfo(entities: any, api: DoceboAPI): Promise<NextResponse> {
+static async handleCourseInfo(entities: any, api: DoceboAPI): Promise<NextResponse> {
     try {
       const { courseId, courseName } = entities;
       const identifier = courseId || courseName;
@@ -255,6 +255,9 @@ Please check:
       const courseDisplayName = api.getCourseName(courseDetails);
       const actualCourseId = courseDetails.id || courseDetails.course_id || courseDetails.idCourse || 'Not available';
       
+      // Log the full API response to debug
+      console.log(`📋 Full course details API response:`, JSON.stringify(courseDetails, null, 2));
+      
       let responseMessage = `📚 **Course Information**: ${courseDisplayName}
 
 🆔 **Course ID**: ${actualCourseId}
@@ -267,61 +270,106 @@ Please check:
         responseMessage += `\n🏷️ **Code**: ${courseDetails.code}`;
       }
 
-      // FIXED: Add language field
+      // FIXED: Add language field - handle different possible formats
       if (courseDetails.language) {
-        responseMessage += `\n🌍 **Language**: ${courseDetails.language}`;
+        let languageText = 'Not specified';
+        if (typeof courseDetails.language === 'string') {
+          languageText = courseDetails.language;
+        } else if (typeof courseDetails.language === 'object' && courseDetails.language.name) {
+          languageText = courseDetails.language.name;
+        } else if (typeof courseDetails.language === 'object' && courseDetails.language.title) {
+          languageText = courseDetails.language.title;
+        } else if (courseDetails.lang_code) {
+          languageText = courseDetails.lang_code;
+        }
+        responseMessage += `\n🌍 **Language**: ${languageText}`;
+      } else if (courseDetails.lang_code) {
+        responseMessage += `\n🌍 **Language**: ${courseDetails.lang_code}`;
       }
 
       // FIXED: Add description
-      if (courseDetails.description) {
+      if (courseDetails.description && courseDetails.description.trim()) {
         responseMessage += `\n📄 **Description**: ${courseDetails.description.length > 200 ? courseDetails.description.substring(0, 200) + '...' : courseDetails.description}`;
       }
 
-      // FIXED: Add creation date
+      // FIXED: Add creation date - check multiple field formats
       if (courseDetails.creation_date) {
         responseMessage += `\n📅 **Created**: ${courseDetails.creation_date}`;
+      } else if (courseDetails.created_at) {
+        responseMessage += `\n📅 **Created**: ${courseDetails.created_at}`;
+      } else if (courseDetails.date_created) {
+        responseMessage += `\n📅 **Created**: ${courseDetails.date_created}`;
       }
 
-      // FIXED: Add last update date
+      // FIXED: Add last update date - check multiple field formats
       if (courseDetails.last_update) {
         responseMessage += `\n🔄 **Last Updated**: ${courseDetails.last_update}`;
+      } else if (courseDetails.updated_at) {
+        responseMessage += `\n🔄 **Last Updated**: ${courseDetails.updated_at}`;
+      } else if (courseDetails.date_updated) {
+        responseMessage += `\n🔄 **Last Updated**: ${courseDetails.date_updated}`;
+      } else if (courseDetails.last_modified) {
+        responseMessage += `\n🔄 **Last Updated**: ${courseDetails.last_modified}`;
       }
 
       // FIXED: Add duration from average_completion_time
-      if (courseDetails.average_completion_time !== undefined) {
+      if (courseDetails.average_completion_time !== undefined && courseDetails.average_completion_time !== null) {
         const duration = courseDetails.average_completion_time;
         if (duration > 0) {
           const hours = Math.floor(duration / 60);
           const minutes = duration % 60;
           responseMessage += `\n⏱️ **Average Duration**: ${hours > 0 ? `${hours}h ` : ''}${minutes}m`;
         } else {
-          responseMessage += `\n⏱️ **Average Duration**: Not available`;
+          responseMessage += `\n⏱️ **Average Duration**: Not set`;
         }
-      } else if (courseDetails.duration || courseDetails.estimated_duration) {
-        responseMessage += `\n⏱️ **Duration**: ${courseDetails.duration || courseDetails.estimated_duration}`;
+      } else if (courseDetails.duration) {
+        responseMessage += `\n⏱️ **Duration**: ${courseDetails.duration}`;
+      } else if (courseDetails.estimated_duration) {
+        responseMessage += `\n⏱️ **Duration**: ${courseDetails.estimated_duration}`;
       }
 
-      // FIXED: Add created by information
-      if (courseDetails.created_by && courseDetails.created_by.fullname) {
-        responseMessage += `\n👤 **Created By**: ${courseDetails.created_by.fullname}`;
+      // FIXED: Add created by information - handle different formats
+      if (courseDetails.created_by) {
+        if (typeof courseDetails.created_by === 'object' && courseDetails.created_by.fullname) {
+          responseMessage += `\n👤 **Created By**: ${courseDetails.created_by.fullname}`;
+        } else if (typeof courseDetails.created_by === 'string') {
+          responseMessage += `\n👤 **Created By**: ${courseDetails.created_by}`;
+        }
+      } else if (courseDetails.creator_name) {
+        responseMessage += `\n👤 **Created By**: ${courseDetails.creator_name}`;
       }
 
-      // FIXED: Add updated by information
-      if (courseDetails.updated_by && courseDetails.updated_by.fullname) {
-        responseMessage += `\n✏️ **Updated By**: ${courseDetails.updated_by.fullname}`;
+      // FIXED: Add updated by information - handle different formats
+      if (courseDetails.updated_by) {
+        if (typeof courseDetails.updated_by === 'object' && courseDetails.updated_by.fullname) {
+          responseMessage += `\n✏️ **Updated By**: ${courseDetails.updated_by.fullname}`;
+        } else if (typeof courseDetails.updated_by === 'string') {
+          responseMessage += `\n✏️ **Updated By**: ${courseDetails.updated_by}`;
+        }
+      } else if (courseDetails.last_updated_by) {
+        responseMessage += `\n✏️ **Updated By**: ${courseDetails.last_updated_by}`;
       }
 
-      // FIXED: Add skills information
+      // FIXED: Add skills information - handle different formats
       if (courseDetails.skills && Array.isArray(courseDetails.skills) && courseDetails.skills.length > 0) {
-        const skillNames = courseDetails.skills.map((skill: any) => skill.name || skill.skill_name || 'Unknown Skill').join(', ');
+        const skillNames = courseDetails.skills.map((skill: any) => {
+          if (typeof skill === 'string') return skill;
+          return skill.name || skill.skill_name || skill.title || 'Unknown Skill';
+        }).join(', ');
         responseMessage += `\n🎯 **Skills**: ${skillNames}`;
+      } else if (courseDetails.skill_names && Array.isArray(courseDetails.skill_names)) {
+        responseMessage += `\n🎯 **Skills**: ${courseDetails.skill_names.join(', ')}`;
       }
 
-      // FIXED: Add enrollment count
+      // FIXED: Add enrollment count - check multiple fields
       if (courseDetails.enrolled_count !== undefined) {
         responseMessage += `\n👥 **Enrollments**: ${courseDetails.enrolled_count}`;
       } else if (courseDetails.enrollment_count !== undefined) {
         responseMessage += `\n👥 **Enrollments**: ${courseDetails.enrollment_count}`;
+      } else if (courseDetails.enrollments !== undefined) {
+        responseMessage += `\n👥 **Enrollments**: ${courseDetails.enrollments}`;
+      } else if (courseDetails.total_enrollments !== undefined) {
+        responseMessage += `\n👥 **Enrollments**: ${courseDetails.total_enrollments}`;
       }
 
       // FIXED: Add enrollment link
@@ -342,6 +390,15 @@ Please check:
       // Add credits if available
       if (courseDetails.credits || courseDetails.credit) {
         responseMessage += `\n🎓 **Credits**: ${courseDetails.credits || courseDetails.credit}`;
+      }
+
+      // Add additional metadata if available
+      if (courseDetails.category) {
+        responseMessage += `\n📁 **Category**: ${courseDetails.category}`;
+      }
+
+      if (courseDetails.difficulty_level) {
+        responseMessage += `\n⭐ **Difficulty**: ${courseDetails.difficulty_level}`;
       }
 
       responseMessage += `\n\n💡 **Next Steps**: 
