@@ -34,6 +34,17 @@ export class SearchHandlers {
             fullname: userDetails.fullname
           });
           
+          // FIX: Check if userDetails has valid data before trying to get enhanced details
+          if (!userDetails.id || userDetails.id === 'Unknown' || !userDetails.email || userDetails.email === 'Not available') {
+            console.log(`❌ Invalid user details returned, user not found: ${email}`);
+            
+            return NextResponse.json({
+              response: `❌ **User Not Found**: "${email}"\n\nNo user found with that exact email address.\n\n💡 **Please check:**\n• Email spelling is correct\n• User exists in the system\n• Email domain is correct`,
+              success: false,
+              timestamp: new Date().toISOString()
+            });
+          }
+          
           // Get enhanced user details including manager info
           try {
             const enhancedUserDetails = await api.getEnhancedUserDetails(userDetails.id);
@@ -91,7 +102,15 @@ export class SearchHandlers {
           } catch (enhancedError) {
             console.error('❌ Error getting enhanced user details:', enhancedError);
             
-            // Fall back to basic user details
+            // Fall back to basic user details - but make sure they're valid
+            if (userDetails.email === 'Not available' || userDetails.fullname === 'Not available') {
+              return NextResponse.json({
+                response: `❌ **User Not Found**: "${email}"\n\nNo user found with that exact email address.`,
+                success: false,
+                timestamp: new Date().toISOString()
+              });
+            }
+            
             let basicResponse = `👤 **User Details**: ${userDetails.fullname}
 
 🆔 **User ID**: ${userDetails.id}
