@@ -485,12 +485,26 @@ export class DoceboAPI {
   }
 
   async searchUsers(searchText: string, limit: number = 100): Promise<any[]> {
-    const result = await this.apiRequest('/manage/v1/user', 'GET', null, {
-      search_text: searchText,
-      page_size: Math.min(limit, 200)
-    });
-    return result.data?.items || [];
+  console.log(`🔍 Searching users with: "${searchText}" (limit: ${limit})`);
+  
+  const result = await this.apiRequest('/manage/v1/user', 'GET', null, {
+    search_text: searchText,
+    page_size: Math.min(limit, 200),
+    // Add additional parameters to get more complete user data
+    sort_attr: 'user_id',
+    sort_dir: 'asc'
+  });
+  
+  const users = result.data?.items || [];
+  console.log(`📊 Found ${users.length} users from search`);
+  
+  // Log first user structure to understand the data format
+  if (users.length > 0) {
+    console.log(`📋 Sample user structure:`, JSON.stringify(users[0], null, 2));
   }
+  
+  return users;
+}
 
   async searchCourses(searchText: string, limit: number = 100): Promise<any[]> {
     const result = await this.apiRequest('/course/v1/courses', 'GET', null, {
@@ -542,100 +556,163 @@ export class DoceboAPI {
   // USER DETAILS AND ENROLLMENT DATA
   // ============================================================================
 
-  async getUserDetails(identifier: string): Promise<UserDetails> {
-    console.log(`🔍 Getting user details for: ${identifier}`);
+async getUserDetails(identifier: string): Promise<UserDetails> {
+  console.log(`🔍 Getting user details for: ${identifier}`);
+  
+  // Always use the list endpoint first to get complete user data including creation/update dates
+  try {
+    console.log(`📧 Searching using list endpoint: /manage/v1/user`);
+    const users = await this.apiRequest('/manage/v1/user', 'GET', null, {
+      search_text: identifier,
+      page_size: 25 // Get more results to ensure we find the right user
+    });
     
-    // If identifier is an email, search first
-    if (identifier.includes('@')) {
-      console.log(`📧 Searching by email: ${identifier}`);
-      const users = await this.apiRequest('/manage/v1/user', 'GET', null, {
-        search_text: identifier,
-        page_size: 10
-      });
+    console.log(`🔍 List endpoint returned ${users.data?.items?.length || 0} users`);
+    
+    if (users.data?.items?.length > 0) {
+      let user;
       
-      console.log(`🔍 Search returned ${users.data?.items?.length || 0} users`);
-      
-      if (users.data?.items?.length > 0) {
-        // Look for exact email match first
-        let user = users.data.items.find((u: any) => u.email?.toLowerCase() === identifier.toLowerCase());
-        
-        // If no exact match, take the first user (partial match)
-        if (!user) {
-          user = users.data.items[0];
-          console.log(`⚠️ No exact email match, using first result: ${user.email}`);
-        }
-        
-        console.log(`✅ Found user:`, JSON.stringify(user, null, 2));
-        return this.formatUserDetails(user);
+      // If identifier is an email, look for exact email match first
+      if (identifier.includes('@')) {
+        user = users.data.items.find((u: any) => u.email?.toLowerCase() === identifier.toLowerCase());
+        console.log(`📧 Looking for exact email match: ${identifier}`);
       } else {
-        throw new Error(`User not found: ${identifier}`);
+        // If identifier is an ID, look for exact ID match
+        user = users.data.items.find((u: any) => 
+          (u.user_id || u.id)?.toString() === identifier.toString()
+        );
+        console.log(`🆔 Looking for exact ID match: ${identifier}`);
       }
-    } else {
-      // Direct lookup by ID
-      console.log(`🆔 Looking up by ID: ${identifier}`);
+      
+      // If no exact match found, take the first result (partial match)
+      if (!user && users.data.items.length > 0) {
+        user = users.data.items[0];
+        console.log(`⚠️ No exact match, using first result: ${user.email || user.user_id}`);
+      }
+      
+      if (user) {
+        console.log(`✅ Found user from list endpoint:`, JSON.stringify(user, null, 2));
+        return this.formatUserDetails(user);
+      }
+    }
+    
+    // If not found in list endpoint, try direct lookup by ID as fallback
+    if (!identifier.includes('@') && /^\d+$/.test(identifier)) {
+      console.log(`🆔 Fallback: Direct lookup by ID: ${identifier}`);
       try {
         const userResult = await this.apiRequest(`/manage/v1/user/${identifier}`);
-        if (userResult.data) {
-          console.log(`✅ Found user by ID:`, JSON.stringify(userResult.data, null, 2));
-          return this.formatUserDetails(userResult.data);
+        if (userResult.data || userResult.user_data) {
+          console.log(`✅ Found user by direct ID lookup`);
+          const userData = userResult.data || userResult.user_data;
+          return this.formatUserDetails(userData);
         }
       } catch (error) {
-        console.warn(`Direct user lookup failed for ${identifier}, trying search...`);
+        console.warn(`❌ Direct user lookup failed for ${identifier}:`, error);
       }
-      
-      // Fallback to search
-      const users = await this.searchUsers(identifier, 10);
-      const user = users.find((u: any) => 
-        (u.user_id || u.id)?.toString() === identifier.toString()
-      );
-      
-      if (!user) {
-        throw new Error(`User not found: ${identifier}`);
-      }
-
-      return this.formatUserDetails(user);
     }
+    
+    throw new Error(`User not found: ${identifier}`);
+    
+  } catch (error) {
+    console.error(`❌ Error getting user details for ${identifier}:`, error);
+    throw error;
   }
+}
 
   private formatUserDetails(user: any): UserDetails {
-    console.log(`📝 Formatting user details:`, JSON.stringify(user, null, 2));
-    
-    return {
-      id: (user.user_id || user.id || user.idUser || 'Unknown').toString(),
-      fullname: user.fullname || 
-                `${user.firstname || user.first_name || ''} ${user.lastname || user.last_name || ''}`.trim() || 
-                user.name || 
-                'Not available',
-      email: user.email || 'Not available',
-      username: user.username || user.userid || 'Not available',
-      status: user.status === '1' || user.status === 1 ? 'Active' : 
-              user.status === '0' || user.status === 0 ? 'Inactive' : 
-              user.status ? `Status: ${user.status}` : 'Unknown',
-      level: user.level === 'godadmin' ? 'Superadmin' : 
-             user.level === 'powUser' ? 'Power User' :
-             user.level || 'User',
-      creationDate: user.register_date || 
-                    user.creation_date || 
-                    user.created_at || 
-                    user.date_created ||
-                    user.signup_date ||
-                    'Not available',
-      lastAccess: user.last_access_date || 
-                  user.last_access || 
-                  user.last_login || 
-                  user.lastAccess ||
-                  'Not available',
-      timezone: user.timezone || user.time_zone || 'Not specified',
-      language: user.language || 
-                user.lang_code || 
-                user.locale ||
-                'Not specified',
-      department: user.department || 
-                  user.orgchart_desc ||
-                  user.branch ||
-                  'Not specified'
-    };
+  console.log(`📝 Formatting user details from list endpoint:`, JSON.stringify(user, null, 2));
+  
+  // Handle different response structures - sometimes data is nested under 'user_data'
+  const userData = user.user_data || user;
+  
+  // Extract creation date from multiple possible fields (list endpoint specific)
+  const creationDate = userData.register_date || 
+                      userData.creation_date || 
+                      userData.created_at || 
+                      userData.date_created ||
+                      userData.signup_date ||
+                      userData.date_creation ||
+                      userData.registration_date ||
+                      'Not available';
+  
+  // Extract last update/access date from multiple possible fields (list endpoint specific)  
+  const lastAccess = userData.last_access_date || 
+                    userData.last_access || 
+                    userData.last_login || 
+                    userData.lastAccess ||
+                    userData.last_update ||
+                    userData.date_last_access ||
+                    userData.updated_at ||
+                    'Not available';
+  
+  // Build full name with better fallback logic
+  const firstName = userData.firstname || userData.first_name || '';
+  const lastName = userData.lastname || userData.last_name || '';
+  const fullName = userData.fullname || 
+                   (firstName && lastName ? `${firstName} ${lastName}`.trim() : '') ||
+                   userData.name || 
+                   userData.username ||
+                   userData.email ||
+                   'Not available';
+  
+  // Determine user status with better logic
+  let status = 'Unknown';
+  if (userData.status !== undefined) {
+    if (userData.status === '1' || userData.status === 1) status = 'Active';
+    else if (userData.status === '0' || userData.status === 0) status = 'Inactive';
+    else status = `Status: ${userData.status}`;
+  } else if (userData.valid !== undefined) {
+    if (userData.valid === '1' || userData.valid === 1) status = 'Active';
+    else if (userData.valid === '0' || userData.valid === 0) status = 'Inactive';
+  } else {
+    status = 'Active'; // Default assumption
   }
+  
+  // Determine user level with better mapping
+  let level = 'User';
+  if (userData.level !== undefined) {
+    switch (userData.level.toString()) {
+      case 'godadmin':
+      case '6':
+        level = 'Superadmin';
+        break;
+      case 'powUser':
+      case '4':
+        level = 'Power User';
+        break;
+      case '3':
+        level = 'Course Creator';
+        break;
+      case '1':
+        level = 'Learner';
+        break;
+      default:
+        level = userData.level ? `Level ${userData.level}` : 'User';
+    }
+  }
+  
+  return {
+    id: (userData.user_id || userData.id || userData.idUser || 'Unknown').toString(),
+    fullname: fullName,
+    email: userData.email || 'Not available',
+    username: userData.username || userData.userid || userData.user_id || 'Not available',
+    status: status,
+    level: level,
+    creationDate: creationDate,
+    lastAccess: lastAccess,
+    timezone: userData.timezone || userData.time_zone || 'Not specified',
+    language: userData.language || 
+              userData.lang_code || 
+              userData.lang_browsercode ||
+              userData.locale ||
+              'Not specified',
+    department: userData.department || 
+                userData.orgchart_desc ||
+                userData.branch ||
+                userData.organization ||
+                'Not specified'
+  };
+}
 
   async getUserCourseEnrollments(userId: string): Promise<any> {
     console.log(`📚 Getting course enrollments for user: ${userId}`);
