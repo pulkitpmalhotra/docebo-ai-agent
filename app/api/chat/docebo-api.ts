@@ -575,7 +575,6 @@ export class DoceboAPI {
   async getUserDetails(identifier: string): Promise<UserDetails> {
     console.log(`🔍 Getting user details for: ${identifier}`);
     
-    // Always use the list endpoint first to get complete user data including creation/update dates
     try {
       // For email searches, use exact email matching
       if (identifier.includes('@')) {
@@ -584,12 +583,13 @@ export class DoceboAPI {
         // First try with exact email search
         const exactEmailUsers = await this.apiRequest('/manage/v1/user', 'GET', null, {
           search_text: identifier,
-          page_size: 50, // Get more results to ensure we find exact match
+          page_size: 50,
           sort_attr: 'user_id',
           sort_dir: 'asc'
         });
         
         console.log(`🔍 Email search returned ${exactEmailUsers.data?.items?.length || 0} users`);
+        console.log(`🔍 Raw API response:`, JSON.stringify(exactEmailUsers, null, 2));
         
         if (exactEmailUsers.data?.items?.length > 0) {
           // Look for EXACT email match (case insensitive)
@@ -601,12 +601,17 @@ export class DoceboAPI {
           });
           
           if (exactMatch) {
-            console.log(`✅ Found EXACT email match:`, {
-              email: exactMatch.email,
-              fullname: exactMatch.fullname || `${exactMatch.firstname || ''} ${exactMatch.lastname || ''}`.trim(),
-              user_id: exactMatch.user_id
-            });
-            return this.formatUserDetails(exactMatch);
+            console.log(`✅ Found EXACT email match:`, JSON.stringify(exactMatch, null, 2));
+            
+            try {
+              const formattedUser = this.formatUserDetails(exactMatch);
+              console.log(`✅ Successfully formatted user:`, formattedUser);
+              return formattedUser;
+            } catch (formatError) {
+              console.error(`❌ Error formatting user details:`, formatError);
+              console.error(`❌ User data that failed formatting:`, JSON.stringify(exactMatch, null, 2));
+              throw formatError;
+            }
           } else {
             console.log(`❌ No exact email match found in ${exactEmailUsers.data.items.length} results`);
             // Log all emails found for debugging
@@ -625,6 +630,8 @@ export class DoceboAPI {
           sort_dir: 'asc'
         });
         
+        console.log(`🔍 Broader search returned ${broadUsers.data?.items?.length || 0} users`);
+        
         if (broadUsers.data?.items?.length > 0) {
           // Look for exact email match in broader results
           const exactMatch = broadUsers.data.items.find((u: any) => {
@@ -634,12 +641,17 @@ export class DoceboAPI {
           });
           
           if (exactMatch) {
-            console.log(`✅ Found exact email match in broader search:`, {
-              email: exactMatch.email,
-              fullname: exactMatch.fullname || `${exactMatch.firstname || ''} ${exactMatch.lastname || ''}`.trim(),
-              user_id: exactMatch.user_id
-            });
-            return this.formatUserDetails(exactMatch);
+            console.log(`✅ Found exact email match in broader search:`, JSON.stringify(exactMatch, null, 2));
+            
+            try {
+              const formattedUser = this.formatUserDetails(exactMatch);
+              console.log(`✅ Successfully formatted user from broader search:`, formattedUser);
+              return formattedUser;
+            } catch (formatError) {
+              console.error(`❌ Error formatting user details from broader search:`, formatError);
+              console.error(`❌ User data that failed formatting:`, JSON.stringify(exactMatch, null, 2));
+              throw formatError;
+            }
           }
         }
         
@@ -682,6 +694,7 @@ export class DoceboAPI {
         }
       }
       
+      console.error(`❌ User not found after all search attempts: ${identifier}`);
       throw new Error(`User not found: ${identifier}`);
       
     } catch (error) {
@@ -693,14 +706,50 @@ export class DoceboAPI {
   private formatUserDetails(user: any): UserDetails {
     console.log(`📝 Formatting user details:`, JSON.stringify(user, null, 2));
     
+    // Check if user object has the expected data structure
+    if (!user) {
+      console.error('❌ User data is null or undefined');
+      throw new Error('User data is null or undefined');
+    }
+
+    // Extract basic user information with better fallbacks and validation
+    const userId = (user.user_id || user.id || user.idUser || '').toString();
+    const email = user.email || '';
+    const fullname = user.fullname || 
+                    `${user.firstname || user.first_name || ''} ${user.lastname || user.last_name || ''}`.trim() || 
+                    user.name || '';
+
+    console.log(`📝 Extracted basic fields:`, {
+      userId: userId || 'MISSING',
+      email: email || 'MISSING',
+      fullname: fullname || 'MISSING'
+    });
+
+    // RELAXED validation - only require user ID and email
+    if (!userId) {
+      console.error('❌ Missing user ID:', user);
+      throw new Error('Missing user ID');
+    }
+
+    if (!email) {
+      console.error('❌ Missing email:', user);
+      throw new Error('Missing email');
+    }
+
+    // Don't fail if fullname is missing, just use a fallback
+    const finalFullname = fullname || `User ${userId}`;
+
+    console.log(`✅ Successfully extracted user data:`, {
+      userId,
+      email,
+      fullname: finalFullname
+    });
+    
     return {
-      id: (user.user_id || user.id || user.idUser || 'Unknown').toString(),
-      fullname: user.fullname || 
-                `${user.firstname || user.first_name || ''} ${user.lastname || user.last_name || ''}`.trim() || 
-                user.name || 
-                'Not available',
-      email: user.email || 'Not available',
-      username: user.username || user.userid || 'Not available',
+      id: userId,
+      fullname: finalFullname,
+      email: email,
+      username: user.username || user.userid || email, // fallback to email if username missing
       status: user.status === '1' || user.status === 1 ? 'Active' : 
               user.status === '0' || user.status === 0 ? 'Inactive' : 
               user.status ? `Status: ${user.status}` : 'Unknown',
@@ -729,7 +778,6 @@ export class DoceboAPI {
                   'Not specified'
     };
   }
-
   async getUserCourseEnrollments(userId: string): Promise<any> {
     console.log(`📚 Getting course enrollments for user: ${userId}`);
     
