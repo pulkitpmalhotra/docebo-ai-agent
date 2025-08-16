@@ -34,7 +34,7 @@ export class SearchHandlers {
             fullname: userDetails.fullname
           });
           
-          // FIX: Check if userDetails has valid data before trying to get enhanced details
+          // Check if userDetails has valid data before trying to get enhanced details
           if (!userDetails.id || userDetails.id === 'Unknown' || !userDetails.email || userDetails.email === 'Not available') {
             console.log(`❌ Invalid user details returned, user not found: ${email}`);
             
@@ -63,14 +63,14 @@ export class SearchHandlers {
 📅 **Created**: ${enhancedUserDetails.creationDate}
 🔄 **Last Access**: ${enhancedUserDetails.lastAccess}`;
 
-            // Add manager information if available
-           if (enhancedUserDetails.manager) {
-  responseMessage += `\n\n👥 **Management Structure**:
+            // Add manager information if available (WITHOUT EMAIL)
+            if (enhancedUserDetails.manager) {
+              responseMessage += `\n\n👥 **Management Structure**:
 📋 **Direct Manager**: ${enhancedUserDetails.manager.fullname}`;
-} else {
-  responseMessage += `\n\n👥 **Management Structure**:
+            } else {
+              responseMessage += `\n\n👥 **Management Structure**:
 📋 **Direct Manager**: Not assigned or not available`;
-}
+            }
 
             // Add additional fields if available
             if (enhancedUserDetails.additionalFields && Object.keys(enhancedUserDetails.additionalFields).length > 0) {
@@ -101,13 +101,8 @@ export class SearchHandlers {
             
           } catch (enhancedError) {
             console.error('❌ Error getting enhanced user details:', enhancedError);
-            console.error('❌ Enhanced error details:', {
-              message: enhancedError instanceof Error ? enhancedError.message : 'Unknown error',
-              userId: userDetails.id,
-              userEmail: userDetails.email
-            });
             
-            // Fall back to basic user details - but make sure they're valid
+            // Fall back to basic user details
             if (userDetails.email === 'Not available' || userDetails.fullname === 'Not available') {
               return NextResponse.json({
                 response: `❌ **User Not Found**: "${email}"\n\nNo user found with that exact email address.`,
@@ -389,3 +384,4 @@ ${learningPlans.length > 20 ? `\n... and ${learningPlans.length - 20} more learn
       });
     }
   }
+}
