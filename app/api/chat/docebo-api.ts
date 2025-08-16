@@ -759,10 +759,14 @@ export class DoceboAPI {
       level = 'Superadmin';
     } else if (userData.level === 'powUser' || userData.level === '2') {
       level = 'Power User';
-    } else if (userData.level === '6') {
-      level = 'User (Level 6)';
-    } else if (userData.level) {
-      level = `Level ${userData.level}`;
+    } else if (userData.level === '6' || userData.level === 6) {
+      level = 'User';
+    } else if (userData.level === '4' || userData.level === 4) {
+      level = 'Manager';
+    } else if (userData.level === '3' || userData.level === 3) {
+      level = 'Admin';
+    } else {
+      level = 'User';
     }
 
     console.log(`✅ Successfully extracted user data:`, {
