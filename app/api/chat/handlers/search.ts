@@ -249,24 +249,59 @@ ${users.length > 10 ? `\n... and ${users.length - 10} more users` : ''}
         });
       }
 
-      const courseList = courses.slice(0, 20).map((course: any, index: number) => {
+      // Enhanced course list with enrollment data
+      const courseListPromises = courses.slice(0, 20).map(async (course: any, index: number) => {
         const name = api.getCourseName(course);
         const courseId = course.id || course.course_id || course.idCourse || 'Unknown';
         const type = course.course_type || course.type || 'Course';
-        const status = course.status || course.course_status || 'Unknown';
+        
+        // FIXED: Proper status mapping
+        let status = 'Unknown';
+        const courseStatus = course.status || course.course_status;
+        if (courseStatus === 'published' || courseStatus === 'active' || courseStatus === '2') {
+          status = 'Published';
+        } else if (courseStatus === 'unpublished' || courseStatus === 'inactive' || courseStatus === '0') {
+          status = 'Draft';
+        } else if (courseStatus === 'suspended' || courseStatus === '1') {
+          status = 'Suspended';
+        } else if (courseStatus) {
+          status = courseStatus;
+        }
+        
+        // FIXED: Get enrollment count from enrolled_count field
+        let enrollments = 'Unknown';
+        if (course.enrolled_count !== undefined) {
+          enrollments = course.enrolled_count;
+        } else if (course.enrollment_count !== undefined) {
+          enrollments = course.enrollment_count;
+        } else if (course.enrollments !== undefined) {
+          enrollments = course.enrollments;
+        } else {
+          // Try to get detailed course info for enrollment count
+          try {
+            const detailedCourse = await api.getCourseDetails(courseId.toString());
+            enrollments = detailedCourse.enrolled_count || detailedCourse.enrollment_count || detailedCourse.enrollments || 'Unknown';
+          } catch (detailError) {
+            console.log(`Could not get enrollment details for course ${courseId}`);
+            enrollments = 'Unknown';
+          }
+        }
         
         let statusIcon = '📚';
-        if (status === 'active' || status === '2') statusIcon = '🟢';
-        else if (status === 'inactive' || status === '0') statusIcon = '🔴';
-        else if (status === 'suspended' || status === '1') statusIcon = '🟡';
+        if (status === 'Published') statusIcon = '🟢';
+        else if (status === 'Draft') statusIcon = '🟡';
+        else if (status === 'Suspended') statusIcon = '🔴';
         
-        return `${index + 1}. ${statusIcon} **${name}**\n   Type: ${type} • ID: ${courseId} • Status: ${status}`;
-      }).join('\n\n');
+        return `${index + 1}. ${statusIcon} **${name}**\n   Type: ${type} • ID: ${courseId} • Status: ${status} • Enrollments: ${enrollments}`;
+      });
+
+      // Wait for all course details to be fetched
+      const courseList = await Promise.all(courseListPromises);
 
       return NextResponse.json({
         response: `📚 **Course Search Results**: "${searchTerm}" (${courses.length} found)
 
-${courseList}
+${courseList.join('\n\n')}
 
 ${courses.length > 20 ? `\n... and ${courses.length - 20} more courses` : ''}
 
