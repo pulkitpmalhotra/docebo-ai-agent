@@ -94,15 +94,21 @@ export class DoceboAPI {
   // ENHANCED USER DETAILS WITH MANAGER INFORMATION
   // ============================================================================
 
-  async getEnhancedUserDetails(userId: string): Promise<EnhancedUserDetails> {
+    async getEnhancedUserDetails(userId: string): Promise<EnhancedUserDetails> {
     console.log(`👤 Getting enhanced user details for ID: ${userId}`);
     
     try {
-      // Get basic user details
+      // Get basic user details first
       const userDetails = await this.getUserDetails(userId);
       
-      // Get additional user information including manager
-      const enhancedInfo = await this.getUserAdditionalInfo(userId);
+      // Get additional user information including manager - with better error handling
+      let enhancedInfo: any = {};
+      try {
+        enhancedInfo = await this.getUserAdditionalInfo(userId);
+      } catch (enhancedError) {
+        console.warn(`⚠️ Could not get enhanced info for user ${userId}, using basic details:`, enhancedError);
+        // Continue with basic user details
+      }
       
       // Get manager details if manager ID is available
       let managerDetails = null;
@@ -140,24 +146,42 @@ export class DoceboAPI {
       let managerId: string | undefined;
       let additionalFields: any = {};
 
-      // Primary endpoint - try to get basic user details first
+      // FIX: Try the detailed user endpoint that includes manager information
       try {
-        console.log(`🔍 Trying primary endpoint: /manage/v1/user/${userId}`);
-        const userResult = await this.apiRequest(`/manage/v1/user/${userId}`);
+        console.log(`🔍 Trying detailed user endpoint: /manage/v1/user/${userId}`);
+        const detailedUserResult = await this.apiRequest(`/manage/v1/user/${userId}`);
         
-        if (userResult.data) {
-          const userData = userResult.data;
-          console.log(`✅ Primary endpoint successful for user ${userId}`);
+        if (detailedUserResult.data || detailedUserResult.user_data) {
+          const userData = detailedUserResult.data || detailedUserResult.user_data;
+          console.log(`✅ Detailed user endpoint successful for user ${userId}`);
           
-          // Look for manager information in main user data
+          // FIX: Look for manager information in multiple possible fields
           managerId = userData.manager_id || 
                      userData.managerId || 
                      userData.manager || 
                      userData.direct_manager ||
                      userData.manager_user_id ||
-                     userData.manager_username ||
-                     (userData.manager_first_name && userData.manager_last_name ? 
-                       `${userData.manager_first_name} ${userData.manager_last_name}` : undefined);
+                     userData.manager_username;
+          
+          // If no direct manager_id, look in manager_names object (from your logs)
+          if (!managerId && userData.manager_names) {
+            const directManager = userData.manager_names['1']; // Direct Manager
+            if (directManager) {
+              managerId = directManager.manager_id || directManager.manager_username;
+              console.log(`📋 Found manager in manager_names: ${directManager.manager_name} (ID: ${managerId})`);
+            }
+          }
+
+          // If no direct manager_id, look in managers array (from your logs)  
+          if (!managerId && userData.managers && Array.isArray(userData.managers)) {
+            const directManager = userData.managers.find((m: any) => 
+              m.manager_type_id === 1 || m.manager_title === 'Direct Manager'
+            );
+            if (directManager) {
+              managerId = directManager.manager_id;
+              console.log(`📋 Found manager in managers array: ${directManager.manager_name} (ID: ${managerId})`);
+            }
+          }
           
           // Extract additional fields from the main response
           if (userData.job_title || userData.jobTitle) {
@@ -170,13 +194,19 @@ export class DoceboAPI {
             additionalFields.location = userData.location || userData.office_location;
           }
 
-          console.log(`📋 Found manager info from primary endpoint: ${managerId || 'None'}`);
+          console.log(`📋 Found manager info from detailed endpoint: ${managerId || 'None'}`);
         }
-      } catch (primaryError) {
-        console.warn(`⚠️ Primary endpoint failed for user ${userId}:`, primaryError);
+      } catch (detailedError) {
+        console.warn(`⚠️ Detailed user endpoint failed for user ${userId}:`, detailedError);
       }
 
-      // Try additional field endpoints only if we don't have enough info
+      // FIX: If we found manager info, we're done - don't try other endpoints that might fail
+      if (managerId) {
+        console.log(`✅ Successfully found manager ID: ${managerId}`);
+        return { managerId, additionalFields };
+      }
+
+      // Only try additional field endpoints if we didn't get manager info from main endpoint
       const additionalFieldEndpoints = [
         `/manage/v1/user/${userId}/additional_fields`,
         `/manage/v1/user/${userId}/profile`,
@@ -229,60 +259,6 @@ export class DoceboAPI {
     }
   }
 
-  private processAdditionalField(field: any, additionalFields: any): void {
-    // Common field title patterns for job title
-    const jobTitlePatterns = ['job title', 'job_title', 'title', 'position', 'role'];
-    // Common field title patterns for employee ID
-    const employeeIdPatterns = ['employee id', 'employee_id', 'emp_id', 'staff_id', 'person_id'];
-    // Common field title patterns for location
-    const locationPatterns = ['location', 'office', 'site', 'workplace', 'office_location'];
-
-    const fieldTitle = (field.title || field.name || '').toLowerCase();
-    const fieldValue = field.value || field.default_value;
-
-    if (fieldValue) {
-      if (jobTitlePatterns.some(pattern => fieldTitle.includes(pattern))) {
-        additionalFields.jobTitle = fieldValue;
-      } else if (employeeIdPatterns.some(pattern => fieldTitle.includes(pattern))) {
-        additionalFields.employeeId = fieldValue;
-      } else if (locationPatterns.some(pattern => fieldTitle.includes(pattern))) {
-        additionalFields.location = fieldValue;
-      }
-    }
-  }
-
-  private processAdditionalFieldKeyValue(key: string, value: any, additionalFields: any): void {
-    if (!value) return;
-
-    const keyLower = key.toLowerCase();
-    
-    if (keyLower.includes('job') || keyLower.includes('title') || keyLower.includes('position')) {
-      additionalFields.jobTitle = value;
-    } else if (keyLower.includes('employee') || keyLower.includes('emp_id') || keyLower.includes('staff')) {
-      additionalFields.employeeId = value;
-    } else if (keyLower.includes('location') || keyLower.includes('office') || keyLower.includes('site')) {
-      additionalFields.location = value;
-    }
-  }
-
-  private processDirectFields(data: any, additionalFields: any): void {
-    // Direct field mapping for common field names
-    const fieldMappings = {
-      jobTitle: ['job_title', 'jobTitle', 'title', 'position', 'role'],
-      employeeId: ['employee_id', 'employeeId', 'emp_id', 'staff_id', 'person_id'],
-      location: ['location', 'office_location', 'workplace', 'site', 'office']
-    };
-
-    Object.entries(fieldMappings).forEach(([targetField, sourceFields]) => {
-      for (const sourceField of sourceFields) {
-        if (data[sourceField]) {
-          additionalFields[targetField] = data[sourceField];
-          break;
-        }
-      }
-    });
-  }
-
   private async getManagerDetails(managerId: string): Promise<{
     id: string;
     fullname: string;
@@ -309,8 +285,8 @@ export class DoceboAPI {
         try {
           console.log(`🆔 Looking up manager by ID: ${managerId}`);
           const managerResult = await this.apiRequest(`/manage/v1/user/${managerId}`);
-          if (managerResult.data) {
-            const manager = managerResult.data;
+          if (managerResult.data || managerResult.user_data) {
+            const manager = managerResult.data || managerResult.user_data;
             return {
               id: manager.user_id || manager.id || managerId,
               fullname: manager.fullname || `${manager.firstname || ''} ${manager.lastname || ''}`.trim() || 'Manager',
