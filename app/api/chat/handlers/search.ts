@@ -46,6 +46,7 @@ export class SearchHandlers {
           }
           
           // Get enhanced user details including manager info
+          console.log(`🔍 Attempting to get enhanced details for user ID: ${userDetails.id}`);
           try {
             const enhancedUserDetails = await api.getEnhancedUserDetails(userDetails.id);
             
@@ -101,6 +102,11 @@ export class SearchHandlers {
             
           } catch (enhancedError) {
             console.error('❌ Error getting enhanced user details:', enhancedError);
+            console.error('❌ Enhanced error details:', {
+              message: enhancedError instanceof Error ? enhancedError.message : 'Unknown error',
+              userId: userDetails.id,
+              userEmail: userDetails.email
+            });
             
             // Fall back to basic user details - but make sure they're valid
             if (userDetails.email === 'Not available' || userDetails.fullname === 'Not available') {
@@ -224,6 +230,9 @@ ${users.length > 10 ? `\n... and ${users.length - 10} more users` : ''}
       });
     }
   }
+
+  // ... other methods remain the same
+}
 
   static async handleCourseSearch(entities: any, api: DoceboAPI): Promise<NextResponse> {
     try {
