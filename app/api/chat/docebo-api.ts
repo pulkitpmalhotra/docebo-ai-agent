@@ -380,212 +380,139 @@ export class DoceboAPI {
   }
 
   // ============================================================================
-  // EXISTING METHODS (formatUserDetails and getUserDetails with fixes)
+  // ENROLLMENT MANAGEMENT METHODS
   // ============================================================================
 
-  private formatUserDetails(user: any): UserDetails {
-    console.log(`📝 Formatting user details:`, JSON.stringify(user, null, 2));
+  async enrollUserInCourse(userId: string, courseId: string, options: any = {}): Promise<any> {
+    console.log(`📚 Enrolling user ${userId} in course ${courseId}`);
     
-    // FIX: Check if user object has the expected data structure
-    if (!user) {
-      throw new Error('User data is null or undefined');
-    }
+    try {
+      const enrollmentBody = {
+        users: [userId],
+        courses: [courseId],
+        level: options.level || 'student',
+        assignment_type: options.assignmentType || 'required'
+      };
 
-    // Extract basic user information with proper fallbacks
-    const userId = (user.user_id || user.id || user.idUser || '').toString();
-    const email = user.email || '';
-    const fullname = user.fullname || 
-                    `${user.firstname || user.first_name || ''} ${user.lastname || user.last_name || ''}`.trim() || 
-                    user.name || '';
-
-    // FIX: Validate that we have minimum required data
-    if (!userId || !email || !fullname) {
-      console.error('❌ Invalid user data - missing required fields:', {
-        userId: userId || 'MISSING',
-        email: email || 'MISSING', 
-        fullname: fullname || 'MISSING'
-      });
-      throw new Error(`Incomplete user data: missing ${!userId ? 'ID' : !email ? 'email' : 'name'}`);
+      const result = await this.apiRequest('/learn/v1/enrollments', 'POST', enrollmentBody);
+      return { success: true, result: result.data || result };
+    } catch (error) {
+      console.error('Course enrollment failed:', error);
+      throw error;
     }
-
-    // FIX: Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      console.error('❌ Invalid email format:', email);
-      throw new Error(`Invalid email format: ${email}`);
-    }
-    
-    return {
-      id: userId,
-      fullname: fullname,
-      email: email,
-      username: user.username || user.userid || email, // fallback to email if username missing
-      status: user.status === '1' || user.status === 1 ? 'Active' : 
-              user.status === '0' || user.status === 0 ? 'Inactive' : 
-              user.status ? `Status: ${user.status}` : 'Unknown',
-      level: user.level === 'godadmin' ? 'Superadmin' : 
-             user.level === 'powUser' ? 'Power User' :
-             user.level || 'User',
-      creationDate: user.register_date || 
-                    user.creation_date || 
-                    user.created_at || 
-                    user.date_created ||
-                    user.signup_date ||
-                    'Not available',
-      lastAccess: user.last_access_date || 
-                  user.last_access || 
-                  user.last_login || 
-                  user.lastAccess ||
-                  'Not available',
-      timezone: user.timezone || user.time_zone || 'Not specified',
-      language: user.language || 
-                user.lang_code || 
-                user.locale ||
-                'Not specified',
-      department: user.department || 
-                  user.orgchart_desc ||
-                  user.branch ||
-                  'Not specified'
-    };
   }
 
-  async getUserDetails(identifier: string): Promise<UserDetails> {
-    console.log(`🔍 Getting user details for: ${identifier}`);
+  async enrollUserInLearningPlan(userId: string, learningPlanId: string, options: any = {}): Promise<any> {
+    console.log(`📋 Enrolling user ${userId} in learning plan ${learningPlanId}`);
     
-    // Always use the list endpoint first to get complete user data including creation/update dates
     try {
-      // For email searches, use exact email matching
-      if (identifier.includes('@')) {
-        console.log(`📧 Searching for exact email: ${identifier}`);
-        
-        // First try with exact email search
-        const exactEmailUsers = await this.apiRequest('/manage/v1/user', 'GET', null, {
-          search_text: identifier,
-          page_size: 50, // Get more results to ensure we find exact match
-          sort_attr: 'user_id',
-          sort_dir: 'asc'
-        });
-        
-        console.log(`🔍 Email search returned ${exactEmailUsers.data?.items?.length || 0} users`);
-        
-        if (exactEmailUsers.data?.items?.length > 0) {
-          // Look for EXACT email match (case insensitive)
-          const exactMatch = exactEmailUsers.data.items.find((u: any) => {
-            const userEmail = (u.email || '').toLowerCase();
-            const searchEmail = identifier.toLowerCase();
-            console.log(`🔍 Comparing: "${userEmail}" === "${searchEmail}"`);
-            return userEmail === searchEmail;
-          });
-          
-          if (exactMatch) {
-            console.log(`✅ Found EXACT email match:`, {
-              email: exactMatch.email,
-              fullname: exactMatch.fullname || `${exactMatch.firstname || ''} ${exactMatch.lastname || ''}`.trim(),
-              user_id: exactMatch.user_id
-            });
-            
-            // FIX: Validate the match before formatting
-            if (!exactMatch.email || !exactMatch.user_id || 
-                (!exactMatch.fullname && !exactMatch.firstname && !exactMatch.lastname)) {
-              console.error('❌ Found user but missing critical data:', exactMatch);
-              throw new Error(`User found but has incomplete data`);
-            }
-            
-            return this.formatUserDetails(exactMatch);
-          } else {
-            console.log(`❌ No exact email match found in ${exactEmailUsers.data.items.length} results`);
-            // Log all emails found for debugging
-            exactEmailUsers.data.items.forEach((user: any, index: number) => {
-              console.log(`📧 Result ${index + 1}: ${user.email} (${user.fullname || user.firstname + ' ' + user.lastname})`);
-            });
-          }
-        }
-        
-        // If no exact match found, try broader search
-        console.log(`🔍 Trying broader search for: ${identifier}`);
-        const broadUsers = await this.apiRequest('/manage/v1/user', 'GET', null, {
-          search_text: identifier.split('@')[0], // Search with just username part
-          page_size: 100,
-          sort_attr: 'user_id',
-          sort_dir: 'asc'
-        });
-        
-        if (broadUsers.data?.items?.length > 0) {
-          // Look for exact email match in broader results
-          const exactMatch = broadUsers.data.items.find((u: any) => {
-            const userEmail = (u.email || '').toLowerCase();
-            const searchEmail = identifier.toLowerCase();
-            return userEmail === searchEmail;
-          });
-          
-          if (exactMatch) {
-            console.log(`✅ Found exact email match in broader search:`, {
-              email: exactMatch.email,
-              fullname: exactMatch.fullname || `${exactMatch.firstname || ''} ${exactMatch.lastname || ''}`.trim(),
-              user_id: exactMatch.user_id
-            });
-            
-            // FIX: Validate the match before formatting
-            if (!exactMatch.email || !exactMatch.user_id || 
-                (!exactMatch.fullname && !exactMatch.firstname && !exactMatch.lastname)) {
-              console.error('❌ Found user but missing critical data:', exactMatch);
-              throw new Error(`User found but has incomplete data`);
-            }
-            
-            return this.formatUserDetails(exactMatch);
-          }
-        }
-        
-      } else {
-        // For ID searches, use exact ID matching
-        console.log(`🆔 Searching for exact ID: ${identifier}`);
-        
-        const users = await this.apiRequest('/manage/v1/user', 'GET', null, {
-          search_text: identifier,
-          page_size: 25,
-          sort_attr: 'user_id',
-          sort_dir: 'asc'
-        });
-        
-        if (users.data?.items?.length > 0) {
-          // Look for exact ID match
-          const exactMatch = users.data.items.find((u: any) => 
-            (u.user_id || u.id)?.toString() === identifier.toString()
-          );
-          
-          if (exactMatch) {
-            console.log(`✅ Found exact ID match:`, exactMatch.user_id);
-            return this.formatUserDetails(exactMatch);
-          }
-        }
-        
-        // If not found in list endpoint, try direct lookup by ID as fallback
-        if (/^\d+$/.test(identifier)) {
-          console.log(`🆔 Fallback: Direct lookup by ID: ${identifier}`);
-          try {
-            const userResult = await this.apiRequest(`/manage/v1/user/${identifier}`);
-            if (userResult.data || userResult.user_data) {
-              console.log(`✅ Found user by direct ID lookup`);
-              const userData = userResult.data || userResult.user_data;
-              return this.formatUserDetails(userData);
-            }
-          } catch (error) {
-            console.warn(`❌ Direct user lookup failed for ${identifier}:`, error);
-          }
-        }
-      }
-      
-      throw new Error(`User not found: ${identifier}`);
-      
+      const enrollmentBody = {
+        users: [userId],
+        learning_plans: [learningPlanId],
+        assignment_type: options.assignmentType || 'required'
+      };
+
+      const result = await this.apiRequest('/learningplan/v1/learningplans/enrollments', 'POST', enrollmentBody);
+      return { success: true, result: result.data || result };
     } catch (error) {
-      console.error(`❌ Error getting user details for ${identifier}:`, error);
+      console.error('Learning plan enrollment failed:', error);
+      throw error;
+    }
+  }
+
+  async unenrollUserFromCourse(userId: string, courseId: string): Promise<any> {
+    console.log(`❌ Unenrolling user ${userId} from course ${courseId}`);
+    
+    try {
+      const result = await this.apiRequest(`/learn/v1/enrollments`, 'DELETE', null, {
+        user_id: userId,
+        course_id: courseId
+      });
+      return { success: true, result: result.data || result };
+    } catch (error) {
+      console.error('Course unenrollment failed:', error);
+      throw error;
+    }
+  }
+
+  async unenrollUserFromLearningPlan(userId: string, learningPlanId: string): Promise<any> {
+    console.log(`❌ Unenrolling user ${userId} from learning plan ${learningPlanId}`);
+    
+    try {
+      const result = await this.apiRequest(`/learningplan/v1/learningplans/enrollments`, 'DELETE', null, {
+        user_id: userId,
+        learning_plan_id: learningPlanId
+      });
+      return { success: true, result: result.data || result };
+    } catch (error) {
+      console.error('Learning plan unenrollment failed:', error);
       throw error;
     }
   }
 
   // ============================================================================
-  // OTHER EXISTING METHODS (keeping them for completeness)
+  // SEARCH AND RETRIEVAL METHODS
   // ============================================================================
+
+  async findCourseByIdentifier(identifier: string): Promise<any> {
+    console.log(`🔍 Finding course: "${identifier}"`);
+    
+    if (/^\d+$/.test(identifier)) {
+      try {
+        const directResult = await this.apiRequest(`/course/v1/courses/${identifier}`, 'GET');
+        if (directResult.data) {
+          console.log(`✅ Found course by direct ID: ${identifier}`);
+          return directResult.data;
+        }
+      } catch (error) {
+        console.log(`❌ Direct course lookup failed, trying search...`);
+      }
+    }
+    
+    const courses = await this.searchCourses(identifier, 100);
+    const course = courses.find((c: any) => 
+      c.id?.toString() === identifier ||
+      c.course_id?.toString() === identifier ||
+      this.getCourseName(c).toLowerCase().includes(identifier.toLowerCase()) ||
+      c.code === identifier
+    );
+    
+    if (!course) {
+      throw new Error(`Course not found: ${identifier}`);
+    }
+    
+    return course;
+  }
+
+  async findLearningPlanByIdentifier(identifier: string): Promise<any> {
+    console.log(`🔍 Finding learning plan: "${identifier}"`);
+    
+    if (/^\d+$/.test(identifier)) {
+      try {
+        const directResult = await this.apiRequest(`/learningplan/v1/learningplans/${identifier}`, 'GET');
+        if (directResult.data) {
+          console.log(`✅ Found learning plan by direct ID: ${identifier}`);
+          return directResult.data;
+        }
+      } catch (error) {
+        console.log(`❌ Direct learning plan lookup failed, trying search...`);
+      }
+    }
+    
+    const learningPlans = await this.searchLearningPlans(identifier, 100);
+    const lp = learningPlans.find((plan: any) => 
+      plan.learning_plan_id?.toString() === identifier ||
+      plan.id?.toString() === identifier ||
+      this.getLearningPlanName(plan).toLowerCase().includes(identifier.toLowerCase()) ||
+      plan.code === identifier
+    );
+    
+    if (!lp) {
+      throw new Error(`Learning plan not found: ${identifier}`);
+    }
+    
+    return lp;
+  }
 
   async searchUsers(searchText: string, limit: number = 100): Promise<any[]> {
     const result = await this.apiRequest('/manage/v1/user', 'GET', null, {
@@ -641,25 +568,11 @@ export class DoceboAPI {
     }
   }
 
-  getCourseName(course: any): string {
-    return course.title || course.course_name || course.name || 'Unknown Course';
-  }
-
-  getLearningPlanName(lp: any): string {
-    return lp.title || 
-           lp.name || 
-           lp.learning_plan_name || 
-           lp.lp_name || 
-           lp.learningplan_name ||
-           lp.plan_name ||
-           'Unknown Learning Plan';
-  }
-
   // ============================================================================
   // USER DETAILS AND ENROLLMENT DATA
   // ============================================================================
 
-async getUserDetails(identifier: string): Promise<UserDetails> {
+  async getUserDetails(identifier: string): Promise<UserDetails> {
     console.log(`🔍 Getting user details for: ${identifier}`);
     
     // Always use the list endpoint first to get complete user data including creation/update dates
@@ -693,14 +606,6 @@ async getUserDetails(identifier: string): Promise<UserDetails> {
               fullname: exactMatch.fullname || `${exactMatch.firstname || ''} ${exactMatch.lastname || ''}`.trim(),
               user_id: exactMatch.user_id
             });
-            
-            // FIX: Validate the match before formatting
-            if (!exactMatch.email || !exactMatch.user_id || 
-                (!exactMatch.fullname && !exactMatch.firstname && !exactMatch.lastname)) {
-              console.error('❌ Found user but missing critical data:', exactMatch);
-              throw new Error(`User found but has incomplete data`);
-            }
-            
             return this.formatUserDetails(exactMatch);
           } else {
             console.log(`❌ No exact email match found in ${exactEmailUsers.data.items.length} results`);
@@ -734,14 +639,6 @@ async getUserDetails(identifier: string): Promise<UserDetails> {
               fullname: exactMatch.fullname || `${exactMatch.firstname || ''} ${exactMatch.lastname || ''}`.trim(),
               user_id: exactMatch.user_id
             });
-            
-            // FIX: Validate the match before formatting
-            if (!exactMatch.email || !exactMatch.user_id || 
-                (!exactMatch.fullname && !exactMatch.firstname && !exactMatch.lastname)) {
-              console.error('❌ Found user but missing critical data:', exactMatch);
-              throw new Error(`User found but has incomplete data`);
-            }
-            
             return this.formatUserDetails(exactMatch);
           }
         }
@@ -793,43 +690,17 @@ async getUserDetails(identifier: string): Promise<UserDetails> {
     }
   }
 
-private formatUserDetails(user: any): UserDetails {
+  private formatUserDetails(user: any): UserDetails {
     console.log(`📝 Formatting user details:`, JSON.stringify(user, null, 2));
     
-    // FIX: Check if user object has the expected data structure
-    if (!user) {
-      throw new Error('User data is null or undefined');
-    }
-
-    // Extract basic user information with proper fallbacks
-    const userId = (user.user_id || user.id || user.idUser || '').toString();
-    const email = user.email || '';
-    const fullname = user.fullname || 
-                    `${user.firstname || user.first_name || ''} ${user.lastname || user.last_name || ''}`.trim() || 
-                    user.name || '';
-
-    // FIX: Validate that we have minimum required data
-    if (!userId || !email || !fullname) {
-      console.error('❌ Invalid user data - missing required fields:', {
-        userId: userId || 'MISSING',
-        email: email || 'MISSING', 
-        fullname: fullname || 'MISSING'
-      });
-      throw new Error(`Incomplete user data: missing ${!userId ? 'ID' : !email ? 'email' : 'name'}`);
-    }
-
-    // FIX: Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      console.error('❌ Invalid email format:', email);
-      throw new Error(`Invalid email format: ${email}`);
-    }
-    
     return {
-      id: userId,
-      fullname: fullname,
-      email: email,
-      username: user.username || user.userid || email, // fallback to email if username missing
+      id: (user.user_id || user.id || user.idUser || 'Unknown').toString(),
+      fullname: user.fullname || 
+                `${user.firstname || user.first_name || ''} ${user.lastname || user.last_name || ''}`.trim() || 
+                user.name || 
+                'Not available',
+      email: user.email || 'Not available',
+      username: user.username || user.userid || 'Not available',
       status: user.status === '1' || user.status === 1 ? 'Active' : 
               user.status === '0' || user.status === 0 ? 'Inactive' : 
               user.status ? `Status: ${user.status}` : 'Unknown',
