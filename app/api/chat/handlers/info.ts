@@ -253,49 +253,101 @@ Please check:
 
       const courseDetails = await api.getCourseDetails(identifier);
       const courseDisplayName = api.getCourseName(courseDetails);
+      const courseId = courseDetails.id || courseDetails.course_id || courseDetails.idCourse || 'Not available';
       
       let responseMessage = `📚 **Course Information**: ${courseDisplayName}
 
-🆔 **Course ID**: ${courseDetails.id || courseDetails.course_id || courseDetails.idCourse || 'Not available'}
+🆔 **Course ID**: ${courseId}
 📝 **Name**: ${courseDisplayName}
 📂 **Type**: ${courseDetails.course_type || courseDetails.type || 'Not specified'}
 📊 **Status**: ${courseDetails.status || courseDetails.course_status || 'Not specified'}`;
 
-      if (courseDetails.description) {
-        responseMessage += `\n📄 **Description**: ${courseDetails.description.length > 200 ? courseDetails.description.substring(0, 200) + '...' : courseDetails.description}`;
-      }
-
+      // FIXED: Add code field
       if (courseDetails.code) {
-        responseMessage += `\n🔗 **Course Code**: ${courseDetails.code}`;
+        responseMessage += `\n🏷️ **Code**: ${courseDetails.code}`;
       }
 
+      // FIXED: Add language field
       if (courseDetails.language) {
         responseMessage += `\n🌍 **Language**: ${courseDetails.language}`;
       }
 
-      if (courseDetails.credits || courseDetails.credit) {
-        responseMessage += `\n🎓 **Credits**: ${courseDetails.credits || courseDetails.credit}`;
+      // FIXED: Add description
+      if (courseDetails.description) {
+        responseMessage += `\n📄 **Description**: ${courseDetails.description.length > 200 ? courseDetails.description.substring(0, 200) + '...' : courseDetails.description}`;
       }
 
-      if (courseDetails.duration || courseDetails.estimated_duration) {
+      // FIXED: Add creation date
+      if (courseDetails.creation_date) {
+        responseMessage += `\n📅 **Created**: ${courseDetails.creation_date}`;
+      }
+
+      // FIXED: Add last update date
+      if (courseDetails.last_update) {
+        responseMessage += `\n🔄 **Last Updated**: ${courseDetails.last_update}`;
+      }
+
+      // FIXED: Add duration from average_completion_time
+      if (courseDetails.average_completion_time !== undefined) {
+        const duration = courseDetails.average_completion_time;
+        if (duration > 0) {
+          const hours = Math.floor(duration / 60);
+          const minutes = duration % 60;
+          responseMessage += `\n⏱️ **Average Duration**: ${hours > 0 ? `${hours}h ` : ''}${minutes}m`;
+        } else {
+          responseMessage += `\n⏱️ **Average Duration**: Not available`;
+        }
+      } else if (courseDetails.duration || courseDetails.estimated_duration) {
         responseMessage += `\n⏱️ **Duration**: ${courseDetails.duration || courseDetails.estimated_duration}`;
       }
 
-      if (courseDetails.enrollment_count || courseDetails.enrolled_users) {
-        responseMessage += `\n👥 **Enrollments**: ${courseDetails.enrollment_count || courseDetails.enrolled_users}`;
+      // FIXED: Add created by information
+      if (courseDetails.created_by && courseDetails.created_by.fullname) {
+        responseMessage += `\n👤 **Created By**: ${courseDetails.created_by.fullname}`;
       }
 
+      // FIXED: Add updated by information
+      if (courseDetails.updated_by && courseDetails.updated_by.fullname) {
+        responseMessage += `\n✏️ **Updated By**: ${courseDetails.updated_by.fullname}`;
+      }
+
+      // FIXED: Add skills information
+      if (courseDetails.skills && Array.isArray(courseDetails.skills) && courseDetails.skills.length > 0) {
+        const skillNames = courseDetails.skills.map((skill: any) => skill.name || skill.skill_name || 'Unknown Skill').join(', ');
+        responseMessage += `\n🎯 **Skills**: ${skillNames}`;
+      }
+
+      // FIXED: Add enrollment count
+      if (courseDetails.enrolled_count !== undefined) {
+        responseMessage += `\n👥 **Enrollments**: ${courseDetails.enrolled_count}`;
+      } else if (courseDetails.enrollment_count !== undefined) {
+        responseMessage += `\n👥 **Enrollments**: ${courseDetails.enrollment_count}`;
+      }
+
+      // FIXED: Add enrollment link
+      if (courseDetails.deeplink && courseDetails.deeplink.enabled && courseDetails.deeplink.hash) {
+        const enrollmentLink = `https://googlesandbox.docebosaas.com/learn/course/${courseId}/${courseDetails.slug || 'course'}?generatedby=user_id&hash=${courseDetails.deeplink.hash}`;
+        responseMessage += `\n🔗 **Enrollment Link**: [Direct Enrollment](${enrollmentLink})`;
+      }
+
+      // FIXED: Add course editing URL
+      const courseEditUrl = `https://googlesandbox.docebosaas.com/course/edit/${courseId}`;
+      responseMessage += `\n⚙️ **Course Management**: [Edit Course](${courseEditUrl})`;
+
+      // Add completion tracking if available
       if (courseDetails.completion_tracking !== undefined) {
         responseMessage += `\n📈 **Completion Tracking**: ${courseDetails.completion_tracking ? 'Enabled' : 'Disabled'}`;
       }
 
-      if (courseDetails.creation_date || courseDetails.created_at) {
-        responseMessage += `\n📅 **Created**: ${courseDetails.creation_date || courseDetails.created_at}`;
+      // Add credits if available
+      if (courseDetails.credits || courseDetails.credit) {
+        responseMessage += `\n🎓 **Credits**: ${courseDetails.credits || courseDetails.credit}`;
       }
 
       responseMessage += `\n\n💡 **Next Steps**: 
 • "Who is enrolled in ${courseDisplayName}" to see enrollments
-• "Enroll [user] in course ${courseDisplayName}" to enroll users`;
+• "Enroll [user] in course ${courseDisplayName}" to enroll users
+• "Course enrollment statistics for ${courseDisplayName}" for detailed analytics`;
 
       return NextResponse.json({
         response: responseMessage,
@@ -303,7 +355,9 @@ Please check:
         data: {
           course: courseDetails,
           courseName: courseDisplayName,
-          courseId: courseDetails.id || courseDetails.course_id || courseDetails.idCourse
+          courseId: courseId,
+          enrollmentLink: courseDetails.deeplink?.enabled ? `https://googlesandbox.docebosaas.com/learn/course/${courseId}/${courseDetails.slug || 'course'}?generatedby=user_id&hash=${courseDetails.deeplink?.hash}` : null,
+          editUrl: `https://googlesandbox.docebosaas.com/course/edit/${courseId}`
         },
         timestamp: new Date().toISOString()
       });
