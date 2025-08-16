@@ -561,53 +561,108 @@ async getUserDetails(identifier: string): Promise<UserDetails> {
   
   // Always use the list endpoint first to get complete user data including creation/update dates
   try {
-    console.log(`📧 Searching using list endpoint: /manage/v1/user`);
-    const users = await this.apiRequest('/manage/v1/user', 'GET', null, {
-      search_text: identifier,
-      page_size: 25 // Get more results to ensure we find the right user
-    });
-    
-    console.log(`🔍 List endpoint returned ${users.data?.items?.length || 0} users`);
-    
-    if (users.data?.items?.length > 0) {
-      let user;
+    // For email searches, use exact email matching
+    if (identifier.includes('@')) {
+      console.log(`📧 Searching for exact email: ${identifier}`);
       
-      // If identifier is an email, look for exact email match first
-      if (identifier.includes('@')) {
-        user = users.data.items.find((u: any) => u.email?.toLowerCase() === identifier.toLowerCase());
-        console.log(`📧 Looking for exact email match: ${identifier}`);
-      } else {
-        // If identifier is an ID, look for exact ID match
-        user = users.data.items.find((u: any) => 
+      // First try with exact email search
+      const exactEmailUsers = await this.apiRequest('/manage/v1/user', 'GET', null, {
+        search_text: identifier,
+        page_size: 50, // Get more results to ensure we find exact match
+        sort_attr: 'user_id',
+        sort_dir: 'asc'
+      });
+      
+      console.log(`🔍 Email search returned ${exactEmailUsers.data?.items?.length || 0} users`);
+      
+      if (exactEmailUsers.data?.items?.length > 0) {
+        // Look for EXACT email match (case insensitive)
+        const exactMatch = exactEmailUsers.data.items.find((u: any) => {
+          const userEmail = (u.email || '').toLowerCase();
+          const searchEmail = identifier.toLowerCase();
+          console.log(`🔍 Comparing: "${userEmail}" === "${searchEmail}"`);
+          return userEmail === searchEmail;
+        });
+        
+        if (exactMatch) {
+          console.log(`✅ Found EXACT email match:`, {
+            email: exactMatch.email,
+            fullname: exactMatch.fullname || `${exactMatch.firstname || ''} ${exactMatch.lastname || ''}`.trim(),
+            user_id: exactMatch.user_id
+          });
+          return this.formatUserDetails(exactMatch);
+        } else {
+          console.log(`❌ No exact email match found in ${exactEmailUsers.data.items.length} results`);
+          // Log all emails found for debugging
+          exactEmailUsers.data.items.forEach((user: any, index: number) => {
+            console.log(`📧 Result ${index + 1}: ${user.email} (${user.fullname || user.firstname + ' ' + user.lastname})`);
+          });
+        }
+      }
+      
+      // If no exact match found, try broader search
+      console.log(`🔍 Trying broader search for: ${identifier}`);
+      const broadUsers = await this.apiRequest('/manage/v1/user', 'GET', null, {
+        search_text: identifier.split('@')[0], // Search with just username part
+        page_size: 100,
+        sort_attr: 'user_id',
+        sort_dir: 'asc'
+      });
+      
+      if (broadUsers.data?.items?.length > 0) {
+        // Look for exact email match in broader results
+        const exactMatch = broadUsers.data.items.find((u: any) => {
+          const userEmail = (u.email || '').toLowerCase();
+          const searchEmail = identifier.toLowerCase();
+          return userEmail === searchEmail;
+        });
+        
+        if (exactMatch) {
+          console.log(`✅ Found exact email match in broader search:`, {
+            email: exactMatch.email,
+            fullname: exactMatch.fullname || `${exactMatch.firstname || ''} ${exactMatch.lastname || ''}`.trim(),
+            user_id: exactMatch.user_id
+          });
+          return this.formatUserDetails(exactMatch);
+        }
+      }
+      
+    } else {
+      // For ID searches, use exact ID matching
+      console.log(`🆔 Searching for exact ID: ${identifier}`);
+      
+      const users = await this.apiRequest('/manage/v1/user', 'GET', null, {
+        search_text: identifier,
+        page_size: 25,
+        sort_attr: 'user_id',
+        sort_dir: 'asc'
+      });
+      
+      if (users.data?.items?.length > 0) {
+        // Look for exact ID match
+        const exactMatch = users.data.items.find((u: any) => 
           (u.user_id || u.id)?.toString() === identifier.toString()
         );
-        console.log(`🆔 Looking for exact ID match: ${identifier}`);
-      }
-      
-      // If no exact match found, take the first result (partial match)
-      if (!user && users.data.items.length > 0) {
-        user = users.data.items[0];
-        console.log(`⚠️ No exact match, using first result: ${user.email || user.user_id}`);
-      }
-      
-      if (user) {
-        console.log(`✅ Found user from list endpoint:`, JSON.stringify(user, null, 2));
-        return this.formatUserDetails(user);
-      }
-    }
-    
-    // If not found in list endpoint, try direct lookup by ID as fallback
-    if (!identifier.includes('@') && /^\d+$/.test(identifier)) {
-      console.log(`🆔 Fallback: Direct lookup by ID: ${identifier}`);
-      try {
-        const userResult = await this.apiRequest(`/manage/v1/user/${identifier}`);
-        if (userResult.data || userResult.user_data) {
-          console.log(`✅ Found user by direct ID lookup`);
-          const userData = userResult.data || userResult.user_data;
-          return this.formatUserDetails(userData);
+        
+        if (exactMatch) {
+          console.log(`✅ Found exact ID match:`, exactMatch.user_id);
+          return this.formatUserDetails(exactMatch);
         }
-      } catch (error) {
-        console.warn(`❌ Direct user lookup failed for ${identifier}:`, error);
+      }
+      
+      // If not found in list endpoint, try direct lookup by ID as fallback
+      if (/^\d+$/.test(identifier)) {
+        console.log(`🆔 Fallback: Direct lookup by ID: ${identifier}`);
+        try {
+          const userResult = await this.apiRequest(`/manage/v1/user/${identifier}`);
+          if (userResult.data || userResult.user_data) {
+            console.log(`✅ Found user by direct ID lookup`);
+            const userData = userResult.data || userResult.user_data;
+            return this.formatUserDetails(userData);
+          }
+        } catch (error) {
+          console.warn(`❌ Direct user lookup failed for ${identifier}:`, error);
+        }
       }
     }
     
@@ -670,26 +725,40 @@ async getUserDetails(identifier: string): Promise<UserDetails> {
   
   // Determine user level with better mapping
   let level = 'User';
-  if (userData.level !== undefined) {
-    switch (userData.level.toString()) {
-      case 'godadmin':
-      case '6':
-        level = 'Superadmin';
-        break;
-      case 'powUser':
-      case '4':
-        level = 'Power User';
-        break;
-      case '3':
-        level = 'Course Creator';
-        break;
-      case '1':
-        level = 'Learner';
-        break;
-      default:
-        level = userData.level ? `Level ${userData.level}` : 'User';
-    }
+if (userData.level !== undefined && userData.level !== null) {
+  const levelValue = userData.level.toString().toLowerCase();
+  switch (levelValue) {
+    case 'godadmin':
+    case '6':
+      level = 'Superadmin';
+      break;
+    case 'powuser':
+    case '4':
+      level = 'Power User';
+      break;
+    case '3':
+      level = 'Course Creator';
+      break;
+    case '2':
+      level = 'Admin';
+      break;
+    case '1':
+      level = 'Learner';
+      break;
+    case 'user':
+      level = 'User';
+      break;
+    default:
+      // If it's a number, show it as "Level X"
+      if (/^\d+$/.test(userData.level.toString())) {
+        level = `Level ${userData.level}`;
+      } else {
+        level = userData.level;
+      }
   }
+} else {
+  level = 'User'; // Default
+}
   
   return {
     id: (userData.user_id || userData.id || userData.idUser || 'Unknown').toString(),
