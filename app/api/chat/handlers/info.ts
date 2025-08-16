@@ -253,11 +253,11 @@ Please check:
 
       const courseDetails = await api.getCourseDetails(identifier);
       const courseDisplayName = api.getCourseName(courseDetails);
-      const courseId = courseDetails.id || courseDetails.course_id || courseDetails.idCourse || 'Not available';
+      const actualCourseId = courseDetails.id || courseDetails.course_id || courseDetails.idCourse || 'Not available';
       
       let responseMessage = `📚 **Course Information**: ${courseDisplayName}
 
-🆔 **Course ID**: ${courseId}
+🆔 **Course ID**: ${actualCourseId}
 📝 **Name**: ${courseDisplayName}
 📂 **Type**: ${courseDetails.course_type || courseDetails.type || 'Not specified'}
 📊 **Status**: ${courseDetails.status || courseDetails.course_status || 'Not specified'}`;
@@ -326,12 +326,12 @@ Please check:
 
       // FIXED: Add enrollment link
       if (courseDetails.deeplink && courseDetails.deeplink.enabled && courseDetails.deeplink.hash) {
-        const enrollmentLink = `https://googlesandbox.docebosaas.com/learn/course/${courseId}/${courseDetails.slug || 'course'}?generatedby=user_id&hash=${courseDetails.deeplink.hash}`;
+        const enrollmentLink = `https://googlesandbox.docebosaas.com/learn/course/${actualCourseId}/${courseDetails.slug || 'course'}?generatedby=user_id&hash=${courseDetails.deeplink.hash}`;
         responseMessage += `\n🔗 **Enrollment Link**: [Direct Enrollment](${enrollmentLink})`;
       }
 
       // FIXED: Add course editing URL
-      const courseEditUrl = `https://googlesandbox.docebosaas.com/course/edit/${courseId}`;
+      const courseEditUrl = `https://googlesandbox.docebosaas.com/course/edit/${actualCourseId}`;
       responseMessage += `\n⚙️ **Course Management**: [Edit Course](${courseEditUrl})`;
 
       // Add completion tracking if available
@@ -355,9 +355,9 @@ Please check:
         data: {
           course: courseDetails,
           courseName: courseDisplayName,
-          courseId: courseId,
-          enrollmentLink: courseDetails.deeplink?.enabled ? `https://googlesandbox.docebosaas.com/learn/course/${courseId}/${courseDetails.slug || 'course'}?generatedby=user_id&hash=${courseDetails.deeplink?.hash}` : null,
-          editUrl: `https://googlesandbox.docebosaas.com/course/edit/${courseId}`
+          courseId: actualCourseId,
+          enrollmentLink: courseDetails.deeplink?.enabled ? `https://googlesandbox.docebosaas.com/learn/course/${actualCourseId}/${courseDetails.slug || 'course'}?generatedby=user_id&hash=${courseDetails.deeplink?.hash}` : null,
+          editUrl: `https://googlesandbox.docebosaas.com/course/edit/${actualCourseId}`
         },
         timestamp: new Date().toISOString()
       });
@@ -377,7 +377,7 @@ Please check:
       });
     }
   }
-
+  
   static async handleLearningPlanInfo(entities: any, api: DoceboAPI): Promise<NextResponse> {
     try {
       const { learningPlanName } = entities;
