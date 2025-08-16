@@ -231,9 +231,6 @@ ${users.length > 10 ? `\n... and ${users.length - 10} more users` : ''}
     }
   }
 
-  // ... other methods remain the same
-}
-
   static async handleCourseSearch(entities: any, api: DoceboAPI): Promise<NextResponse> {
     try {
       const { searchTerm } = entities;
