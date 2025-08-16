@@ -64,14 +64,13 @@ export class SearchHandlers {
 🔄 **Last Access**: ${enhancedUserDetails.lastAccess}`;
 
             // Add manager information if available
-            if (enhancedUserDetails.manager) {
-              responseMessage += `\n\n👥 **Management Structure**:
-📋 **Direct Manager**: ${enhancedUserDetails.manager.fullname}
-📧 **Manager Email**: ${enhancedUserDetails.manager.email}`;
-            } else {
-              responseMessage += `\n\n👥 **Management Structure**:
+           if (enhancedUserDetails.manager) {
+  responseMessage += `\n\n👥 **Management Structure**:
+📋 **Direct Manager**: ${enhancedUserDetails.manager.fullname}`;
+} else {
+  responseMessage += `\n\n👥 **Management Structure**:
 📋 **Direct Manager**: Not assigned or not available`;
-            }
+}
 
             // Add additional fields if available
             if (enhancedUserDetails.additionalFields && Object.keys(enhancedUserDetails.additionalFields).length > 0) {
