@@ -6,49 +6,39 @@ import { APIResponse } from '../types';
 export class SearchHandlers {
   
   static async handleUserSearch(entities: any, api: DoceboAPI): Promise<NextResponse> {
-    try {
-      const { email, searchTerm } = entities;
-      const query = email || searchTerm;
+  try {
+    const { email, searchTerm } = entities;
+    const query = email || searchTerm;
+    
+    if (!query) {
+      return NextResponse.json({
+        response: '❌ **Missing Search Term**: Please provide an email or search term.\n\n**Examples**: \n• "Find user mike@company.com"\n• "Find user john smith"',
+        success: false,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    console.log(`🔍 Searching users: "${query}"`);
+
+    // If searching by email, get detailed user info directly
+    if (email && email.includes('@')) {
+      console.log(`📧 Email search detected: ${email}`);
       
-      if (!query) {
-        return NextResponse.json({
-          response: '❌ **Missing Search Term**: Please provide an email or search term.\n\n**Examples**: \n• "Find user mike@company.com"\n• "Find user john smith"',
-          success: false,
-          timestamp: new Date().toISOString()
-        });
-      }
-
-      console.log(`🔍 Searching users: "${query}"`);
-
       try {
-        const users = await api.searchUsers(query, 25);
-        console.log(`📊 Search returned ${users.length} users`);
+        // Use getUserDetails which has improved exact email matching
+        const userDetails = await api.getUserDetails(email);
         
-        if (users.length === 0) {
-          return NextResponse.json({
-            response: `❌ **No Users Found**: "${query}"\n\nNo users found matching your search criteria.\n\n💡 **Possible reasons:**\n• User doesn't exist in the system\n• Email address is incorrect\n• User might be in a different domain\n• API permissions might be limited`,
-            success: false,
-            timestamp: new Date().toISOString()
-          });
-        }
-
-        // If searching by email, provide detailed user info with manager
-        if (email && users.length >= 1) {
-          const user = users.find((u: any) => u.email?.toLowerCase() === email.toLowerCase()) || users[0];
+        console.log(`👤 Found user via getUserDetails:`, {
+          id: userDetails.id,
+          email: userDetails.email,
+          fullname: userDetails.fullname
+        });
+        
+        // Get enhanced user details including manager info
+        try {
+          const enhancedUserDetails = await api.getEnhancedUserDetails(userDetails.id);
           
-          console.log(`👤 Processing user:`, {
-            id: user.user_id || user.id,
-            email: user.email,
-            fullname: user.fullname,
-            firstname: user.firstname,
-            lastname: user.lastname
-          });
-          
-          try {
-            // Get enhanced user details including manager info
-            const enhancedUserDetails = await api.getEnhancedUserDetails(user.user_id || user.id);
-            
-            let responseMessage = `👤 **User Details**: ${enhancedUserDetails.fullname}
+          let responseMessage = `👤 **User Details**: ${enhancedUserDetails.fullname}
 
 🆔 **User ID**: ${enhancedUserDetails.id}
 📧 **Email**: ${enhancedUserDetails.email}
@@ -61,104 +51,160 @@ export class SearchHandlers {
 📅 **Created**: ${enhancedUserDetails.creationDate}
 🔄 **Last Access**: ${enhancedUserDetails.lastAccess}`;
 
-            // Add manager information if available
-            if (enhancedUserDetails.manager) {
-              responseMessage += `\n\n👥 **Management Structure**:
+          // Add manager information if available
+          if (enhancedUserDetails.manager) {
+            responseMessage += `\n\n👥 **Management Structure**:
 📋 **Direct Manager**: ${enhancedUserDetails.manager.fullname}
 📧 **Manager Email**: ${enhancedUserDetails.manager.email}`;
-            } else {
-              responseMessage += `\n\n👥 **Management Structure**:
+          } else {
+            responseMessage += `\n\n👥 **Management Structure**:
 📋 **Direct Manager**: Not assigned or not available`;
-            }
+          }
 
-            // Add additional fields if available
-            if (enhancedUserDetails.additionalFields && Object.keys(enhancedUserDetails.additionalFields).length > 0) {
-              responseMessage += `\n\n📋 **Additional Information**:`;
-              if (enhancedUserDetails.additionalFields.jobTitle) {
-                responseMessage += `\n💼 **Job Title**: ${enhancedUserDetails.additionalFields.jobTitle}`;
-              }
-              if (enhancedUserDetails.additionalFields.employeeId) {
-                responseMessage += `\n🆔 **Employee ID**: ${enhancedUserDetails.additionalFields.employeeId}`;
-              }
-              if (enhancedUserDetails.additionalFields.location) {
-                responseMessage += `\n📍 **Location**: ${enhancedUserDetails.additionalFields.location}`;
-              }
+          // Add additional fields if available
+          if (enhancedUserDetails.additionalFields && Object.keys(enhancedUserDetails.additionalFields).length > 0) {
+            responseMessage += `\n\n📋 **Additional Information**:`;
+            if (enhancedUserDetails.additionalFields.jobTitle) {
+              responseMessage += `\n💼 **Job Title**: ${enhancedUserDetails.additionalFields.jobTitle}`;
             }
+            if (enhancedUserDetails.additionalFields.employeeId) {
+              responseMessage += `\n🆔 **Employee ID**: ${enhancedUserDetails.additionalFields.employeeId}`;
+            }
+            if (enhancedUserDetails.additionalFields.location) {
+              responseMessage += `\n📍 **Location**: ${enhancedUserDetails.additionalFields.location}`;
+            }
+          }
 
-            return NextResponse.json({
-              response: responseMessage,
-              success: true,
-              data: {
-                user: enhancedUserDetails,
-                totalCount: 1,
-                isDetailedView: true,
-                hasManagerInfo: !!enhancedUserDetails.manager
-              },
+          return NextResponse.json({
+            response: responseMessage,
+            success: true,
+            data: {
+              user: enhancedUserDetails,
               totalCount: 1,
-              timestamp: new Date().toISOString()
-            });
-          } catch (detailsError) {
-            console.error('❌ Error getting enhanced user details:', detailsError);
-            
-            // **IMPROVED FALLBACK**: Create detailed response from basic user data
-            const basicUserInfo = {
-              id: (user.user_id || user.id || 'Unknown').toString(),
-              fullname: user.fullname || `${user.firstname || ''} ${user.lastname || ''}`.trim() || user.email || 'Unknown User',
-              email: user.email || 'Not available',
-              username: user.username || user.userid || 'Not available',
-              status: user.status === '1' || user.status === 1 ? 'Active' : 
-                     user.status === '0' || user.status === 0 ? 'Inactive' : 
-                     user.status ? `Status: ${user.status}` : 'Unknown',
-              level: user.level === 'godadmin' ? 'Superadmin' : 
-                    user.level === 'powUser' ? 'Power User' :
-                    user.level || 'User',
-              department: user.department || user.orgchart_desc || user.branch || 'Not specified',
-              creationDate: user.register_date || user.creation_date || user.created_at || 'Not available',
-              lastAccess: user.last_access_date || user.last_access || user.last_login || 'Not available',
-              timezone: user.timezone || user.time_zone || 'Not specified',
-              language: user.language || user.lang_code || 'Not specified'
-            };
-            
-            let fallbackResponse = `👤 **User Details**: ${basicUserInfo.fullname}
+              isDetailedView: true,
+              hasManagerInfo: !!enhancedUserDetails.manager
+            },
+            totalCount: 1,
+            timestamp: new Date().toISOString()
+          });
+          
+        } catch (enhancedError) {
+          console.error('❌ Error getting enhanced user details:', enhancedError);
+          
+          // Fall back to basic user details
+          let basicResponse = `👤 **User Details**: ${userDetails.fullname}
 
-🆔 **User ID**: ${basicUserInfo.id}
-📧 **Email**: ${basicUserInfo.email}
-🔑 **Username**: ${basicUserInfo.username}
-📊 **Status**: ${basicUserInfo.status}
-👑 **Level**: ${basicUserInfo.level}
-🏢 **Department**: ${basicUserInfo.department}
-🌍 **Language**: ${basicUserInfo.language}
-🕐 **Timezone**: ${basicUserInfo.timezone}
-📅 **Created**: ${basicUserInfo.creationDate}
-🔄 **Last Access**: ${basicUserInfo.lastAccess}
+🆔 **User ID**: ${userDetails.id}
+📧 **Email**: ${userDetails.email}
+🔑 **Username**: ${userDetails.username}
+📊 **Status**: ${userDetails.status}
+👑 **Level**: ${userDetails.level}
+🏢 **Department**: ${userDetails.department}
+🌍 **Language**: ${userDetails.language}
+🕐 **Timezone**: ${userDetails.timezone}
+📅 **Created**: ${userDetails.creationDate}
+🔄 **Last Access**: ${userDetails.lastAccess}
 
 👥 **Management Structure**:
 📋 **Direct Manager**: Unable to retrieve manager information
 
-⚠️ **Note**: Using basic user information. Enhanced details (manager info, additional fields) are not available due to API limitations or missing permissions.
+⚠️ **Note**: Using basic user information. Enhanced details not available.`;
 
-💡 **Possible reasons**: 
-• Additional field endpoints not available on this Docebo instance
-• Manager information not configured in user additional fields
-• API permissions limited for enhanced user data`;
-
-            return NextResponse.json({
-              response: fallbackResponse,
-              success: true,
-              data: {
-                user: basicUserInfo,
-                totalCount: 1,
-                isDetailedView: true,
-                hasManagerInfo: false,
-                fallbackMode: true,
-                originalError: detailsError instanceof Error ? detailsError.message : 'Unknown error'
-              },
+          return NextResponse.json({
+            response: basicResponse,
+            success: true,
+            data: {
+              user: userDetails,
               totalCount: 1,
-              timestamp: new Date().toISOString()
-            });
-          }
+              isDetailedView: true,
+              hasManagerInfo: false,
+              fallbackMode: true
+            },
+            totalCount: 1,
+            timestamp: new Date().toISOString()
+          });
         }
+        
+      } catch (userNotFoundError) {
+        console.error(`❌ User not found: ${email}`, userNotFoundError);
+        
+        return NextResponse.json({
+          response: `❌ **User Not Found**: "${email}"\n\nNo user found with that exact email address.\n\n💡 **Please check:**\n• Email spelling is correct\n• User exists in the system\n• Email domain is correct`,
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+    }
 
+    // For non-email searches, use the general search method
+    try {
+      const users = await api.searchUsers(query, 25);
+      console.log(`📊 Search returned ${users.length} users`);
+      
+      if (users.length === 0) {
+        return NextResponse.json({
+          response: `❌ **No Users Found**: "${query}"\n\nNo users found matching your search criteria.\n\n💡 **Possible reasons:**\n• User doesn't exist in the system\n• Search term is too specific\n• User might be in a different domain`,
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      // Multiple users found - show list
+      const userList = users.slice(0, 10).map((user: any, index: number) => {
+        const name = user.fullname || `${user.firstname || ''} ${user.lastname || ''}`.trim() || 'No name';
+        const email = user.email || 'No email';
+        const status = user.status === '1' ? '🟢 Active' : user.status === '0' ? '🔴 Inactive' : '⚪ Unknown';
+        const level = user.level === 'godadmin' ? '👑 Admin' : user.level || 'User';
+        
+        return `${index + 1}. **${name}** (${email})\n   🆔 ID: ${user.user_id || user.id} • ${status} • ${level}`;
+      }).join('\n\n');
+
+      return NextResponse.json({
+        response: `👥 **User Search Results**: "${query}" (${users.length} found)
+
+${userList}
+
+${users.length > 10 ? `\n... and ${users.length - 10} more users` : ''}
+
+💡 **Tip**: Use an exact email address for detailed user information.`,
+        success: true,
+        data: {
+          users: users.slice(0, 10),
+          totalCount: users.length,
+          query: query,
+          fallbackMode: false
+        },
+        totalCount: users.length,
+        timestamp: new Date().toISOString()
+      });
+
+    } catch (searchError) {
+      console.error('❌ User search API error:', searchError);
+      
+      return NextResponse.json({
+        response: `❌ **Search Failed**: Unable to search for users.
+
+**Error Details**: ${searchError instanceof Error ? searchError.message : 'Unknown error'}
+
+**Possible Solutions**:
+• Check your API credentials and permissions
+• Verify the search term is correct
+• Try a different search approach`,
+        success: false,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+  } catch (error) {
+    console.error('❌ User search handler error:', error);
+    
+    return NextResponse.json({
+      response: `❌ **User Search Failed**: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      success: false,
+      timestamp: new Date().toISOString()
+    });
+  }
+}
         // Multiple users found - show list with basic manager info
         try {
           const enhancedUsers = await Promise.all(
