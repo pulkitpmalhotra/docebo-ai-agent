@@ -152,8 +152,16 @@ export class DoceboAPI {
         const detailedUserResult = await this.apiRequest(`/manage/v1/user/${userId}`);
         
         if (detailedUserResult.data || detailedUserResult.user_data) {
-          const userData = detailedUserResult.data || detailedUserResult.user_data;
+          // FIX: Handle both direct data and wrapped user_data structure
+          let userData = detailedUserResult.data || detailedUserResult.user_data;
+          
+          // If there's a user_data wrapper, extract it
+          if (userData.user_data) {
+            userData = userData.user_data;
+          }
+          
           console.log(`✅ Detailed user endpoint successful for user ${userId}`);
+          console.log(`📋 User data structure:`, JSON.stringify(userData, null, 2));
           
           // FIX: Look for manager information in multiple possible fields
           managerId = userData.manager_id || 
@@ -162,6 +170,8 @@ export class DoceboAPI {
                      userData.direct_manager ||
                      userData.manager_user_id ||
                      userData.manager_username;
+          
+          console.log(`📋 Direct manager ID check: ${managerId || 'None found'}`);
           
           // If no direct manager_id, look in manager_names object (from your logs)
           if (!managerId && userData.manager_names) {
@@ -182,6 +192,25 @@ export class DoceboAPI {
               console.log(`📋 Found manager in managers array: ${directManager.manager_name} (ID: ${managerId})`);
             }
           }
+
+          // ALSO check the root level data structure for manager info (from the first API call)
+          if (!managerId && detailedUserResult.data && detailedUserResult.data.manager_names) {
+            const directManager = detailedUserResult.data.manager_names['1'];
+            if (directManager) {
+              managerId = directManager.manager_id || directManager.manager_username;
+              console.log(`📋 Found manager in root manager_names: ${directManager.manager_name} (ID: ${managerId})`);
+            }
+          }
+
+          if (!managerId && detailedUserResult.data && detailedUserResult.data.managers && Array.isArray(detailedUserResult.data.managers)) {
+            const directManager = detailedUserResult.data.managers.find((m: any) => 
+              m.manager_type_id === 1 || m.manager_title === 'Direct Manager'
+            );
+            if (directManager) {
+              managerId = directManager.manager_id;
+              console.log(`📋 Found manager in root managers array: ${directManager.manager_name} (ID: ${managerId})`);
+            }
+          }
           
           // Extract additional fields from the main response
           if (userData.job_title || userData.jobTitle) {
@@ -200,52 +229,6 @@ export class DoceboAPI {
         console.warn(`⚠️ Detailed user endpoint failed for user ${userId}:`, detailedError);
       }
 
-      // FIX: If we found manager info, we're done - don't try other endpoints that might fail
-      if (managerId) {
-        console.log(`✅ Successfully found manager ID: ${managerId}`);
-        return { managerId, additionalFields };
-      }
-
-      // Only try additional field endpoints if we didn't get manager info from main endpoint
-      const additionalFieldEndpoints = [
-        `/manage/v1/user/${userId}/additional_fields`,
-        `/manage/v1/user/${userId}/profile`,
-        `/manage/v1/user/${userId}/fields`
-      ];
-
-      for (const endpoint of additionalFieldEndpoints) {
-        try {
-          console.log(`🔍 Trying additional fields endpoint: ${endpoint}`);
-          const result = await this.apiRequest(endpoint);
-          
-          if (result.data) {
-            console.log(`✅ Additional fields endpoint successful: ${endpoint}`);
-            
-            // Process additional fields based on endpoint response structure
-            if (Array.isArray(result.data)) {
-              // Handle array of additional fields
-              result.data.forEach((field: any) => {
-                this.processAdditionalField(field, additionalFields);
-              });
-            } else if (result.data.additional_fields) {
-              // Handle nested additional_fields object
-              Object.entries(result.data.additional_fields).forEach(([key, value]) => {
-                this.processAdditionalFieldKeyValue(key, value, additionalFields);
-              });
-            } else {
-              // Handle direct field mapping
-              this.processDirectFields(result.data, additionalFields);
-            }
-            
-            // Found additional fields, no need to try other endpoints
-            break;
-          }
-        } catch (error) {
-          console.log(`❌ Additional fields endpoint ${endpoint} failed:`, error);
-          continue;
-        }
-      }
-
       console.log(`📋 Final additional info for user ${userId}:`, {
         managerId: managerId || 'None',
         additionalFields: Object.keys(additionalFields).length > 0 ? additionalFields : 'None'
@@ -258,7 +241,6 @@ export class DoceboAPI {
       return {};
     }
   }
-
   private processAdditionalField(field: any, additionalFields: any): void {
     // Common field title patterns for job title
     const jobTitlePatterns = ['job title', 'job_title', 'title', 'position', 'role'];
@@ -712,12 +694,19 @@ export class DoceboAPI {
       throw new Error('User data is null or undefined');
     }
 
+    // FIX: Handle both direct user object and wrapped user_data structure
+    let userData = user;
+    if (user.user_data) {
+      console.log(`📝 Found user_data wrapper, extracting nested data`);
+      userData = user.user_data;
+    }
+
     // Extract basic user information with better fallbacks and validation
-    const userId = (user.user_id || user.id || user.idUser || '').toString();
-    const email = user.email || '';
-    const fullname = user.fullname || 
-                    `${user.firstname || user.first_name || ''} ${user.lastname || user.last_name || ''}`.trim() || 
-                    user.name || '';
+    const userId = (userData.user_id || userData.id || userData.idUser || '').toString();
+    const email = userData.email || '';
+    const fullname = userData.fullname || 
+                    `${userData.firstname || userData.first_name || ''} ${userData.lastname || userData.last_name || ''}`.trim() || 
+                    userData.name || '';
 
     console.log(`📝 Extracted basic fields:`, {
       userId: userId || 'MISSING',
@@ -725,14 +714,14 @@ export class DoceboAPI {
       fullname: fullname || 'MISSING'
     });
 
-    // RELAXED validation - only require user ID and email
+    // Validation - require user ID and email
     if (!userId) {
-      console.error('❌ Missing user ID:', user);
+      console.error('❌ Missing user ID:', userData);
       throw new Error('Missing user ID');
     }
 
     if (!email) {
-      console.error('❌ Missing email:', user);
+      console.error('❌ Missing email:', userData);
       throw new Error('Missing email');
     }
 
@@ -749,32 +738,32 @@ export class DoceboAPI {
       id: userId,
       fullname: finalFullname,
       email: email,
-      username: user.username || user.userid || email, // fallback to email if username missing
-      status: user.status === '1' || user.status === 1 ? 'Active' : 
-              user.status === '0' || user.status === 0 ? 'Inactive' : 
-              user.status ? `Status: ${user.status}` : 'Unknown',
-      level: user.level === 'godadmin' ? 'Superadmin' : 
-             user.level === 'powUser' ? 'Power User' :
-             user.level || 'User',
-      creationDate: user.register_date || 
-                    user.creation_date || 
-                    user.created_at || 
-                    user.date_created ||
-                    user.signup_date ||
+      username: userData.username || userData.userid || email, // fallback to email if username missing
+      status: userData.status === '1' || userData.status === 1 ? 'Active' : 
+              userData.status === '0' || userData.status === 0 ? 'Inactive' : 
+              userData.status ? `Status: ${userData.status}` : 'Unknown',
+      level: userData.level === 'godadmin' ? 'Superadmin' : 
+             userData.level === 'powUser' ? 'Power User' :
+             userData.level || 'User',
+      creationDate: userData.register_date || 
+                    userData.creation_date || 
+                    userData.created_at || 
+                    userData.date_created ||
+                    userData.signup_date ||
                     'Not available',
-      lastAccess: user.last_access_date || 
-                  user.last_access || 
-                  user.last_login || 
-                  user.lastAccess ||
+      lastAccess: userData.last_access_date || 
+                  userData.last_access || 
+                  userData.last_login || 
+                  userData.lastAccess ||
                   'Not available',
-      timezone: user.timezone || user.time_zone || 'Not specified',
-      language: user.language || 
-                user.lang_code || 
-                user.locale ||
+      timezone: userData.timezone || userData.time_zone || 'Not specified',
+      language: userData.language || 
+                userData.lang_code || 
+                userData.locale ||
                 'Not specified',
-      department: user.department || 
-                  user.orgchart_desc ||
-                  user.branch ||
+      department: userData.department || 
+                  userData.orgchart_desc ||
+                  userData.branch ||
                   'Not specified'
     };
   }
