@@ -542,7 +542,7 @@ export class DoceboAPI {
   // USER DETAILS AND ENROLLMENT DATA
   // ============================================================================
 
-  async getUserDetails(identifier: string): Promise<UserDetails> {
+async getUserDetails(identifier: string): Promise<UserDetails> {
     console.log(`🔍 Getting user details for: ${identifier}`);
     
     // Always use the list endpoint first to get complete user data including creation/update dates
@@ -576,6 +576,14 @@ export class DoceboAPI {
               fullname: exactMatch.fullname || `${exactMatch.firstname || ''} ${exactMatch.lastname || ''}`.trim(),
               user_id: exactMatch.user_id
             });
+            
+            // FIX: Validate the match before formatting
+            if (!exactMatch.email || !exactMatch.user_id || 
+                (!exactMatch.fullname && !exactMatch.firstname && !exactMatch.lastname)) {
+              console.error('❌ Found user but missing critical data:', exactMatch);
+              throw new Error(`User found but has incomplete data`);
+            }
+            
             return this.formatUserDetails(exactMatch);
           } else {
             console.log(`❌ No exact email match found in ${exactEmailUsers.data.items.length} results`);
@@ -609,6 +617,14 @@ export class DoceboAPI {
               fullname: exactMatch.fullname || `${exactMatch.firstname || ''} ${exactMatch.lastname || ''}`.trim(),
               user_id: exactMatch.user_id
             });
+            
+            // FIX: Validate the match before formatting
+            if (!exactMatch.email || !exactMatch.user_id || 
+                (!exactMatch.fullname && !exactMatch.firstname && !exactMatch.lastname)) {
+              console.error('❌ Found user but missing critical data:', exactMatch);
+              throw new Error(`User found but has incomplete data`);
+            }
+            
             return this.formatUserDetails(exactMatch);
           }
         }
@@ -724,140 +740,6 @@ private formatUserDetails(user: any): UserDetails {
                   user.branch ||
                   'Not specified'
     };
-  }
-
-  async getUserDetails(identifier: string): Promise<UserDetails> {
-    console.log(`🔍 Getting user details for: ${identifier}`);
-    
-    // Always use the list endpoint first to get complete user data including creation/update dates
-    try {
-      // For email searches, use exact email matching
-      if (identifier.includes('@')) {
-        console.log(`📧 Searching for exact email: ${identifier}`);
-        
-        // First try with exact email search
-        const exactEmailUsers = await this.apiRequest('/manage/v1/user', 'GET', null, {
-          search_text: identifier,
-          page_size: 50, // Get more results to ensure we find exact match
-          sort_attr: 'user_id',
-          sort_dir: 'asc'
-        });
-        
-        console.log(`🔍 Email search returned ${exactEmailUsers.data?.items?.length || 0} users`);
-        
-        if (exactEmailUsers.data?.items?.length > 0) {
-          // Look for EXACT email match (case insensitive)
-          const exactMatch = exactEmailUsers.data.items.find((u: any) => {
-            const userEmail = (u.email || '').toLowerCase();
-            const searchEmail = identifier.toLowerCase();
-            console.log(`🔍 Comparing: "${userEmail}" === "${searchEmail}"`);
-            return userEmail === searchEmail;
-          });
-          
-          if (exactMatch) {
-            console.log(`✅ Found EXACT email match:`, {
-              email: exactMatch.email,
-              fullname: exactMatch.fullname || `${exactMatch.firstname || ''} ${exactMatch.lastname || ''}`.trim(),
-              user_id: exactMatch.user_id
-            });
-            
-            // FIX: Validate the match before formatting
-            if (!exactMatch.email || !exactMatch.user_id || 
-                (!exactMatch.fullname && !exactMatch.firstname && !exactMatch.lastname)) {
-              console.error('❌ Found user but missing critical data:', exactMatch);
-              throw new Error(`User found but has incomplete data`);
-            }
-            
-            return this.formatUserDetails(exactMatch);
-          } else {
-            console.log(`❌ No exact email match found in ${exactEmailUsers.data.items.length} results`);
-            // Log all emails found for debugging
-            exactEmailUsers.data.items.forEach((user: any, index: number) => {
-              console.log(`📧 Result ${index + 1}: ${user.email} (${user.fullname || user.firstname + ' ' + user.lastname})`);
-            });
-          }
-        }
-        
-        // If no exact match found, try broader search
-        console.log(`🔍 Trying broader search for: ${identifier}`);
-        const broadUsers = await this.apiRequest('/manage/v1/user', 'GET', null, {
-          search_text: identifier.split('@')[0], // Search with just username part
-          page_size: 100,
-          sort_attr: 'user_id',
-          sort_dir: 'asc'
-        });
-        
-        if (broadUsers.data?.items?.length > 0) {
-          // Look for exact email match in broader results
-          const exactMatch = broadUsers.data.items.find((u: any) => {
-            const userEmail = (u.email || '').toLowerCase();
-            const searchEmail = identifier.toLowerCase();
-            return userEmail === searchEmail;
-          });
-          
-          if (exactMatch) {
-            console.log(`✅ Found exact email match in broader search:`, {
-              email: exactMatch.email,
-              fullname: exactMatch.fullname || `${exactMatch.firstname || ''} ${exactMatch.lastname || ''}`.trim(),
-              user_id: exactMatch.user_id
-            });
-            
-            // FIX: Validate the match before formatting
-            if (!exactMatch.email || !exactMatch.user_id || 
-                (!exactMatch.fullname && !exactMatch.firstname && !exactMatch.lastname)) {
-              console.error('❌ Found user but missing critical data:', exactMatch);
-              throw new Error(`User found but has incomplete data`);
-            }
-            
-            return this.formatUserDetails(exactMatch);
-          }
-        }
-        
-      } else {
-        // For ID searches, use exact ID matching
-        console.log(`🆔 Searching for exact ID: ${identifier}`);
-        
-        const users = await this.apiRequest('/manage/v1/user', 'GET', null, {
-          search_text: identifier,
-          page_size: 25,
-          sort_attr: 'user_id',
-          sort_dir: 'asc'
-        });
-        
-        if (users.data?.items?.length > 0) {
-          // Look for exact ID match
-          const exactMatch = users.data.items.find((u: any) => 
-            (u.user_id || u.id)?.toString() === identifier.toString()
-          );
-          
-          if (exactMatch) {
-            console.log(`✅ Found exact ID match:`, exactMatch.user_id);
-            return this.formatUserDetails(exactMatch);
-          }
-        }
-        
-        // If not found in list endpoint, try direct lookup by ID as fallback
-        if (/^\d+$/.test(identifier)) {
-          console.log(`🆔 Fallback: Direct lookup by ID: ${identifier}`);
-          try {
-            const userResult = await this.apiRequest(`/manage/v1/user/${identifier}`);
-            if (userResult.data || userResult.user_data) {
-              console.log(`✅ Found user by direct ID lookup`);
-              const userData = userResult.data || userResult.user_data;
-              return this.formatUserDetails(userData);
-            }
-          } catch (error) {
-            console.warn(`❌ Direct user lookup failed for ${identifier}:`, error);
-          }
-        }
-      }
-      
-      throw new Error(`User not found: ${identifier}`);
-      
-    } catch (error) {
-      console.error(`❌ Error getting user details for ${identifier}:`, error);
-      throw error;
-    }
   }
 
   async getUserCourseEnrollments(userId: string): Promise<any> {
