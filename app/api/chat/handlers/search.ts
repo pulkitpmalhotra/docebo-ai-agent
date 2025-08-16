@@ -326,13 +326,31 @@ ${courses.length > 20 ? `\n... and ${courses.length - 20} more courses` : ''}
       const planList = learningPlans.slice(0, 20).map((plan: any, index: number) => {
         const name = api.getLearningPlanName(plan);
         const planId = plan.learning_plan_id || plan.id || 'Unknown';
-        const status = plan.status || plan.learning_plan_status || plan.lp_status || 'Unknown';
-        const enrollments = plan.enrollment_count || plan.enrolled_users || plan.total_enrollments || plan.user_count || 'Unknown';
+        
+        // FIXED: Proper status mapping based on is_published field
+        let status = 'Unknown';
+        if (plan.is_published === true || plan.is_published === 1 || plan.is_published === '1') {
+          status = 'Published';
+        } else if (plan.is_published === false || plan.is_published === 0 || plan.is_published === '0') {
+          status = 'Draft';
+        } else if (plan.status === 'active' || plan.status === '2' || plan.status === 2) {
+          status = 'Published';
+        } else if (plan.status === 'inactive' || plan.status === '0' || plan.status === 0) {
+          status = 'Draft';
+        }
+        
+        // FIXED: Proper enrollment count from assigned_enrollments_count
+        const enrollments = plan.assigned_enrollments_count !== undefined ? 
+                           plan.assigned_enrollments_count :
+                           plan.enrollment_count || 
+                           plan.enrolled_users || 
+                           plan.total_enrollments || 
+                           plan.user_count || 
+                           'Unknown';
         
         let statusIcon = '📋';
-        if (status === 'active' || status === '2' || status === 2) statusIcon = '🟢';
-        else if (status === 'inactive' || status === '0' || status === 0) statusIcon = '🔴';
-        else if (status === 'suspended' || status === '1' || status === 1) statusIcon = '🟡';
+        if (status === 'Published') statusIcon = '🟢';
+        else if (status === 'Draft') statusIcon = '🟡';
         
         return `${index + 1}. ${statusIcon} **${name}**\n   ID: ${planId} • Status: ${status} • Enrollments: ${enrollments}`;
       }).join('\n\n');
@@ -371,4 +389,3 @@ ${learningPlans.length > 20 ? `\n... and ${learningPlans.length - 20} more learn
       });
     }
   }
-}
