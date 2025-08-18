@@ -956,7 +956,7 @@ export class DoceboAPI {
     return course;
   }
 
-  async getLearningPlanDetails(identifier: string): Promise<any> {
+async getLearningPlanDetails(identifier: string): Promise<any> {
     console.log(`🔍 Finding learning plan: "${identifier}"`);
     
     // First try direct ID lookup if the identifier is numeric
