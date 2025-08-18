@@ -407,7 +407,7 @@ Please check:
     }
   }
   
-  static async handleLearningPlanInfo(entities: any, api: DoceboAPI): Promise<NextResponse> {
+ static async handleLearningPlanInfo(entities: any, api: DoceboAPI): Promise<NextResponse> {
     try {
       const { learningPlanName } = entities;
       
@@ -531,10 +531,7 @@ Please check:
 
       // 11. ENROLLMENT STATISTICS - Get from separate API call
       try {
-        console.log(`📊 Getting enrollment statistics for learning plan ${actualLearningPlanId}`);
-        const enrollmentStats = await api.apiRequest(`/learningplan/v1/learningplans/${actualLearningPlanId}/enrollments`, 'GET', null, {
-          page_size: 1 // Just get count, not full data
-        });
+        const enrollmentStats = await api.getLearningPlanEnrollmentStats(actualLearningPlanId);
         
         if (enrollmentStats.data && enrollmentStats.data.count !== undefined) {
           responseMessage += `\n👥 **Current Enrollments**: ${enrollmentStats.data.count}`;
@@ -558,8 +555,7 @@ Please check:
 
       // 12. COURSE INFORMATION - Get courses in the learning plan
       try {
-        console.log(`📚 Getting courses for learning plan ${actualLearningPlanId}`);
-        const coursesResult = await api.apiRequest(`/learningplan/v1/learningplans/${actualLearningPlanId}/courses`, 'GET');
+        const coursesResult = await api.getLearningPlanCourses(actualLearningPlanId);
         
         if (coursesResult.data && coursesResult.data.items && coursesResult.data.items.length > 0) {
           const courses = coursesResult.data.items;
@@ -639,7 +635,7 @@ Please check:
         responseMessage += `\n🔗 **Direct Enrollment Link**: [Enroll Now](${enrollmentLink})`;
       }
 
-      // 17. LEARNING PLAN ADMIN URL
+      // 17. LEARNING PLAN MANAGEMENT URL
       const lpEditUrl = `https://googlesandbox.docebosaas.com/learningplan/edit/${actualLearningPlanId}`;
       responseMessage += `\n⚙️ **Learning Plan Admin URL**: [Edit Learning Plan](${lpEditUrl})`;
 
