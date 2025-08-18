@@ -980,7 +980,10 @@ async getLearningPlanDetails(identifier: string): Promise<any> {
     console.log(`📊 Search returned ${learningPlans.length} learning plans`);
     
     if (learningPlans.length === 0) {
-      throw new Error(`Learning plan not found: ${identifier}`);
+      // If no results, try the debug list to see what's available
+      console.log(`🔍 No search results found. Running debug list to see available learning plans...`);
+      await this.debugListAllLearningPlans(20);
+      throw new Error(`Learning plan not found: ${identifier}. Check the debug output above to see available learning plans.`);
     }
     
     // Find exact or best match
@@ -1027,6 +1030,62 @@ async getLearningPlanDetails(identifier: string): Promise<any> {
     return lp;
   }
 
+  // ============================================================================
+  // PUBLIC HELPER METHODS FOR LEARNING PLAN INFO
+  // ============================================================================
+
+  async getLearningPlanEnrollmentStats(learningPlanId: string): Promise<any> {
+    try {
+      console.log(`📊 Getting enrollment statistics for learning plan ${learningPlanId}`);
+      const result = await this.apiRequest(`/learningplan/v1/learningplans/${learningPlanId}/enrollments`, 'GET', null, {
+        page_size: 1 // Just get count, not full data
+      });
+      return result;
+    } catch (error) {
+      console.log(`⚠️ Could not get enrollment statistics:`, error);
+      throw error;
+    }
+  }
+
+  async getLearningPlanCourses(learningPlanId: string): Promise<any> {
+    try {
+      console.log(`📚 Getting courses for learning plan ${learningPlanId}`);
+      const result = await this.apiRequest(`/learningplan/v1/learningplans/${learningPlanId}/courses`, 'GET');
+      return result;
+    } catch (error) {
+      console.log(`⚠️ Could not get course information:`, error);
+      throw error;
+    }
+  }
+
+  // Debug method to list all learning plans (for troubleshooting)
+  async debugListAllLearningPlans(maxResults: number = 50): Promise<any[]> {
+    try {
+      console.log(`🔍 DEBUG: Getting all learning plans for troubleshooting`);
+      const result = await this.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
+        page_size: Math.min(maxResults, 200)
+      });
+      
+      if (result.data?.items?.length > 0) {
+        console.log(`📊 DEBUG: Found ${result.data.items.length} total learning plans:`);
+        result.data.items.forEach((lp: any, index: number) => {
+          const name = this.getLearningPlanName(lp);
+          const id = lp.learning_plan_id || lp.id;
+          const code = lp.code || 'No code';
+          const uuid = lp.uuid || 'No UUID';
+          const published = lp.is_published ? 'Published' : 'Draft';
+          console.log(`  ${index + 1}. "${name}" (ID: ${id}, Code: ${code}, UUID: ${uuid}, Status: ${published})`);
+        });
+        return result.data.items;
+      } else {
+        console.log(`📊 DEBUG: No learning plans found in system`);
+        return [];
+      }
+    } catch (error) {
+      console.error(`❌ DEBUG: Failed to list learning plans:`, error);
+      return [];
+    }
+  }
   // ============================================================================
   // PUBLIC HELPER METHODS FOR LEARNING PLAN INFO
   // ============================================================================
