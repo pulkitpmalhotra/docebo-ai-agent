@@ -1026,7 +1026,7 @@ async getLearningPlanDetails(identifier: string): Promise<any> {
     console.log(`📋 Using search result data:`, JSON.stringify(lp, null, 2));
     return lp;
   }
-
+  
   // ============================================================================
   // DATA FORMATTING HELPERS
   // ============================================================================
