@@ -349,7 +349,7 @@ static async handleCourseInfo(entities: any, api: DoceboAPI): Promise<NextRespon
         responseMessage += `\n🔗 **Enrollment Link**: [Direct Enrollment](${enrollmentLink})`;
       }
 
-      // 14. COURSE MANAGEMENT URL
+      // 14. COURSE ADMIN URL
       const courseEditUrl = `https://googlesandbox.docebosaas.com/course/edit/${actualCourseId}`;
       responseMessage += `\n⚙️ **Course Admin URL**: [Edit Course](${courseEditUrl})`;
 
@@ -423,29 +423,60 @@ Please check:
 
       const learningPlanDetails = await api.getLearningPlanDetails(learningPlanName);
       const displayName = api.getLearningPlanName(learningPlanDetails);
+      const actualLearningPlanId = learningPlanDetails.learning_plan_id || learningPlanDetails.id || 'Not available';
       
       let responseMessage = `📋 **Learning Plan Information**: ${displayName}
 
-🆔 **Learning Plan ID**: ${learningPlanDetails.learning_plan_id || learningPlanDetails.id || 'Not available'}
-📝 **Name**: ${displayName}
-📊 **Status**: ${learningPlanDetails.status || learningPlanDetails.learning_plan_status || learningPlanDetails.lp_status || 'Not specified'}`;
+🆔 **Learning Plan ID**: ${actualLearningPlanId}
+📝 **Name**: ${displayName}`;
 
-      if (learningPlanDetails.description) {
-        responseMessage += `\n📄 **Description**: ${learningPlanDetails.description.length > 200 ? learningPlanDetails.description.substring(0, 200) + '...' : learningPlanDetails.description}`;
+      // 1. STATUS FIELD - Enhanced mapping based on API structure
+      let status = 'Not specified';
+      if (learningPlanDetails.is_published === true || learningPlanDetails.is_published === 1) {
+        status = 'Published';
+      } else if (learningPlanDetails.is_published === false || learningPlanDetails.is_published === 0) {
+        status = 'Draft';
+      } else if (learningPlanDetails.status === 'active' || learningPlanDetails.status === '2') {
+        status = 'Published';
+      } else if (learningPlanDetails.status === 'inactive' || learningPlanDetails.status === '0') {
+        status = 'Draft';
+      } else if (learningPlanDetails.status) {
+        status = learningPlanDetails.status;
+      }
+      responseMessage += `\n📊 **Status**: ${status}`;
+
+      // 2. DESCRIPTION FIELD - Clean HTML content
+      if (learningPlanDetails.description && learningPlanDetails.description.trim()) {
+        const cleanDescription = learningPlanDetails.description
+          .replace(/<[^>]*>/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+        responseMessage += `\n📄 **Description**: ${cleanDescription.length > 300 ? cleanDescription.substring(0, 300) + '...' : cleanDescription}`;
       }
 
+      // 3. CODE FIELD
       if (learningPlanDetails.code) {
-        responseMessage += `\n🔗 **Code**: ${learningPlanDetails.code}`;
+        responseMessage += `\n🏷️ **Code**: ${learningPlanDetails.code}`;
       }
 
-      if (learningPlanDetails.enrollment_count || learningPlanDetails.enrolled_users || learningPlanDetails.total_enrollments) {
-        responseMessage += `\n👥 **Enrollments**: ${learningPlanDetails.enrollment_count || learningPlanDetails.enrolled_users || learningPlanDetails.total_enrollments}`;
+      // 4. ENROLLMENT COUNT - Enhanced mapping
+      const enrollmentCount = learningPlanDetails.assigned_enrollments_count !== undefined ? 
+                             learningPlanDetails.assigned_enrollments_count :
+                             learningPlanDetails.enrollment_count || 
+                             learningPlanDetails.enrolled_users || 
+                             learningPlanDetails.total_enrollments ||
+                             learningPlanDetails.user_count;
+      if (enrollmentCount !== undefined) {
+        responseMessage += `\n👥 **Enrollments**: ${enrollmentCount}`;
       }
 
-      if (learningPlanDetails.course_count || learningPlanDetails.total_courses) {
-        responseMessage += `\n📚 **Courses**: ${learningPlanDetails.course_count || learningPlanDetails.total_courses}`;
+      // 5. COURSE COUNT FIELDS
+      if (learningPlanDetails.course_count !== undefined || learningPlanDetails.total_courses !== undefined) {
+        const courseCount = learningPlanDetails.course_count || learningPlanDetails.total_courses;
+        responseMessage += `\n📚 **Total Courses**: ${courseCount}`;
       }
 
+      // 6. MANDATORY AND OPTIONAL COURSES
       if (learningPlanDetails.mandatory_courses !== undefined) {
         responseMessage += `\n✅ **Mandatory Courses**: ${learningPlanDetails.mandatory_courses}`;
       }
@@ -454,21 +485,76 @@ Please check:
         responseMessage += `\n📝 **Optional Courses**: ${learningPlanDetails.optional_courses}`;
       }
 
-      if (learningPlanDetails.validity_start || learningPlanDetails.start_date) {
-        responseMessage += `\n📅 **Start Date**: ${learningPlanDetails.validity_start || learningPlanDetails.start_date}`;
+      // 7. CREATION DATE - Multiple possible field names
+      const creationDate = learningPlanDetails.created_on ||
+                          learningPlanDetails.creation_date || 
+                          learningPlanDetails.created_at ||
+                          learningPlanDetails.date_created;
+      if (creationDate) {
+        responseMessage += `\n📅 **Created**: ${creationDate}`;
       }
 
-      if (learningPlanDetails.validity_end || learningPlanDetails.end_date) {
-        responseMessage += `\n📅 **End Date**: ${learningPlanDetails.validity_end || learningPlanDetails.end_date}`;
+      // 8. LAST UPDATE DATE
+      const updateDate = learningPlanDetails.updated_on ||
+                        learningPlanDetails.last_update ||
+                        learningPlanDetails.updated_at ||
+                        learningPlanDetails.date_modified;
+      if (updateDate) {
+        responseMessage += `\n🔄 **Last Updated**: ${updateDate}`;
       }
 
-      if (learningPlanDetails.creation_date || learningPlanDetails.created_at) {
-        responseMessage += `\n📅 **Created**: ${learningPlanDetails.creation_date || learningPlanDetails.created_at}`;
+      // 9. VALIDITY DATES - Learning plan specific fields
+      const validityStart = learningPlanDetails.validity_start || 
+                           learningPlanDetails.start_date ||
+                           learningPlanDetails.date_begin;
+      if (validityStart) {
+        responseMessage += `\n📅 **Start Date**: ${validityStart}`;
       }
+
+      const validityEnd = learningPlanDetails.validity_end || 
+                         learningPlanDetails.end_date ||
+                         learningPlanDetails.date_end;
+      if (validityEnd) {
+        responseMessage += `\n📅 **End Date**: ${validityEnd}`;
+      }
+
+      // 10. CREATED BY - Author information
+      if (learningPlanDetails.created_by && learningPlanDetails.created_by.fullname) {
+        responseMessage += `\n👤 **Created By**: ${learningPlanDetails.created_by.fullname}`;
+      } else if (learningPlanDetails.author) {
+        responseMessage += `\n👤 **Created By**: ${learningPlanDetails.author}`;
+      }
+
+      // 11. SHOW IN CATALOG - Based on search results
+      if (learningPlanDetails.show_in_catalog !== undefined) {
+        responseMessage += `\n📂 **Show in Catalog**: ${learningPlanDetails.show_in_catalog ? 'Yes' : 'No'}`;
+      }
+
+      // 12. LANGUAGE FIELD
+      if (learningPlanDetails.language && learningPlanDetails.language.name) {
+        responseMessage += `\n🌍 **Language**: ${learningPlanDetails.language.name}`;
+      } else if (learningPlanDetails.language) {
+        responseMessage += `\n🌍 **Language**: ${learningPlanDetails.language}`;
+      }
+
+      // 13. CATEGORY INFORMATION
+      if (learningPlanDetails.category) {
+        responseMessage += `\n📁 **Category**: ${learningPlanDetails.category.name || learningPlanDetails.category}`;
+      }
+
+      // 14. LEARNING PLAN UID
+      if (learningPlanDetails.uid) {
+        responseMessage += `\n🔗 **Learning Plan UID**: ${learningPlanDetails.uid}`;
+      }
+
+      // 15. LEARNING PLAN MANAGEMENT URL
+      const lpEditUrl = `https://googlesandbox.docebosaas.com/learningplan/edit/${actualLearningPlanId}`;
+      responseMessage += `\n⚙️ **Learning Plan Admin URL**: [Edit Learning Plan](${lpEditUrl})`;
 
       responseMessage += `\n\n💡 **Next Steps**: 
 • "Enroll [user] in learning plan ${displayName}" to enroll users
 • "Find courses" to search for related courses
+• "Find learning plans about [topic]" to search for related learning plans
 
 *Using endpoint: /learningplan/v1/learningplans*`;
 
@@ -478,7 +564,8 @@ Please check:
         data: {
           learningPlan: learningPlanDetails,
           learningPlanName: displayName,
-          learningPlanId: learningPlanDetails.learning_plan_id || learningPlanDetails.id
+          learningPlanId: actualLearningPlanId,
+          editUrl: lpEditUrl
         },
         timestamp: new Date().toISOString()
       });
@@ -500,7 +587,6 @@ Please check:
       });
     }
   }
-
   static async handleDoceboHelp(entities: any, api: DoceboAPI): Promise<NextResponse> {
     try {
       const { query } = entities;
