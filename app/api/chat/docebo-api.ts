@@ -959,11 +959,14 @@ export class DoceboAPI {
   async getLearningPlanDetails(identifier: string): Promise<any> {
     console.log(`🔍 Finding learning plan: "${identifier}"`);
     
+    // First try direct ID lookup if the identifier is numeric
     if (/^\d+$/.test(identifier)) {
       try {
+        console.log(`🆔 Trying direct lookup by ID: ${identifier}`);
         const directResult = await this.apiRequest(`/learningplan/v1/learningplans/${identifier}`, 'GET');
         if (directResult.data) {
           console.log(`✅ Found learning plan by direct ID: ${identifier}`);
+          console.log(`📋 Learning plan data structure:`, JSON.stringify(directResult.data, null, 2));
           return directResult.data;
         }
       } catch (error) {
@@ -971,18 +974,56 @@ export class DoceboAPI {
       }
     }
     
+    // Search for the learning plan by name
+    console.log(`🔍 Searching for learning plan: "${identifier}"`);
     const learningPlans = await this.searchLearningPlans(identifier, 100);
-    const lp = learningPlans.find((plan: any) => 
-      plan.learning_plan_id?.toString() === identifier ||
-      plan.id?.toString() === identifier ||
-      this.getLearningPlanName(plan).toLowerCase().includes(identifier.toLowerCase()) ||
-      plan.code === identifier
-    );
+    console.log(`📊 Search returned ${learningPlans.length} learning plans`);
+    
+    if (learningPlans.length === 0) {
+      throw new Error(`Learning plan not found: ${identifier}`);
+    }
+    
+    // Find exact or best match
+    const lp = learningPlans.find((plan: any) => {
+      const planName = this.getLearningPlanName(plan);
+      const planId = plan.learning_plan_id || plan.id;
+      const planCode = plan.code;
+      
+      // Exact matches
+      if (planId?.toString() === identifier.toString()) return true;
+      if (planCode === identifier) return true;
+      if (planName.toLowerCase() === identifier.toLowerCase()) return true;
+      
+      // Partial matches
+      if (planName.toLowerCase().includes(identifier.toLowerCase())) return true;
+      
+      return false;
+    }) || learningPlans[0]; // Fallback to first result
     
     if (!lp) {
       throw new Error(`Learning plan not found: ${identifier}`);
     }
     
+    const learningPlanId = lp.learning_plan_id || lp.id;
+    console.log(`✅ Found learning plan: ${this.getLearningPlanName(lp)} (ID: ${learningPlanId})`);
+    
+    // Try to get detailed information if we have an ID
+    if (learningPlanId) {
+      try {
+        console.log(`🔍 Getting detailed learning plan info for ID: ${learningPlanId}`);
+        const detailsResult = await this.apiRequest(`/learningplan/v1/learningplans/${learningPlanId}`, 'GET');
+        if (detailsResult.data) {
+          console.log(`✅ Got detailed learning plan info`);
+          console.log(`📋 Detailed learning plan data:`, JSON.stringify(detailsResult.data, null, 2));
+          return detailsResult.data;
+        }
+      } catch (error) {
+        console.log(`⚠️ Could not get detailed learning plan info, using search result:`, error);
+      }
+    }
+    
+    // Return the search result if detailed lookup failed
+    console.log(`📋 Using search result data:`, JSON.stringify(lp, null, 2));
     return lp;
   }
 
