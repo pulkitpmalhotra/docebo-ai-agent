@@ -255,8 +255,21 @@ static async handleCourseInfo(entities: any, api: DoceboAPI): Promise<NextRespon
       const courseDisplayName = api.getCourseName(courseDetails);
       const actualCourseId = courseDetails.id || courseDetails.course_id || courseDetails.idCourse || 'Not available';
       
-      // Log the full API response to debug
-      console.log(`📋 Full course details API response:`, JSON.stringify(courseDetails, null, 2));
+      // DEBUG: Log the full API response to see available fields
+      console.log(`📋 FULL COURSE API RESPONSE:`, JSON.stringify(courseDetails, null, 2));
+      
+      // DEBUG: Show all available fields in the response
+      let debugFields = '**🔍 DEBUG - Available API Fields:**\n';
+      Object.keys(courseDetails).forEach(key => {
+        const value = courseDetails[key];
+        const valueType = typeof value;
+        const valuePreview = valueType === 'object' && value !== null ? 
+          `{${Object.keys(value).slice(0, 3).join(', ')}${Object.keys(value).length > 3 ? '...' : ''}}` :
+          valueType === 'string' && value.length > 50 ? 
+          `"${value.substring(0, 50)}..."` :
+          JSON.stringify(value);
+        debugFields += `• **${key}**: ${valueType} = ${valuePreview}\n`;
+      });
       
       let responseMessage = `📚 **Course Information**: ${courseDisplayName}
 
@@ -265,54 +278,63 @@ static async handleCourseInfo(entities: any, api: DoceboAPI): Promise<NextRespon
 📂 **Type**: ${courseDetails.course_type || courseDetails.type || 'Not specified'}
 📊 **Status**: ${courseDetails.status || courseDetails.course_status || 'Not specified'}`;
 
-      // FIXED: Add code field
+      // 1. CODE FIELD
       if (courseDetails.code) {
         responseMessage += `\n🏷️ **Code**: ${courseDetails.code}`;
+      } else {
+        responseMessage += `\n🏷️ **Code**: Not available (checked: code)`;
       }
 
-      // FIXED: Add language field - handle different possible formats
+      // 2. LANGUAGE FIELD - Enhanced handling
+      let languageText = 'Not available';
       if (courseDetails.language) {
-        let languageText = 'Not specified';
         if (typeof courseDetails.language === 'string') {
           languageText = courseDetails.language;
-        } else if (typeof courseDetails.language === 'object' && courseDetails.language.name) {
-          languageText = courseDetails.language.name;
-        } else if (typeof courseDetails.language === 'object' && courseDetails.language.title) {
-          languageText = courseDetails.language.title;
-        } else if (courseDetails.lang_code) {
-          languageText = courseDetails.lang_code;
+        } else if (typeof courseDetails.language === 'object') {
+          languageText = courseDetails.language.name || 
+                        courseDetails.language.title || 
+                        courseDetails.language.code ||
+                        JSON.stringify(courseDetails.language);
         }
         responseMessage += `\n🌍 **Language**: ${languageText}`;
       } else if (courseDetails.lang_code) {
         responseMessage += `\n🌍 **Language**: ${courseDetails.lang_code}`;
+      } else {
+        responseMessage += `\n🌍 **Language**: Not available (checked: language, lang_code)`;
       }
 
-      // FIXED: Add description
+      // 3. DESCRIPTION
       if (courseDetails.description && courseDetails.description.trim()) {
         responseMessage += `\n📄 **Description**: ${courseDetails.description.length > 200 ? courseDetails.description.substring(0, 200) + '...' : courseDetails.description}`;
+      } else {
+        responseMessage += `\n📄 **Description**: Not available (checked: description)`;
       }
 
-      // FIXED: Add creation date - check multiple field formats
-      if (courseDetails.creation_date) {
-        responseMessage += `\n📅 **Created**: ${courseDetails.creation_date}`;
-      } else if (courseDetails.created_at) {
-        responseMessage += `\n📅 **Created**: ${courseDetails.created_at}`;
-      } else if (courseDetails.date_created) {
-        responseMessage += `\n📅 **Created**: ${courseDetails.date_created}`;
+      // 4. CREATION DATE
+      const createdDate = courseDetails.creation_date || 
+                         courseDetails.created_at || 
+                         courseDetails.date_created ||
+                         courseDetails.created ||
+                         courseDetails.create_date;
+      if (createdDate) {
+        responseMessage += `\n📅 **Created**: ${createdDate}`;
+      } else {
+        responseMessage += `\n📅 **Created**: Not available (checked: creation_date, created_at, date_created, created, create_date)`;
       }
 
-      // FIXED: Add last update date - check multiple field formats
-      if (courseDetails.last_update) {
-        responseMessage += `\n🔄 **Last Updated**: ${courseDetails.last_update}`;
-      } else if (courseDetails.updated_at) {
-        responseMessage += `\n🔄 **Last Updated**: ${courseDetails.updated_at}`;
-      } else if (courseDetails.date_updated) {
-        responseMessage += `\n🔄 **Last Updated**: ${courseDetails.date_updated}`;
-      } else if (courseDetails.last_modified) {
-        responseMessage += `\n🔄 **Last Updated**: ${courseDetails.last_modified}`;
+      // 5. LAST UPDATE DATE
+      const updatedDate = courseDetails.last_update || 
+                         courseDetails.updated_at || 
+                         courseDetails.date_updated ||
+                         courseDetails.last_modified ||
+                         courseDetails.modified_date;
+      if (updatedDate) {
+        responseMessage += `\n🔄 **Last Updated**: ${updatedDate}`;
+      } else {
+        responseMessage += `\n🔄 **Last Updated**: Not available (checked: last_update, updated_at, date_updated, last_modified, modified_date)`;
       }
 
-      // FIXED: Add duration from average_completion_time
+      // 6. DURATION - Enhanced checking
       if (courseDetails.average_completion_time !== undefined && courseDetails.average_completion_time !== null) {
         const duration = courseDetails.average_completion_time;
         if (duration > 0) {
@@ -320,91 +342,90 @@ static async handleCourseInfo(entities: any, api: DoceboAPI): Promise<NextRespon
           const minutes = duration % 60;
           responseMessage += `\n⏱️ **Average Duration**: ${hours > 0 ? `${hours}h ` : ''}${minutes}m`;
         } else {
-          responseMessage += `\n⏱️ **Average Duration**: Not set`;
+          responseMessage += `\n⏱️ **Average Duration**: 0 minutes`;
         }
       } else if (courseDetails.duration) {
         responseMessage += `\n⏱️ **Duration**: ${courseDetails.duration}`;
       } else if (courseDetails.estimated_duration) {
         responseMessage += `\n⏱️ **Duration**: ${courseDetails.estimated_duration}`;
+      } else {
+        responseMessage += `\n⏱️ **Duration**: Not available (checked: average_completion_time, duration, estimated_duration)`;
       }
 
-      // FIXED: Add created by information - handle different formats
+      // 7. CREATED BY
       if (courseDetails.created_by) {
         if (typeof courseDetails.created_by === 'object' && courseDetails.created_by.fullname) {
           responseMessage += `\n👤 **Created By**: ${courseDetails.created_by.fullname}`;
         } else if (typeof courseDetails.created_by === 'string') {
           responseMessage += `\n👤 **Created By**: ${courseDetails.created_by}`;
+        } else {
+          responseMessage += `\n👤 **Created By**: ${JSON.stringify(courseDetails.created_by)}`;
         }
       } else if (courseDetails.creator_name) {
         responseMessage += `\n👤 **Created By**: ${courseDetails.creator_name}`;
+      } else {
+        responseMessage += `\n👤 **Created By**: Not available (checked: created_by.fullname, created_by, creator_name)`;
       }
 
-      // FIXED: Add updated by information - handle different formats
+      // 8. UPDATED BY
       if (courseDetails.updated_by) {
         if (typeof courseDetails.updated_by === 'object' && courseDetails.updated_by.fullname) {
           responseMessage += `\n✏️ **Updated By**: ${courseDetails.updated_by.fullname}`;
         } else if (typeof courseDetails.updated_by === 'string') {
           responseMessage += `\n✏️ **Updated By**: ${courseDetails.updated_by}`;
+        } else {
+          responseMessage += `\n✏️ **Updated By**: ${JSON.stringify(courseDetails.updated_by)}`;
         }
       } else if (courseDetails.last_updated_by) {
         responseMessage += `\n✏️ **Updated By**: ${courseDetails.last_updated_by}`;
+      } else {
+        responseMessage += `\n✏️ **Updated By**: Not available (checked: updated_by.fullname, updated_by, last_updated_by)`;
       }
 
-      // FIXED: Add skills information - handle different formats
+      // 9. SKILLS
       if (courseDetails.skills && Array.isArray(courseDetails.skills) && courseDetails.skills.length > 0) {
         const skillNames = courseDetails.skills.map((skill: any) => {
           if (typeof skill === 'string') return skill;
-          return skill.name || skill.skill_name || skill.title || 'Unknown Skill';
+          return skill.name || skill.skill_name || skill.title || JSON.stringify(skill);
         }).join(', ');
         responseMessage += `\n🎯 **Skills**: ${skillNames}`;
       } else if (courseDetails.skill_names && Array.isArray(courseDetails.skill_names)) {
         responseMessage += `\n🎯 **Skills**: ${courseDetails.skill_names.join(', ')}`;
+      } else {
+        responseMessage += `\n🎯 **Skills**: Not available (checked: skills[], skill_names[])`;
       }
 
-      // FIXED: Add enrollment count - check multiple fields
-      if (courseDetails.enrolled_count !== undefined) {
-        responseMessage += `\n👥 **Enrollments**: ${courseDetails.enrolled_count}`;
-      } else if (courseDetails.enrollment_count !== undefined) {
-        responseMessage += `\n👥 **Enrollments**: ${courseDetails.enrollment_count}`;
-      } else if (courseDetails.enrollments !== undefined) {
-        responseMessage += `\n👥 **Enrollments**: ${courseDetails.enrollments}`;
-      } else if (courseDetails.total_enrollments !== undefined) {
-        responseMessage += `\n👥 **Enrollments**: ${courseDetails.total_enrollments}`;
+      // 10. ENROLLMENTS
+      const enrollmentCount = courseDetails.enrolled_count || 
+                             courseDetails.enrollment_count || 
+                             courseDetails.enrollments || 
+                             courseDetails.total_enrollments ||
+                             courseDetails.users_enrolled ||
+                             courseDetails.user_count;
+      if (enrollmentCount !== undefined) {
+        responseMessage += `\n👥 **Enrollments**: ${enrollmentCount}`;
+      } else {
+        responseMessage += `\n👥 **Enrollments**: Not available (checked: enrolled_count, enrollment_count, enrollments, total_enrollments, users_enrolled, user_count)`;
       }
 
-      // FIXED: Add enrollment link
+      // 11. ENROLLMENT LINK
       if (courseDetails.deeplink && courseDetails.deeplink.enabled && courseDetails.deeplink.hash) {
         const enrollmentLink = `https://googlesandbox.docebosaas.com/learn/course/${actualCourseId}/${courseDetails.slug || 'course'}?generatedby=user_id&hash=${courseDetails.deeplink.hash}`;
         responseMessage += `\n🔗 **Enrollment Link**: [Direct Enrollment](${enrollmentLink})`;
+      } else {
+        responseMessage += `\n🔗 **Enrollment Link**: Not available (checked: deeplink.enabled, deeplink.hash)`;
       }
 
-      // FIXED: Add course editing URL
+      // 12. COURSE MANAGEMENT URL
       const courseEditUrl = `https://googlesandbox.docebosaas.com/course/edit/${actualCourseId}`;
       responseMessage += `\n⚙️ **Course Management**: [Edit Course](${courseEditUrl})`;
 
-      // Add completion tracking if available
-      if (courseDetails.completion_tracking !== undefined) {
-        responseMessage += `\n📈 **Completion Tracking**: ${courseDetails.completion_tracking ? 'Enabled' : 'Disabled'}`;
-      }
+      // Add the debug information
+      responseMessage += `\n\n${debugFields}`;
 
-      // Add credits if available
-      if (courseDetails.credits || courseDetails.credit) {
-        responseMessage += `\n🎓 **Credits**: ${courseDetails.credits || courseDetails.credit}`;
-      }
-
-      // Add additional metadata if available
-      if (courseDetails.category) {
-        responseMessage += `\n📁 **Category**: ${courseDetails.category}`;
-      }
-
-      if (courseDetails.difficulty_level) {
-        responseMessage += `\n⭐ **Difficulty**: ${courseDetails.difficulty_level}`;
-      }
-
-      responseMessage += `\n\n💡 **Next Steps**: 
+      responseMessage += `\n💡 **Next Steps**: 
 • "Who is enrolled in ${courseDisplayName}" to see enrollments
-• "Enroll [user] in course ${courseDisplayName}" to enroll users
-• "Course enrollment statistics for ${courseDisplayName}" for detailed analytics`;
+• "Enroll [user] in course ${courseDisplayName}" to enroll users`;
 
       return NextResponse.json({
         response: responseMessage,
@@ -413,8 +434,7 @@ static async handleCourseInfo(entities: any, api: DoceboAPI): Promise<NextRespon
           course: courseDetails,
           courseName: courseDisplayName,
           courseId: actualCourseId,
-          enrollmentLink: courseDetails.deeplink?.enabled ? `https://googlesandbox.docebosaas.com/learn/course/${actualCourseId}/${courseDetails.slug || 'course'}?generatedby=user_id&hash=${courseDetails.deeplink?.hash}` : null,
-          editUrl: `https://googlesandbox.docebosaas.com/course/edit/${actualCourseId}`
+          debug: true
         },
         timestamp: new Date().toISOString()
       });
@@ -423,12 +443,7 @@ static async handleCourseInfo(entities: any, api: DoceboAPI): Promise<NextRespon
       console.error('❌ Course info error:', error);
       
       return NextResponse.json({
-        response: `❌ **Course Information Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
-
-Please check:
-• Course name or ID is correct
-• Course exists in the system
-• You have permission to view course information`,
+        response: `❌ **Course Information Failed**: ${error instanceof Error ? error.message : 'Unknown error'}`,
         success: false,
         timestamp: new Date().toISOString()
       });
