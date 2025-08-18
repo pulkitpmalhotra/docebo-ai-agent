@@ -1,4 +1,4 @@
-// app/api/chat/handlers/info.ts - Info and details handlers
+// app/api/chat/handlers/info.ts - Fixed enrollment checking logic
 import { NextResponse } from 'next/server';
 import { DoceboAPI } from '../docebo-api';
 import { APIResponse } from '../types';
@@ -17,96 +17,17 @@ export class InfoHandlers {
         });
       }
 
-      console.log(`🔍 Checking enrollment: ${email} -> ${resourceName} (${resourceType})`);
+      console.log(`🔍 Enhanced enrollment check: ${email} -> ${resourceName} (${resourceType})`);
 
       // Find user
       const userDetails = await api.getUserDetails(email);
       
-      // Get user's enrollments
-      const enrollmentData = await api.getUserAllEnrollments(userDetails.id);
-      
-      let found = false;
-      let enrollmentDetails = null;
-      let responseMessage = '';
-
+      // Enhanced enrollment checking logic
       if (resourceType === 'learning_plan') {
-        // Check learning plan enrollments
-        const lpEnrollments = enrollmentData.learningPlans.enrollments;
-        enrollmentDetails = lpEnrollments.find((enrollment: any) => {
-          const lpName = api.getLearningPlanName(enrollment).toLowerCase();
-          return lpName.includes(resourceName.toLowerCase());
-        });
-        
-        if (enrollmentDetails) {
-          found = true;
-          const formatted = api.formatLearningPlanEnrollment(enrollmentDetails);
-          
-          responseMessage = `✅ **Enrollment Found**: ${userDetails.fullname}
-
-📋 **Learning Plan**: ${formatted.learningPlanName}
-📊 **Status**: ${formatted.enrollmentStatus.toUpperCase()}
-📅 **Enrolled**: ${formatted.enrollmentDate || 'Date not available'}
-📈 **Progress**: ${formatted.completedCourses || 0}/${formatted.totalCourses || 0} courses completed
-${formatted.completionDate ? `🎯 **Completed**: ${formatted.completionDate}` : ''}
-${formatted.dueDate ? `⏰ **Due Date**: ${formatted.dueDate}` : ''}`;
-        }
+        return await this.checkLearningPlanEnrollment(userDetails, resourceName, checkType, api);
       } else {
-        // Check course enrollments
-        const courseEnrollments = enrollmentData.courses.enrollments;
-        enrollmentDetails = courseEnrollments.find((enrollment: any) => {
-          const courseName = api.getCourseName(enrollment).toLowerCase();
-          return courseName.includes(resourceName.toLowerCase());
-        });
-        
-        if (enrollmentDetails) {
-          found = true;
-          const formatted = api.formatCourseEnrollment(enrollmentDetails);
-          
-          responseMessage = `✅ **Enrollment Found**: ${userDetails.fullname}
-
-📚 **Course**: ${formatted.courseName}
-📊 **Status**: ${formatted.enrollmentStatus.toUpperCase()}
-📅 **Enrolled**: ${formatted.enrollmentDate || 'Date not available'}
-📈 **Progress**: ${formatted.progress}%
-${formatted.score ? `🎯 **Score**: ${formatted.score}` : ''}
-${formatted.completionDate ? `✅ **Completed**: ${formatted.completionDate}` : ''}
-${formatted.dueDate ? `⏰ **Due Date**: ${formatted.dueDate}` : ''}`;
-        }
+        return await this.checkCourseEnrollment(userDetails, resourceName, checkType, api);
       }
-
-      if (!found) {
-        responseMessage = `❌ **No Enrollment Found**: ${userDetails.fullname}
-
-👤 **User**: ${userDetails.fullname} (${email})
-${resourceType === 'learning_plan' ? '📋' : '📚'} **${resourceType === 'learning_plan' ? 'Learning Plan' : 'Course'}**: ${resourceName}
-
-The user is not currently enrolled in this ${resourceType === 'learning_plan' ? 'learning plan' : 'course'}.
-
-📊 **User's Current Enrollments**: 
-• **Courses**: ${enrollmentData.totalCourses}
-• **Learning Plans**: ${enrollmentData.totalLearningPlans}
-
-💡 **Next Steps**: 
-• "User enrollments ${email}" to see all enrollments
-• "Enroll ${email} in ${resourceType === 'learning_plan' ? 'learning plan' : 'course'} ${resourceName}" to enroll`;
-      }
-
-      return NextResponse.json({
-        response: responseMessage,
-        success: found,
-        data: {
-          user: userDetails,
-          found: found,
-          enrollmentDetails: enrollmentDetails,
-          resourceType: resourceType,
-          checkType: checkType,
-          totalEnrollments: {
-            courses: enrollmentData.totalCourses,
-            learningPlans: enrollmentData.totalLearningPlans
-          }
-        },
-        timestamp: new Date().toISOString()
-      });
 
     } catch (error) {
       console.error('❌ Enrollment check error:', error);
@@ -124,6 +45,366 @@ Please check:
     }
   }
 
+  private static async checkLearningPlanEnrollment(userDetails: any, resourceName: string, checkType: string, api: DoceboAPI): Promise<NextResponse> {
+    console.log(`📋 Checking learning plan enrollment for user ${userDetails.id}`);
+    
+    try {
+      // Try multiple approaches to find the learning plan enrollment
+      
+      // Method 1: Direct learning plan enrollment check by learning plan ID
+      if (/^\d+$/.test(resourceName)) {
+        console.log(`🔍 Method 1: Direct LP ID check for ID ${resourceName}`);
+        const directCheck = await this.checkDirectLearningPlanEnrollment(userDetails.id, resourceName, api);
+        if (directCheck.found) {
+          return this.formatEnrollmentResponse(userDetails, directCheck, resourceName, 'learning_plan', checkType);
+        }
+      }
+
+      // Method 2: Search learning plans and check enrollments
+      console.log(`🔍 Method 2: Search learning plans and check enrollments`);
+      const learningPlans = await api.searchLearningPlans(resourceName, 50);
+      console.log(`📊 Found ${learningPlans.length} learning plans matching "${resourceName}"`);
+      
+      for (const lp of learningPlans) {
+        const lpName = api.getLearningPlanName(lp);
+        const lpId = lp.learning_plan_id || lp.id;
+        
+        console.log(`🔍 Checking LP: "${lpName}" (ID: ${lpId})`);
+        
+        if (this.isLearningPlanMatch(lpName, resourceName) && lpId) {
+          const enrollmentCheck = await this.checkDirectLearningPlanEnrollment(userDetails.id, lpId.toString(), api);
+          if (enrollmentCheck.found) {
+            return this.formatEnrollmentResponse(userDetails, enrollmentCheck, lpName, 'learning_plan', checkType);
+          }
+        }
+      }
+
+      // Method 3: Get all user enrollments and search within them
+      console.log(`🔍 Method 3: Get all user enrollments and search within them`);
+      const enrollmentData = await api.getUserAllEnrollments(userDetails.id);
+      
+      if (enrollmentData.learningPlans.enrollments.length > 0) {
+        console.log(`📊 Found ${enrollmentData.learningPlans.enrollments.length} total LP enrollments`);
+        
+        for (const enrollment of enrollmentData.learningPlans.enrollments) {
+          const formatted = api.formatLearningPlanEnrollment(enrollment);
+          console.log(`🔍 Checking enrollment: "${formatted.learningPlanName}"`);
+          
+          if (this.isLearningPlanMatch(formatted.learningPlanName, resourceName)) {
+            return this.formatEnrollmentResponse(userDetails, {
+              found: true,
+              enrollment: formatted,
+              method: 'user_enrollments'
+            }, formatted.learningPlanName, 'learning_plan', checkType);
+          }
+        }
+      }
+
+      // Method 4: Try alternative learning plan endpoints
+      console.log(`🔍 Method 4: Alternative learning plan endpoints`);
+      const alternativeCheck = await this.checkAlternativeLearningPlanEndpoints(userDetails.id, resourceName, api);
+      if (alternativeCheck.found) {
+        return this.formatEnrollmentResponse(userDetails, alternativeCheck, resourceName, 'learning_plan', checkType);
+      }
+
+      // Not found in any method
+      return NextResponse.json({
+        response: `❌ **No Learning Plan Enrollment Found**: ${userDetails.fullname}
+
+👤 **User**: ${userDetails.fullname} (${userDetails.email})
+📋 **Learning Plan**: ${resourceName}
+
+The user is not currently enrolled in this learning plan.
+
+📊 **User's Current Enrollments**: 
+• **Courses**: ${enrollmentData.totalCourses}
+• **Learning Plans**: ${enrollmentData.totalLearningPlans}
+
+🔍 **Search Methods Used**:
+• Direct LP ID lookup
+• Learning plan search and enrollment check
+• User enrollment data analysis
+• Alternative API endpoints
+
+💡 **Next Steps**: 
+• "User enrollments ${userDetails.email}" to see all enrollments
+• "Enroll ${userDetails.email} in learning plan ${resourceName}" to enroll
+• Try using the exact learning plan name or ID from Docebo`,
+        success: false,
+        data: {
+          user: userDetails,
+          found: false,
+          resourceType: 'learning_plan',
+          checkType: checkType,
+          totalEnrollments: {
+            courses: enrollmentData.totalCourses,
+            learningPlans: enrollmentData.totalLearningPlans
+          },
+          methodsUsed: ['direct_id', 'search_and_check', 'user_enrollments', 'alternative_endpoints']
+        },
+        timestamp: new Date().toISOString()
+      });
+
+    } catch (error) {
+      console.error('❌ Learning plan enrollment check error:', error);
+      throw error;
+    }
+  }
+
+  private static async checkDirectLearningPlanEnrollment(userId: string, learningPlanId: string, api: DoceboAPI): Promise<any> {
+    const endpoints = [
+      `/learningplan/v1/learningplans/${learningPlanId}/enrollments?user_id=${userId}`,
+      `/learningplan/v1/learningplans/${learningPlanId}/enrollments?id_user=${userId}`,
+      `/learningplan/v1/learningplans/enrollments?learning_plan_id=${learningPlanId}&user_id=${userId}`,
+      `/learn/v1/lp/${learningPlanId}/enrollments?user_id=${userId}`
+    ];
+
+    for (const endpoint of endpoints) {
+      try {
+        console.log(`🔍 Trying direct LP enrollment endpoint: ${endpoint}`);
+        const result = await api.apiRequest(endpoint, 'GET');
+        
+        if (result.data?.items?.length > 0) {
+          // Find the specific user's enrollment
+          const userEnrollment = result.data.items.find((enrollment: any) => {
+            const enrollmentUserId = enrollment.user_id || enrollment.id_user || enrollment.userId;
+            return enrollmentUserId?.toString() === userId.toString();
+          });
+          
+          if (userEnrollment) {
+            console.log(`✅ Found LP enrollment via ${endpoint}`);
+            const formatted = api.formatLearningPlanEnrollment(userEnrollment);
+            return {
+              found: true,
+              enrollment: formatted,
+              method: 'direct_api',
+              endpoint: endpoint
+            };
+          }
+        }
+      } catch (error) {
+        console.log(`❌ Direct LP enrollment endpoint ${endpoint} failed:`, error);
+        continue;
+      }
+    }
+
+    return { found: false };
+  }
+
+  private static async checkAlternativeLearningPlanEndpoints(userId: string, resourceName: string, api: DoceboAPI): Promise<any> {
+    const endpoints = [
+      `/manage/v1/user/${userId}/learningplans`,
+      `/learn/v1/users/${userId}/learningplans`,
+      `/learningplan/v1/learningplans/enrollments?user_id=${userId}`
+    ];
+
+    for (const endpoint of endpoints) {
+      try {
+        console.log(`🔍 Trying alternative LP endpoint: ${endpoint}`);
+        const result = await api.apiRequest(endpoint, 'GET');
+        
+        let enrollments = [];
+        if (result.data?.items) {
+          enrollments = result.data.items;
+        } else if (Array.isArray(result.data)) {
+          enrollments = result.data;
+        } else if (Array.isArray(result)) {
+          enrollments = result;
+        }
+
+        if (enrollments.length > 0) {
+          for (const enrollment of enrollments) {
+            const lpName = api.getLearningPlanName(enrollment);
+            if (this.isLearningPlanMatch(lpName, resourceName)) {
+              console.log(`✅ Found LP enrollment via alternative endpoint ${endpoint}`);
+              const formatted = api.formatLearningPlanEnrollment(enrollment);
+              return {
+                found: true,
+                enrollment: formatted,
+                method: 'alternative_endpoint',
+                endpoint: endpoint
+              };
+            }
+          }
+        }
+      } catch (error) {
+        console.log(`❌ Alternative LP endpoint ${endpoint} failed:`, error);
+        continue;
+      }
+    }
+
+    return { found: false };
+  }
+
+  private static async checkCourseEnrollment(userDetails: any, resourceName: string, checkType: string, api: DoceboAPI): Promise<NextResponse> {
+    console.log(`📚 Checking course enrollment for user ${userDetails.id}`);
+    
+    try {
+      // Get user's enrollments
+      const enrollmentData = await api.getUserAllEnrollments(userDetails.id);
+      
+      // Look for course enrollment
+      const courseEnrollments = enrollmentData.courses.enrollments;
+      const enrollmentDetails = courseEnrollments.find((enrollment: any) => {
+        const courseName = api.getCourseName(enrollment).toLowerCase();
+        const resourceLower = resourceName.toLowerCase();
+        
+        // Try exact match first
+        if (courseName === resourceLower) return true;
+        
+        // Try partial match
+        if (courseName.includes(resourceLower) || resourceLower.includes(courseName)) return true;
+        
+        // Try course ID match if resourceName is numeric
+        if (/^\d+$/.test(resourceName)) {
+          const courseId = enrollment.course_id || enrollment.id_course || enrollment.idCourse;
+          if (courseId?.toString() === resourceName) return true;
+        }
+        
+        return false;
+      });
+      
+      if (enrollmentDetails) {
+        const formatted = api.formatCourseEnrollment(enrollmentDetails);
+        
+        let responseMessage = `✅ **Enrollment Found**: ${userDetails.fullname}
+
+📚 **Course**: ${formatted.courseName}
+📊 **Status**: ${formatted.enrollmentStatus.toUpperCase()}
+📅 **Enrolled**: ${formatted.enrollmentDate || 'Date not available'}
+📈 **Progress**: ${formatted.progress}%`;
+
+        if (formatted.score) {
+          responseMessage += `\n🎯 **Score**: ${formatted.score}`;
+        }
+        if (formatted.completionDate) {
+          responseMessage += `\n✅ **Completed**: ${formatted.completionDate}`;
+        }
+        if (formatted.dueDate) {
+          responseMessage += `\n⏰ **Due Date**: ${formatted.dueDate}`;
+        }
+
+        return NextResponse.json({
+          response: responseMessage,
+          success: true,
+          data: {
+            user: userDetails,
+            found: true,
+            enrollmentDetails: formatted,
+            resourceType: 'course',
+            checkType: checkType,
+            totalEnrollments: {
+              courses: enrollmentData.totalCourses,
+              learningPlans: enrollmentData.totalLearningPlans
+            }
+          },
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      // Not found
+      return NextResponse.json({
+        response: `❌ **No Course Enrollment Found**: ${userDetails.fullname}
+
+👤 **User**: ${userDetails.fullname} (${userDetails.email})
+📚 **Course**: ${resourceName}
+
+The user is not currently enrolled in this course.
+
+📊 **User's Current Enrollments**: 
+• **Courses**: ${enrollmentData.totalCourses}
+• **Learning Plans**: ${enrollmentData.totalLearningPlans}
+
+💡 **Next Steps**: 
+• "User enrollments ${userDetails.email}" to see all enrollments
+• "Enroll ${userDetails.email} in course ${resourceName}" to enroll`,
+        success: false,
+        data: {
+          user: userDetails,
+          found: false,
+          resourceType: 'course',
+          checkType: checkType,
+          totalEnrollments: {
+            courses: enrollmentData.totalCourses,
+            learningPlans: enrollmentData.totalLearningPlans
+          }
+        },
+        timestamp: new Date().toISOString()
+      });
+
+    } catch (error) {
+      console.error('❌ Course enrollment check error:', error);
+      throw error;
+    }
+  }
+
+  private static isLearningPlanMatch(lpName: string, searchTerm: string): boolean {
+    const lpLower = lpName.toLowerCase();
+    const searchLower = searchTerm.toLowerCase();
+    
+    // Exact match
+    if (lpLower === searchLower) return true;
+    
+    // Partial match (both directions)
+    if (lpLower.includes(searchLower) || searchLower.includes(lpLower)) return true;
+    
+    // ID match if searchTerm is numeric
+    if (/^\d+$/.test(searchTerm)) {
+      // This will be handled separately with ID-based lookups
+      return false;
+    }
+    
+    return false;
+  }
+
+  private static formatEnrollmentResponse(userDetails: any, enrollmentCheck: any, resourceName: string, resourceType: string, checkType: string): NextResponse {
+    const formatted = enrollmentCheck.enrollment;
+    const isLearningPlan = resourceType === 'learning_plan';
+    
+    let responseMessage = `✅ **Enrollment Found**: ${userDetails.fullname}
+
+${isLearningPlan ? '📋' : '📚'} **${isLearningPlan ? 'Learning Plan' : 'Course'}**: ${isLearningPlan ? formatted.learningPlanName : formatted.courseName}
+📊 **Status**: ${formatted.enrollmentStatus.toUpperCase()}
+📅 **Enrolled**: ${formatted.enrollmentDate || 'Date not available'}`;
+
+    if (isLearningPlan) {
+      responseMessage += `\n📈 **Progress**: ${formatted.completedCourses || 0}/${formatted.totalCourses || 0} courses completed`;
+    } else {
+      responseMessage += `\n📈 **Progress**: ${formatted.progress}%`;
+      if (formatted.score) {
+        responseMessage += `\n🎯 **Score**: ${formatted.score}`;
+      }
+    }
+
+    if (formatted.completionDate) {
+      responseMessage += `\n✅ **Completed**: ${formatted.completionDate}`;
+    }
+    if (formatted.dueDate) {
+      responseMessage += `\n⏰ **Due Date**: ${formatted.dueDate}`;
+    }
+
+    responseMessage += `\n\n🔍 **Found via**: ${enrollmentCheck.method}`;
+    if (enrollmentCheck.endpoint) {
+      responseMessage += ` (${enrollmentCheck.endpoint})`;
+    }
+
+    return NextResponse.json({
+      response: responseMessage,
+      success: true,
+      data: {
+        user: userDetails,
+        found: true,
+        enrollmentDetails: formatted,
+        resourceType: resourceType,
+        checkType: checkType,
+        method: enrollmentCheck.method,
+        endpoint: enrollmentCheck.endpoint
+      },
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  // ... (rest of the existing methods remain the same)
   static async handleUserEnrollments(entities: any, api: DoceboAPI): Promise<NextResponse> {
     try {
       const { email, userId } = entities;
