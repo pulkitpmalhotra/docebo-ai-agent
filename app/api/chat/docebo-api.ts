@@ -1026,6 +1026,34 @@ async getLearningPlanDetails(identifier: string): Promise<any> {
     console.log(`📋 Using search result data:`, JSON.stringify(lp, null, 2));
     return lp;
   }
+
+  // ============================================================================
+  // PUBLIC HELPER METHODS FOR LEARNING PLAN INFO
+  // ============================================================================
+
+  async getLearningPlanEnrollmentStats(learningPlanId: string): Promise<any> {
+    try {
+      console.log(`📊 Getting enrollment statistics for learning plan ${learningPlanId}`);
+      const result = await this.apiRequest(`/learningplan/v1/learningplans/${learningPlanId}/enrollments`, 'GET', null, {
+        page_size: 1 // Just get count, not full data
+      });
+      return result;
+    } catch (error) {
+      console.log(`⚠️ Could not get enrollment statistics:`, error);
+      throw error;
+    }
+  }
+
+  async getLearningPlanCourses(learningPlanId: string): Promise<any> {
+    try {
+      console.log(`📚 Getting courses for learning plan ${learningPlanId}`);
+      const result = await this.apiRequest(`/learningplan/v1/learningplans/${learningPlanId}/courses`, 'GET');
+      return result;
+    } catch (error) {
+      console.log(`⚠️ Could not get course information:`, error);
+      throw error;
+    }
+  }
   
   // ============================================================================
   // DATA FORMATTING HELPERS
