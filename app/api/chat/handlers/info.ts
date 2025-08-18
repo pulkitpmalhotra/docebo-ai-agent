@@ -351,7 +351,7 @@ static async handleCourseInfo(entities: any, api: DoceboAPI): Promise<NextRespon
 
       // 14. COURSE MANAGEMENT URL
       const courseEditUrl = `https://googlesandbox.docebosaas.com/course/edit/${actualCourseId}`;
-      responseMessage += `\n⚙️ **Course Management**: [Edit Course](${courseEditUrl})`;
+      responseMessage += `\n⚙️ **Course Admin URL**: [Edit Course](${courseEditUrl})`;
 
       // 15. SELF ENROLLMENT - ✅ Available in "catalog_options.self_enrollment"
       if (courseDetails.catalog_options && courseDetails.catalog_options.self_enrollment) {
