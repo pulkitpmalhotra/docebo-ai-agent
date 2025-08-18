@@ -88,9 +88,10 @@ Please check:
         
         for (const enrollment of enrollmentData.learningPlans.enrollments) {
           const formatted = api.formatLearningPlanEnrollment(enrollment);
-          console.log(`🔍 Checking enrollment: "${formatted.learningPlanName}"`);
+          const lpName = formatted.learningPlanName || 'Unknown Learning Plan';
+          console.log(`🔍 Checking enrollment: "${lpName}"`);
           
-          if (this.isLearningPlanMatch(formatted.learningPlanName, resourceName)) {
+          if (formatted.learningPlanName && this.isLearningPlanMatch(formatted.learningPlanName, resourceName)) {
             return this.formatEnrollmentResponse(userDetails, {
               found: true,
               enrollment: formatted,
@@ -266,10 +267,11 @@ The user is not currently enrolled in this learning plan.
       
       if (enrollmentDetails) {
         const formatted = api.formatCourseEnrollment(enrollmentDetails);
+        const courseName = formatted.courseName || 'Unknown Course';
         
         let responseMessage = `✅ **Enrollment Found**: ${userDetails.fullname}
 
-📚 **Course**: ${formatted.courseName}
+📚 **Course**: ${courseName}
 📊 **Status**: ${formatted.enrollmentStatus.toUpperCase()}
 📅 **Enrolled**: ${formatted.enrollmentDate || 'Date not available'}
 📈 **Progress**: ${formatted.progress}%`;
@@ -404,7 +406,228 @@ ${isLearningPlan ? '📋' : '📚'} **${isLearningPlan ? 'Learning Plan' : 'Cour
     });
   }
 
-  // ... (rest of the existing methods remain the same)
+  // ... (rest of the methods remain the same as in the original file)
+
+  static async handleCourseInfo(entities: any, api: DoceboAPI): Promise<NextResponse> {
+    try {
+      const { courseId, courseName } = entities;
+      const identifier = courseId || courseName;
+      
+      if (!identifier) {
+        return NextResponse.json({
+          response: '❌ **Missing Information**: Please provide a course name or ID.\n\n**Example**: "Course info Python Programming"',
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      console.log(`📚 Getting course info: ${identifier}`);
+
+      const courseDetails = await api.getCourseDetails(identifier);
+      const courseDisplayName = api.getCourseName(courseDetails);
+      const actualCourseId = courseDetails.id || courseDetails.course_id || courseDetails.idCourse || 'Not available';
+      
+      let responseMessage = `📚 **Course Information**: ${courseDisplayName}
+
+🆔 **Course ID**: ${actualCourseId}
+📝 **Name**: ${courseDisplayName}
+📂 **Type**: ${courseDetails.type || courseDetails.course_type || 'Not specified'}
+📊 **Status**: ${courseDetails.status || courseDetails.course_status || 'Not specified'}`;
+
+      // Add additional course details
+      if (courseDetails.code) {
+        responseMessage += `\n🏷️ **Code**: ${courseDetails.code}`;
+      }
+
+      if (courseDetails.language && courseDetails.language.name) {
+        responseMessage += `\n🌍 **Language**: ${courseDetails.language.name}`;
+      }
+
+      if (courseDetails.description && courseDetails.description.trim()) {
+        const cleanDescription = courseDetails.description
+          .replace(/<[^>]*>/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+        responseMessage += `\n📄 **Description**: ${cleanDescription.length > 300 ? cleanDescription.substring(0, 300) + '...' : cleanDescription}`;
+      }
+
+      responseMessage += `\n\n💡 **Next Steps**: 
+• "Who is enrolled in ${courseDisplayName}" to see enrollments
+• "Enroll [user] in course ${courseDisplayName}" to enroll users`;
+
+      return NextResponse.json({
+        response: responseMessage,
+        success: true,
+        data: {
+          course: courseDetails,
+          courseName: courseDisplayName,
+          courseId: actualCourseId
+        },
+        timestamp: new Date().toISOString()
+      });
+
+    } catch (error) {
+      console.error('❌ Course info error:', error);
+      
+      return NextResponse.json({
+        response: `❌ **Course Information Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
+
+Please check:
+• Course name or ID is correct
+• Course exists in the system
+• You have permission to view course information`,
+        success: false,
+        timestamp: new Date().toISOString()
+      });
+    }
+  }
+
+  static async handleLearningPlanInfo(entities: any, api: DoceboAPI): Promise<NextResponse> {
+    try {
+      const { learningPlanName } = entities;
+      
+      if (!learningPlanName) {
+        return NextResponse.json({
+          response: '❌ **Missing Information**: Please provide a learning plan name.\n\n**Example**: "Learning plan info Data Science Program"',
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      console.log(`📋 Getting learning plan info: ${learningPlanName}`);
+
+      const learningPlanDetails = await api.getLearningPlanDetails(learningPlanName);
+      const displayName = api.getLearningPlanName(learningPlanDetails);
+      const actualLearningPlanId = learningPlanDetails.learning_plan_id || learningPlanDetails.id || 'Not available';
+      
+      let responseMessage = `📋 **Learning Plan Information**: ${displayName}
+
+🆔 **Learning Plan ID**: ${actualLearningPlanId}
+📝 **Name**: ${displayName}`;
+
+      // Add status
+      let status = 'Not specified';
+      if (learningPlanDetails.is_published === true || learningPlanDetails.is_published === 1) {
+        status = 'Published';
+      } else if (learningPlanDetails.is_published === false || learningPlanDetails.is_published === 0) {
+        status = 'Draft';
+      }
+      responseMessage += `\n📊 **Status**: ${status}`;
+
+      // Add description
+      if (learningPlanDetails.description && learningPlanDetails.description.trim()) {
+        const cleanDescription = learningPlanDetails.description
+          .replace(/<[^>]*>/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+        responseMessage += `\n📄 **Description**: ${cleanDescription.length > 300 ? cleanDescription.substring(0, 300) + '...' : cleanDescription}`;
+      }
+
+      responseMessage += `\n\n💡 **Next Steps**: 
+• "Enroll [user] in learning plan ${displayName}" to enroll users
+• "Find courses" to search for related courses
+
+*Using endpoint: /learningplan/v1/learningplans*`;
+
+      return NextResponse.json({
+        response: responseMessage,
+        success: true,
+        data: {
+          learningPlan: learningPlanDetails,
+          learningPlanName: displayName,
+          learningPlanId: actualLearningPlanId
+        },
+        timestamp: new Date().toISOString()
+      });
+
+    } catch (error) {
+      console.error('❌ Learning plan info error:', error);
+      
+      return NextResponse.json({
+        response: `❌ **Learning Plan Information Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
+
+Please check:
+• Learning plan name is correct
+• Learning plan exists in the system
+• You have permission to view learning plan information
+
+*Note*: Using endpoint /learningplan/v1/learningplans`,
+        success: false,
+        timestamp: new Date().toISOString()
+      });
+    }
+  }
+
+  static async handleDoceboHelp(entities: any, api: DoceboAPI): Promise<NextResponse> {
+    try {
+      const { query } = entities;
+      
+      let responseMessage = `🆘 **Docebo Help**
+
+I can help you with various Docebo administration tasks:
+
+**📚 Enrollment Management**:
+• "Enroll john@company.com in course Python Programming"
+• "Enroll sarah@company.com in learning plan Data Science"
+• "Check if user@company.com is enrolled in learning plan 274"
+
+**🔍 Search Functions**:
+• "Find user mike@company.com" - Get user details
+• "Find Python courses" - Search for courses
+• "Find Python learning plans" - Search learning plans
+
+**📊 Information & Status**:
+• "User enrollments mike@company.com" - See all enrollments
+• "Course info Python Programming" - Get course details
+• "Learning plan info Data Science" - Get learning plan details
+
+**🔧 System Information**:
+• Enhanced enrollment checking with multiple API endpoints
+• Learning plans use endpoint: /learningplan/v1/learningplans
+• User data includes status, department, and access information`;
+
+      if (query && query.length > 10) {
+        responseMessage += `\n\n**Your Query**: "${query}"
+
+For specific help with "${query}", try asking more specific questions like:
+• "How to enroll users in ${query}"
+• "Find courses about ${query}"
+• "User permissions for ${query}"`;
+      }
+
+      responseMessage += `\n\n**🌐 Additional Resources**:
+• [Docebo Help Center](https://help.docebo.com)
+• [API Documentation](https://help.docebo.com/hc/en-us/sections/360004313314-API)
+
+**💡 Tips**:
+• Use exact email addresses for user operations
+• Learning plan IDs (like 274) are supported
+• All operations provide detailed feedback and error messages`;
+
+      return NextResponse.json({
+        response: responseMessage,
+        success: true,
+        helpRequest: true,
+        data: {
+          query: query,
+          helpType: 'docebo_general'
+        },
+        timestamp: new Date().toISOString()
+      });
+
+    } catch (error) {
+      console.error('❌ Docebo help error:', error);
+      
+      return NextResponse.json({
+        response: `❌ **Help System Error**: ${error instanceof Error ? error.message : 'Unknown error'}
+
+Please try asking a specific question about Docebo functionality.`,
+        success: false,
+        timestamp: new Date().toISOString()
+      });
+    }
+  }
+}
   static async handleUserEnrollments(entities: any, api: DoceboAPI): Promise<NextResponse> {
     try {
       const { email, userId } = entities;
