@@ -51,7 +51,7 @@ export class DoceboAPI {
     return this.accessToken!;
   }
 
-  private async apiRequest(endpoint: string, method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET', body?: any, params?: any): Promise<any> {
+  async apiRequest(endpoint: string, method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET', body?: any, params?: any): Promise<any> {
     const token = await this.getAccessToken();
     
     let url = `${this.baseUrl}${endpoint}`;
