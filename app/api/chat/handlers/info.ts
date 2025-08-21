@@ -327,7 +327,7 @@ The user is not currently enrolled in this learning plan.
     return { found: false };
   }
 
- private static async checkCourseEnrollment(userDetails: any, resourceName: string, checkType: string, api: DoceboAPI): Promise<NextResponse> {
+private static async checkCourseEnrollment(userDetails: any, resourceName: string, checkType: string, api: DoceboAPI): Promise<NextResponse> {
     console.log(`📚 Checking course enrollment for user ${userDetails.id}`);
     
     try {
