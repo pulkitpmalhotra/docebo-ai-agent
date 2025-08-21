@@ -153,11 +153,14 @@ The user is not currently enrolled in this learning plan.
   }
 
   private static async checkDirectLearningPlanEnrollment(userId: string, learningPlanId: string, api: DoceboAPI): Promise<any> {
+    // FIXED: Use correct Docebo API format with array parameters
     const endpoints = [
+      // Primary endpoint with correct array format
+      `/learningplan/v1/learningplans/enrollments?user_id[]=${userId}&learning_plan_id[]=${learningPlanId}`,
+      // Alternative formats to try
+      `/learningplan/v1/learningplans/enrollments?user_id=${userId}&learning_plan_id=${learningPlanId}`,
       `/learningplan/v1/learningplans/${learningPlanId}/enrollments?user_id=${userId}`,
-      `/learningplan/v1/learningplans/${learningPlanId}/enrollments?id_user=${userId}`,
-      `/learningplan/v1/learningplans/enrollments?learning_plan_id=${learningPlanId}&user_id=${userId}`,
-      `/learn/v1/lp/${learningPlanId}/enrollments?user_id=${userId}`
+      `/learningplan/v1/learningplans/${learningPlanId}/enrollments?user_id[]=${userId}`
     ];
 
     for (const endpoint of endpoints) {
@@ -166,21 +169,40 @@ The user is not currently enrolled in this learning plan.
         const result = await api.apiRequest(endpoint, 'GET');
         
         if (result.data?.items?.length > 0) {
+          console.log(`📊 Found ${result.data.items.length} enrollment(s) from ${endpoint}`);
+          console.log(`📋 Raw enrollment data:`, JSON.stringify(result.data.items, null, 2));
+          
           // Find the specific user's enrollment
           const userEnrollment = result.data.items.find((enrollment: any) => {
             const enrollmentUserId = enrollment.user_id || enrollment.id_user || enrollment.userId;
-            return enrollmentUserId?.toString() === userId.toString();
+            const enrollmentLpId = enrollment.learning_plan_id || enrollment.lp_id || enrollment.id_learning_plan;
+            
+            console.log(`🔍 Checking enrollment: userId=${enrollmentUserId}, lpId=${enrollmentLpId} vs target userId=${userId}, lpId=${learningPlanId}`);
+            
+            return enrollmentUserId?.toString() === userId.toString() && 
+                   enrollmentLpId?.toString() === learningPlanId.toString();
           });
           
           if (userEnrollment) {
             console.log(`✅ Found LP enrollment via ${endpoint}`);
-            const formatted = api.formatLearningPlanEnrollment(userEnrollment);
+            console.log(`📋 Enrollment details:`, JSON.stringify(userEnrollment, null, 2));
+            
+            // Format the enrollment using the raw data structure
+            const formatted = this.formatDoceboLearningPlanEnrollment(userEnrollment);
             return {
               found: true,
               enrollment: formatted,
               method: 'direct_api',
-              endpoint: endpoint
+              endpoint: endpoint,
+              rawData: userEnrollment
             };
+          } else {
+            console.log(`❌ User enrollment not found in results for userId=${userId}, lpId=${learningPlanId}`);
+          }
+        } else {
+          console.log(`📊 No enrollments returned from ${endpoint}`);
+          if (result.data) {
+            console.log(`📋 Full API response:`, JSON.stringify(result.data, null, 2));
           }
         }
       } catch (error) {
@@ -192,11 +214,56 @@ The user is not currently enrolled in this learning plan.
     return { found: false };
   }
 
+  // New method to format enrollment data using the actual Docebo API structure
+  private static formatDoceboLearningPlanEnrollment(enrollment: any): any {
+    return {
+      learningPlanId: enrollment.learning_plan_id?.toString(),
+      learningPlanName: enrollment.learning_plan_name || 'Unknown Learning Plan',
+      learningPlanCode: enrollment.learning_plan_code,
+      enrollmentStatus: this.mapDoceboEnrollmentStatus(enrollment),
+      enrollmentDate: enrollment.enrollment_created_at || enrollment.enrollment_validity_begin_date,
+      completionDate: enrollment.completion_date || enrollment.date_completed,
+      progress: this.calculateLearningPlanProgress(enrollment),
+      completedCourses: parseInt(enrollment.mandatory_courses_completed_at_completion || '0'),
+      totalCourses: parseInt(enrollment.mandatory_courses_total_at_completion || '0'),
+      dueDate: enrollment.enrollment_validity_end_date || enrollment.enrollment_validity_end_datetime,
+      assignmentType: enrollment.assignment_type || 'Not specified',
+      timeSpent: enrollment.enrollment_time_spent || 0,
+      validityBegin: enrollment.enrollment_validity_begin_datetime,
+      validityEnd: enrollment.enrollment_validity_end_datetime,
+      lastUpdated: enrollment.enrollment_date_last_updated
+    };
+  }
+
+  private static mapDoceboEnrollmentStatus(enrollment: any): string {
+    // Check completion based on course completion
+    const completedCourses = parseInt(enrollment.mandatory_courses_completed_at_completion || '0');
+    const totalCourses = parseInt(enrollment.mandatory_courses_total_at_completion || '0');
+    
+    if (totalCourses > 0 && completedCourses >= totalCourses) {
+      return 'completed';
+    } else if (completedCourses > 0) {
+      return 'in_progress';
+    } else {
+      return 'enrolled';
+    }
+  }
+
+  private static calculateLearningPlanProgress(enrollment: any): number {
+    const completedCourses = parseInt(enrollment.mandatory_courses_completed_at_completion || '0');
+    const totalCourses = parseInt(enrollment.mandatory_courses_total_at_completion || '0');
+    
+    if (totalCourses === 0) return 0;
+    return Math.round((completedCourses / totalCourses) * 100);
+  }
+
   private static async checkAlternativeLearningPlanEndpoints(userId: string, resourceName: string, api: DoceboAPI): Promise<any> {
+    // First, try to get ALL user learning plan enrollments using the correct endpoint
     const endpoints = [
+      `/learningplan/v1/learningplans/enrollments?user_id[]=${userId}`,
+      `/learningplan/v1/learningplans/enrollments?user_id=${userId}`,
       `/manage/v1/user/${userId}/learningplans`,
-      `/learn/v1/users/${userId}/learningplans`,
-      `/learningplan/v1/learningplans/enrollments?user_id=${userId}`
+      `/learn/v1/users/${userId}/learningplans`
     ];
 
     for (const endpoint of endpoints) {
@@ -214,16 +281,39 @@ The user is not currently enrolled in this learning plan.
         }
 
         if (enrollments.length > 0) {
+          console.log(`📊 Found ${enrollments.length} enrollments from ${endpoint}`);
+          console.log(`📋 All enrollments:`, JSON.stringify(enrollments, null, 2));
+          
           for (const enrollment of enrollments) {
-            const lpName = api.getLearningPlanName(enrollment);
-            if (this.isLearningPlanMatch(lpName, resourceName)) {
-              console.log(`✅ Found LP enrollment via alternative endpoint ${endpoint}`);
-              const formatted = api.formatLearningPlanEnrollment(enrollment);
+            // Handle both name and ID matching
+            const lpName = enrollment.learning_plan_name || api.getLearningPlanName(enrollment);
+            const lpId = enrollment.learning_plan_id?.toString();
+            
+            console.log(`🔍 Checking enrollment: "${lpName}" (ID: ${lpId}) vs search term: "${resourceName}"`);
+            
+            // Match by ID if resourceName is numeric
+            if (/^\d+$/.test(resourceName) && lpId === resourceName) {
+              console.log(`✅ Found LP enrollment by ID via alternative endpoint ${endpoint}`);
+              const formatted = this.formatDoceboLearningPlanEnrollment(enrollment);
               return {
                 found: true,
                 enrollment: formatted,
-                method: 'alternative_endpoint',
-                endpoint: endpoint
+                method: 'alternative_endpoint_by_id',
+                endpoint: endpoint,
+                rawData: enrollment
+              };
+            }
+            
+            // Match by name
+            if (lpName && this.isLearningPlanMatch(lpName, resourceName)) {
+              console.log(`✅ Found LP enrollment by name via alternative endpoint ${endpoint}`);
+              const formatted = this.formatDoceboLearningPlanEnrollment(enrollment);
+              return {
+                found: true,
+                enrollment: formatted,
+                method: 'alternative_endpoint_by_name',
+                endpoint: endpoint,
+                rawData: enrollment
               };
             }
           }
@@ -365,12 +455,29 @@ The user is not currently enrolled in this course.
     
     let responseMessage = `✅ **Enrollment Found**: ${userDetails.fullname}
 
-${isLearningPlan ? '📋' : '📚'} **${isLearningPlan ? 'Learning Plan' : 'Course'}**: ${isLearningPlan ? formatted.learningPlanName : formatted.courseName}
-📊 **Status**: ${formatted.enrollmentStatus.toUpperCase()}
+${isLearningPlan ? '📋' : '📚'} **${isLearningPlan ? 'Learning Plan' : 'Course'}**: ${isLearningPlan ? formatted.learningPlanName : formatted.courseName}`;
+
+    if (isLearningPlan && formatted.learningPlanCode) {
+      responseMessage += `\n🏷️ **Code**: ${formatted.learningPlanCode}`;
+    }
+
+    responseMessage += `\n📊 **Status**: ${formatted.enrollmentStatus.toUpperCase()}
 📅 **Enrolled**: ${formatted.enrollmentDate || 'Date not available'}`;
 
     if (isLearningPlan) {
-      responseMessage += `\n📈 **Progress**: ${formatted.completedCourses || 0}/${formatted.totalCourses || 0} courses completed`;
+      responseMessage += `\n📈 **Progress**: ${formatted.completedCourses || 0}/${formatted.totalCourses || 0} courses completed (${formatted.progress || 0}%)`;
+      
+      if (formatted.timeSpent !== undefined && formatted.timeSpent > 0) {
+        responseMessage += `\n⏱️ **Time Spent**: ${formatted.timeSpent} minutes`;
+      }
+      
+      if (formatted.validityBegin) {
+        responseMessage += `\n📅 **Validity Period**: ${formatted.validityBegin} to ${formatted.validityEnd || 'No end date'}`;
+      }
+      
+      if (formatted.lastUpdated) {
+        responseMessage += `\n🔄 **Last Updated**: ${formatted.lastUpdated}`;
+      }
     } else {
       responseMessage += `\n📈 **Progress**: ${formatted.progress}%`;
       if (formatted.score) {
@@ -387,7 +494,15 @@ ${isLearningPlan ? '📋' : '📚'} **${isLearningPlan ? 'Learning Plan' : 'Cour
 
     responseMessage += `\n\n🔍 **Found via**: ${enrollmentCheck.method}`;
     if (enrollmentCheck.endpoint) {
-      responseMessage += ` (${enrollmentCheck.endpoint})`;
+      responseMessage += `\n🔗 **API Endpoint**: ${enrollmentCheck.endpoint}`;
+    }
+
+    // Add raw data for debugging if available
+    if (enrollmentCheck.rawData && isLearningPlan) {
+      responseMessage += `\n\n🔧 **Technical Details**:
+• **Learning Plan ID**: ${enrollmentCheck.rawData.learning_plan_id}
+• **User ID**: ${enrollmentCheck.rawData.user_id}
+• **Assignment Type**: ${enrollmentCheck.rawData.assignment_type || 'Not specified'}`;
     }
 
     return NextResponse.json({
@@ -400,7 +515,8 @@ ${isLearningPlan ? '📋' : '📚'} **${isLearningPlan ? 'Learning Plan' : 'Cour
         resourceType: resourceType,
         checkType: checkType,
         method: enrollmentCheck.method,
-        endpoint: enrollmentCheck.endpoint
+        endpoint: enrollmentCheck.endpoint,
+        rawEnrollmentData: enrollmentCheck.rawData
       },
       timestamp: new Date().toISOString()
     });
