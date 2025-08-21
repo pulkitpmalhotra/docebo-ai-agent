@@ -356,6 +356,35 @@ private static async checkCourseEnrollment(userDetails: any, resourceName: strin
           if (enrollmentCheck.found) {
             return this.formatEnrollmentResponse(userDetails, enrollmentCheck, courseName, 'course', checkType);
           }
+  private static async checkCourseEnrollment(userDetails: any, resourceName: string, checkType: string, api: DoceboAPI): Promise<NextResponse> {
+    console.log(`📚 Checking course enrollment for user ${userDetails.id}`);
+    
+    try {
+      // Method 1: Direct course enrollment check by course ID
+      if (/^\d+$/.test(resourceName)) {
+        console.log(`🔍 Method 1: Direct course ID check for ID ${resourceName}`);
+        const directCheck = await this.checkDirectCourseEnrollment(userDetails.id, resourceName, api);
+        if (directCheck.found) {
+          return this.formatEnrollmentResponse(userDetails, directCheck, resourceName, 'course', checkType);
+        }
+      }
+
+      // Method 2: Search courses and check enrollments
+      console.log(`🔍 Method 2: Search courses and check enrollments`);
+      const courses = await api.searchCourses(resourceName, 50);
+      console.log(`📊 Found ${courses.length} courses matching "${resourceName}"`);
+      
+      for (const course of courses) {
+        const courseName = api.getCourseName(course);
+        const courseId = course.id || course.course_id || course.idCourse;
+        
+        console.log(`🔍 Checking course: "${courseName}" (ID: ${courseId})`);
+        
+        if (this.isCourseMatch(courseName, resourceName) && courseId) {
+          const enrollmentCheck = await this.checkDirectCourseEnrollment(userDetails.id, courseId.toString(), api);
+          if (enrollmentCheck.found) {
+            return this.formatEnrollmentResponse(userDetails, enrollmentCheck, courseName, 'course', checkType);
+          }
         }
       }
 
@@ -431,7 +460,6 @@ The user is not currently enrolled in this course.
       throw error;
     }
   }
-
   private static isLearningPlanMatch(lpName: string, searchTerm: string): boolean {
     const lpLower = lpName.toLowerCase();
     const searchLower = searchTerm.toLowerCase();
