@@ -331,70 +331,64 @@ The user is not currently enrolled in this learning plan.
     console.log(`📚 Checking course enrollment for user ${userDetails.id}`);
     
     try {
-      // Get user's enrollments
-      const enrollmentData = await api.getUserAllEnrollments(userDetails.id);
-      
-      // Look for course enrollment
-      const courseEnrollments = enrollmentData.courses.enrollments;
-      const enrollmentDetails = courseEnrollments.find((enrollment: any) => {
-        const courseName = api.getCourseName(enrollment).toLowerCase();
-        const resourceLower = resourceName.toLowerCase();
-        
-        // Try exact match first
-        if (courseName === resourceLower) return true;
-        
-        // Try partial match
-        if (courseName.includes(resourceLower) || resourceLower.includes(courseName)) return true;
-        
-        // Try course ID match if resourceName is numeric
-        if (/^\d+$/.test(resourceName)) {
-          const courseId = enrollment.course_id || enrollment.id_course || enrollment.idCourse;
-          if (courseId?.toString() === resourceName) return true;
+      // Method 1: Direct course enrollment check by course ID
+      if (/^\d+$/.test(resourceName)) {
+        console.log(`🔍 Method 1: Direct course ID check for ID ${resourceName}`);
+        const directCheck = await this.checkDirectCourseEnrollment(userDetails.id, resourceName, api);
+        if (directCheck.found) {
+          return this.formatEnrollmentResponse(userDetails, directCheck, resourceName, 'course', checkType);
         }
-        
-        return false;
-      });
-      
-      if (enrollmentDetails) {
-        const formatted = api.formatCourseEnrollment(enrollmentDetails);
-        const courseName = formatted.courseName || 'Unknown Course';
-        
-        let responseMessage = `✅ **Enrollment Found**: ${userDetails.fullname}
-
-📚 **Course**: ${courseName}
-📊 **Status**: ${formatted.enrollmentStatus.toUpperCase()}
-📅 **Enrolled**: ${formatted.enrollmentDate || 'Date not available'}
-📈 **Progress**: ${formatted.progress}%`;
-
-        if (formatted.score) {
-          responseMessage += `\n🎯 **Score**: ${formatted.score}`;
-        }
-        if (formatted.completionDate) {
-          responseMessage += `\n✅ **Completed**: ${formatted.completionDate}`;
-        }
-        if (formatted.dueDate) {
-          responseMessage += `\n⏰ **Due Date**: ${formatted.dueDate}`;
-        }
-
-        return NextResponse.json({
-          response: responseMessage,
-          success: true,
-          data: {
-            user: userDetails,
-            found: true,
-            enrollmentDetails: formatted,
-            resourceType: 'course',
-            checkType: checkType,
-            totalEnrollments: {
-              courses: enrollmentData.totalCourses,
-              learningPlans: enrollmentData.totalLearningPlans
-            }
-          },
-          timestamp: new Date().toISOString()
-        });
       }
 
-      // Not found
+      // Method 2: Search courses and check enrollments
+      console.log(`🔍 Method 2: Search courses and check enrollments`);
+      const courses = await api.searchCourses(resourceName, 50);
+      console.log(`📊 Found ${courses.length} courses matching "${resourceName}"`);
+      
+      for (const course of courses) {
+        const courseName = api.getCourseName(course);
+        const courseId = course.id || course.course_id || course.idCourse;
+        
+        console.log(`🔍 Checking course: "${courseName}" (ID: ${courseId})`);
+        
+        if (this.isCourseMatch(courseName, resourceName) && courseId) {
+          const enrollmentCheck = await this.checkDirectCourseEnrollment(userDetails.id, courseId.toString(), api);
+          if (enrollmentCheck.found) {
+            return this.formatEnrollmentResponse(userDetails, enrollmentCheck, courseName, 'course', checkType);
+          }
+        }
+      }
+
+      // Method 3: Get all user enrollments and search within them
+      console.log(`🔍 Method 3: Get all user enrollments and search within them`);
+      const enrollmentData = await api.getUserAllEnrollments(userDetails.id);
+      
+      if (enrollmentData.courses.enrollments.length > 0) {
+        console.log(`📊 Found ${enrollmentData.courses.enrollments.length} total course enrollments`);
+        
+        for (const enrollment of enrollmentData.courses.enrollments) {
+          const formatted = api.formatCourseEnrollment(enrollment);
+          const courseName = formatted.courseName || 'Unknown Course';
+          console.log(`🔍 Checking enrollment: "${courseName}"`);
+          
+          if (formatted.courseName && this.isCourseMatch(formatted.courseName, resourceName)) {
+            return this.formatEnrollmentResponse(userDetails, {
+              found: true,
+              enrollment: formatted,
+              method: 'user_enrollments'
+            }, formatted.courseName, 'course', checkType);
+          }
+        }
+      }
+
+      // Method 4: Try alternative course endpoints
+      console.log(`🔍 Method 4: Alternative course endpoints`);
+      const alternativeCheck = await this.checkAlternativeCourseEndpoints(userDetails.id, resourceName, api);
+      if (alternativeCheck.found) {
+        return this.formatEnrollmentResponse(userDetails, alternativeCheck, resourceName, 'course', checkType);
+      }
+
+      // Not found in any method
       return NextResponse.json({
         response: `❌ **No Course Enrollment Found**: ${userDetails.fullname}
 
@@ -407,9 +401,16 @@ The user is not currently enrolled in this course.
 • **Courses**: ${enrollmentData.totalCourses}
 • **Learning Plans**: ${enrollmentData.totalLearningPlans}
 
+🔍 **Search Methods Used**:
+• Direct course ID lookup
+• Course search and enrollment check
+• User enrollment data analysis
+• Alternative API endpoints
+
 💡 **Next Steps**: 
 • "User enrollments ${userDetails.email}" to see all enrollments
-• "Enroll ${userDetails.email} in course ${resourceName}" to enroll`,
+• "Enroll ${userDetails.email} in course ${resourceName}" to enroll
+• Try using the exact course name or ID from Docebo`,
         success: false,
         data: {
           user: userDetails,
@@ -419,7 +420,8 @@ The user is not currently enrolled in this course.
           totalEnrollments: {
             courses: enrollmentData.totalCourses,
             learningPlans: enrollmentData.totalLearningPlans
-          }
+          },
+          methodsUsed: ['direct_id', 'search_and_check', 'user_enrollments', 'alternative_endpoints']
         },
         timestamp: new Date().toISOString()
       });
