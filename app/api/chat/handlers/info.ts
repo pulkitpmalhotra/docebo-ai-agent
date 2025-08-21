@@ -428,15 +428,20 @@ The user is not currently enrolled in this course.
   }
 
   private static formatEnhancedCourseEnrollment(enrollment: any): any {
-    // Map the status from the API response
+    console.log(`🔧 Formatting enhanced course enrollment:`, JSON.stringify(enrollment, null, 2));
+    
+    // Map the status from the API response - handle both formats
     let enrollmentStatus = 'unknown';
-    if (enrollment.status) {
-      switch (enrollment.status.toLowerCase()) {
+    const statusField = enrollment.enrollment_status || enrollment.status;
+    
+    if (statusField) {
+      switch (statusField.toLowerCase()) {
         case 'completed':
           enrollmentStatus = 'completed';
           break;
         case 'in progress':
         case 'in_progress':
+        case 'enrolled':
           enrollmentStatus = 'in_progress';
           break;
         case 'not started':
@@ -447,11 +452,12 @@ The user is not currently enrolled in this course.
           enrollmentStatus = 'suspended';
           break;
         default:
-          enrollmentStatus = enrollment.status.toLowerCase().replace(' ', '_');
+          enrollmentStatus = statusField.toLowerCase().replace(' ', '_');
       }
-    } else if (enrollment.status_id) {
+    } else if (enrollment.status_id || enrollment.enrollment_status_id) {
       // Map by status ID if available
-      switch (enrollment.status_id.toString()) {
+      const statusId = enrollment.status_id || enrollment.enrollment_status_id;
+      switch (statusId.toString()) {
         case '0':
           enrollmentStatus = 'not_started';
           break;
@@ -465,28 +471,45 @@ The user is not currently enrolled in this course.
           enrollmentStatus = 'suspended';
           break;
         default:
-          enrollmentStatus = `status_${enrollment.status_id}`;
+          enrollmentStatus = `status_${statusId}`;
       }
     }
 
-    return {
-      courseId: enrollment.course_id?.toString(),
-      courseName: enrollment.course_name || 'Unknown Course',
+    // Calculate progress based on status and available data
+    let progress = this.calculateProgressFromStatus(enrollmentStatus);
+    if (enrollment.enrollment_score !== undefined && enrollmentStatus === 'completed') {
+      progress = 100;
+    }
+
+    const formatted = {
+      courseId: (enrollment.course_id || enrollment.id_course)?.toString(),
+      courseName: enrollment.course_name || enrollment.name || 'Unknown Course',
+      courseCode: enrollment.course_code || enrollment.code,
+      courseUid: enrollment.course_uid || enrollment.uid,
+      courseType: enrollment.course_type || enrollment.type,
       enrollmentStatus: enrollmentStatus,
-      enrollmentDate: enrollment.enrollment_date,
-      completionDate: enrollment.date_complete,
-      progress: this.calculateProgressFromStatus(enrollmentStatus),
-      score: parseFloat(enrollment.score_given || '0'),
+      enrollmentDate: enrollment.enrollment_created_at || enrollment.enrollment_date || enrollment.enroll_date_of_enrollment,
+      completionDate: enrollment.enrollment_completion_date || enrollment.date_complete || enrollment.completion_date,
+      progress: progress,
+      score: enrollment.enrollment_score !== undefined ? parseFloat(enrollment.enrollment_score) : 
+             (enrollment.score_given !== undefined ? parseFloat(enrollment.score_given) : 0),
       assignmentType: enrollment.assignment_type,
-      activeFrom: enrollment.active_from,
-      activeUntil: enrollment.active_until,
+      enrollmentLevel: enrollment.enrollment_level || enrollment.level,
+      validityBegin: enrollment.enrollment_validity_begin_datetime || enrollment.active_from,
+      validityEnd: enrollment.enrollment_validity_end_datetime || enrollment.active_until,
+      lastUpdated: enrollment.enrollment_date_last_updated || enrollment.last_update,
+      createdBy: enrollment.enrollment_created_by,
+      // Additional API fields
       userLevel: enrollment.level,
       userStatus: enrollment.user_status,
-      statusId: enrollment.status_id,
+      statusId: enrollment.status_id || enrollment.enrollment_status_id,
       levelId: enrollment.level_id,
       userStatusId: enrollment.user_status_id,
       forcedScore: enrollment.forced_score_given
     };
+
+    console.log(`✅ Formatted course enrollment:`, JSON.stringify(formatted, null, 2));
+    return formatted;
   }
 
   private static calculateProgressFromStatus(status: string): number {
@@ -525,40 +548,59 @@ The user is not currently enrolled in this course.
     const rawData = enrollmentCheck.rawData;
     const isLearningPlan = resourceType === 'learning_plan';
     
+    console.log(`🎨 Formatting enrollment response - formatted:`, JSON.stringify(formatted, null, 2));
+    console.log(`🎨 Raw data available:`, JSON.stringify(rawData, null, 2));
+    
     let responseMessage = `✅ **Enrollment Found**: ${userDetails.fullname}
 
-${isLearningPlan ? '📋' : '📚'} **${isLearningPlan ? 'Learning Plan' : 'Course'}**: ${isLearningPlan ? formatted.learningPlanName : formatted.courseName}
+${isLearningPlan ? '📋' : '📚'} **${isLearningPlan ? 'Learning Plan' : 'Course'}**: ${isLearningPlan ? formatted.learningPlanName : formatted.courseName}`;
 
-👤 **User Details**:
-• **Name**: ${rawData?.first_name || userDetails.fullname} ${rawData?.last_name || ''}
-• **Username**: ${rawData?.username || userDetails.username}
-• **Email**: ${rawData?.email || userDetails.email}
-• **User Level**: ${rawData?.level || userDetails.level}
-• **User Status**: ${rawData?.user_status || userDetails.status}
+    // Add course details for courses
+    if (!isLearningPlan && formatted.courseCode) {
+      responseMessage += `\n🏷️ **Course Code**: ${formatted.courseCode}`;
+    }
+    if (!isLearningPlan && formatted.courseType) {
+      responseMessage += `\n📂 **Course Type**: ${formatted.courseType}`;
+    }
 
-📊 **Enrollment Details**:
-• **Status**: ${formatted.enrollmentStatus.toUpperCase()} ${rawData?.status_id ? `(ID: ${rawData.status_id})` : ''}
-• **Assignment Type**: ${rawData?.assignment_type || formatted.assignmentType || 'Not specified'}
-• **Enrolled**: ${rawData?.enrollment_date || formatted.enrollmentDate || 'Date not available'}`;
+    responseMessage += `\n\n👤 **User Details**:
+• **Name**: ${userDetails.fullname}
+• **Username**: ${userDetails.username}
+• **Email**: ${userDetails.email}
+• **User Level**: ${userDetails.level}
+• **User Status**: ${userDetails.status}`;
 
-    // Course-specific fields
-    if (!isLearningPlan && rawData) {
-      if (rawData.active_from) {
-        responseMessage += `\n• **Active From**: ${rawData.active_from}`;
+    responseMessage += `\n\n📊 **Enrollment Details**:
+• **Status**: ${formatted.enrollmentStatus.toUpperCase()}
+• **Assignment Type**: ${formatted.assignmentType || 'Not specified'}
+• **Enrollment Level**: ${formatted.enrollmentLevel || 'Student'}`;
+
+    // Course-specific timing information
+    if (!isLearningPlan) {
+      if (formatted.enrollmentDate) {
+        responseMessage += `\n• **Enrolled**: ${formatted.enrollmentDate}`;
       }
-      if (rawData.active_until) {
-        responseMessage += `\n• **Active Until**: ${rawData.active_until}`;
+      if (formatted.validityBegin && formatted.validityEnd) {
+        responseMessage += `\n• **Validity Period**: ${formatted.validityBegin} to ${formatted.validityEnd}`;
       }
-      if (rawData.date_complete) {
-        responseMessage += `\n• **Completed**: ${rawData.date_complete}`;
+      if (formatted.completionDate) {
+        responseMessage += `\n• **Completed**: ${formatted.completionDate}`;
       }
-      if (rawData.score_given !== undefined) {
-        responseMessage += `\n• **Score**: ${rawData.score_given}${rawData.forced_score_given ? ' (Forced)' : ''}`;
+      if (formatted.lastUpdated) {
+        responseMessage += `\n• **Last Updated**: ${formatted.lastUpdated}`;
       }
     }
 
-    // Learning Plan specific fields
-    if (isLearningPlan) {
+    // Progress and scoring
+    if (!isLearningPlan) {
+      if (formatted.progress !== undefined) {
+        responseMessage += `\n• **Progress**: ${formatted.progress}%`;
+      }
+      if (formatted.score !== undefined && formatted.score > 0) {
+        responseMessage += `\n• **Score**: ${formatted.score}${formatted.forcedScore ? ' (Forced)' : ''}`;
+      }
+    } else {
+      // Learning Plan specific fields
       responseMessage += `\n• **Progress**: ${formatted.completedCourses || 0}/${formatted.totalCourses || 0} courses completed (${formatted.progress || 0}%)`;
       
       if (formatted.timeSpent !== undefined && formatted.timeSpent > 0) {
@@ -567,15 +609,6 @@ ${isLearningPlan ? '📋' : '📚'} **${isLearningPlan ? 'Learning Plan' : 'Cour
       
       if (formatted.validityBegin) {
         responseMessage += `\n• **Validity Period**: ${formatted.validityBegin} to ${formatted.validityEnd || 'No end date'}`;
-      }
-      
-      if (formatted.lastUpdated) {
-        responseMessage += `\n• **Last Updated**: ${formatted.lastUpdated}`;
-      }
-    } else {
-      // Course progress and score info
-      if (formatted.progress !== undefined) {
-        responseMessage += `\n• **Progress**: ${formatted.progress}%`;
       }
     }
 
@@ -586,48 +619,51 @@ ${isLearningPlan ? '📋' : '📚'} **${isLearningPlan ? 'Learning Plan' : 'Cour
       responseMessage += `\n• **API Endpoint**: ${enrollmentCheck.endpoint}`;
     }
 
-    // Additional technical details for debugging
+    // Additional technical details
     if (rawData) {
-      if (isLearningPlan) {
+      if (!isLearningPlan) {
+        if (rawData.course_id) {
+          responseMessage += `\n• **Course ID**: ${rawData.course_id}`;
+        }
+        if (rawData.user_id) {
+          responseMessage += `\n• **User ID**: ${rawData.user_id}`;
+        }
+        if (rawData.course_uid) {
+          responseMessage += `\n• **Course UID**: ${rawData.course_uid}`;
+        }
+        if (rawData.enrollment_created_by) {
+          responseMessage += `\n• **Enrolled By**: User ID ${rawData.enrollment_created_by}`;
+        }
+      } else {
         if (rawData.learning_plan_id) {
           responseMessage += `\n• **Learning Plan ID**: ${rawData.learning_plan_id}`;
         }
         if (rawData.user_id) {
           responseMessage += `\n• **User ID**: ${rawData.user_id}`;
         }
-      } else {
-        if (rawData.user_id) {
-          responseMessage += `\n• **User ID**: ${rawData.user_id}`;
-        }
-        if (rawData.level_id) {
-          responseMessage += `\n• **Level ID**: ${rawData.level_id}`;
-        }
-        if (rawData.user_status_id) {
-          responseMessage += `\n• **User Status ID**: ${rawData.user_status_id}`;
-        }
       }
     }
 
-    // Summary based on completion status
-    if (rawData?.status === 'Completed' || formatted.enrollmentStatus === 'completed') {
+    // Status-specific summary
+    if (formatted.enrollmentStatus === 'completed') {
       responseMessage += `\n\n🎉 **Completion Summary**:
 This user has successfully completed this ${isLearningPlan ? 'learning plan' : 'course'}.`;
       
-      if (!isLearningPlan && rawData?.date_complete) {
-        responseMessage += `\nCompleted on: ${rawData.date_complete}`;
+      if (!isLearningPlan && formatted.completionDate) {
+        responseMessage += `\nCompleted on: ${formatted.completionDate}`;
       }
       
-      if (!isLearningPlan && rawData?.score_given) {
-        responseMessage += `\nFinal Score: ${rawData.score_given}`;
+      if (!isLearningPlan && formatted.score !== undefined && formatted.score >= 0) {
+        responseMessage += `\nFinal Score: ${formatted.score}`;
       }
-    } else if (rawData?.status === 'In Progress' || formatted.enrollmentStatus === 'in_progress') {
+    } else if (formatted.enrollmentStatus === 'in_progress') {
       responseMessage += `\n\n📈 **Progress Summary**:
 This user is currently working on this ${isLearningPlan ? 'learning plan' : 'course'}.`;
       
-      if (!isLearningPlan && rawData?.active_until) {
-        const activeUntil = new Date(rawData.active_until);
+      if (!isLearningPlan && formatted.validityEnd) {
+        const validityEnd = new Date(formatted.validityEnd);
         const now = new Date();
-        const daysRemaining = Math.ceil((activeUntil.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+        const daysRemaining = Math.ceil((validityEnd.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
         
         if (daysRemaining > 0) {
           responseMessage += `\nTime remaining: ${daysRemaining} days`;
@@ -635,6 +671,9 @@ This user is currently working on this ${isLearningPlan ? 'learning plan' : 'cou
           responseMessage += `\nExpired ${Math.abs(daysRemaining)} days ago`;
         }
       }
+    } else if (formatted.enrollmentStatus === 'not_started') {
+      responseMessage += `\n\n⏳ **Status Summary**:
+This user is enrolled but has not yet started this ${isLearningPlan ? 'learning plan' : 'course'}.`;
     }
 
     return NextResponse.json({
@@ -650,18 +689,21 @@ This user is currently working on this ${isLearningPlan ? 'learning plan' : 'cou
         method: enrollmentCheck.method,
         endpoint: enrollmentCheck.endpoint,
         enhancedFields: {
-          userName: rawData?.first_name && rawData?.last_name ? `${rawData.first_name} ${rawData.last_name}` : null,
-          userLevel: rawData?.level,
-          userStatus: rawData?.user_status,
-          statusId: rawData?.status_id,
-          levelId: rawData?.level_id,
-          userStatusId: rawData?.user_status_id,
-          assignmentType: rawData?.assignment_type,
-          activeFrom: rawData?.active_from,
-          activeUntil: rawData?.active_until,
-          dateComplete: rawData?.date_complete,
-          scoreGiven: rawData?.score_given,
-          forcedScoreGiven: rawData?.forced_score_given
+          courseName: formatted.courseName,
+          courseCode: formatted.courseCode,
+          courseType: formatted.courseType,
+          courseUid: formatted.courseUid,
+          enrollmentStatus: formatted.enrollmentStatus,
+          enrollmentLevel: formatted.enrollmentLevel,
+          assignmentType: formatted.assignmentType,
+          enrollmentDate: formatted.enrollmentDate,
+          completionDate: formatted.completionDate,
+          validityBegin: formatted.validityBegin,
+          validityEnd: formatted.validityEnd,
+          lastUpdated: formatted.lastUpdated,
+          progress: formatted.progress,
+          score: formatted.score,
+          createdBy: formatted.createdBy
         }
       },
       timestamp: new Date().toISOString()
