@@ -46,7 +46,6 @@ interface Message {
   hasMore?: boolean;
   loadMoreCommand?: string;
 }
-
 interface QuickAction {
   id: string;
   title: string;
