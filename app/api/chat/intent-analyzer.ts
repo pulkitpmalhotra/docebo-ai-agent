@@ -357,12 +357,21 @@ export class IntentAnalyzer {
           /(?:user enrollments|enrollments for user|enrollments for|show enrollments)/i,
           /(?:what courses is|what learning plans is|what is.*enrolled)/i,
           /(?:enrolled in|taking|assigned to|learning progress|user progress)/i,
-          /(?:get enrollments|show courses for|list courses for)/i
+          /(?:get enrollments|show courses for|list courses for)/i,
+          /(?:load more enrollments|show more enrollments|more enrollments)/i
         ],
-        extractEntities: () => ({
-          email: email,
-          userId: email || this.extractAfterPattern(message, /(?:user enrollments|enrollments for|show enrollments|get enrollments|show courses for|list courses for)\s+(.+?)(?:\s|$)/i)
-        }),
+        extractEntities: () => {
+          const email = this.extractEmail(message);
+          const isLoadMore = /(?:load more|show more|more enrollments)/i.test(message);
+          const offsetMatch = message.match(/(?:offset|starting from|from position)\s+(\d+)/i);
+          
+          return {
+            email: email,
+            userId: email || this.extractAfterPattern(message, /(?:user enrollments|enrollments for|show enrollments|get enrollments|show courses for|list courses for|load more enrollments for|show more enrollments for|more enrollments for)\s+(.+?)(?:\s|$)/i),
+            loadMore: isLoadMore,
+            offset: offsetMatch ? offsetMatch[1] : (isLoadMore ? '10' : '0')
+          };
+        },
         confidence: email ? 0.95 : 0.85
       },
       
