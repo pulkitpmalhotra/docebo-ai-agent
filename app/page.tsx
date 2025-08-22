@@ -43,6 +43,8 @@ interface Message {
   successCount?: number;
   failureCount?: number;
   isBulkOperation?: boolean;
+  hasMore?: boolean;
+  loadMoreCommand?: string;
 }
 
 interface QuickAction {
