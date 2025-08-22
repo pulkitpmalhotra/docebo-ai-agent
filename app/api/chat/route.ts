@@ -63,7 +63,7 @@ async function chatHandler(request: NextRequest): Promise<NextResponse> {
         case 'unenroll_user_from_learning_plan':
           return await handlers.enrollment.handleUnenrollUserFromLearningPlan(analysis.entities, api);
           
-        // Enrollment Checking
+       // Enrollment Checking
         case 'check_specific_enrollment':
           return await handlers.info.handleSpecificEnrollmentCheck(analysis.entities, api);
           
