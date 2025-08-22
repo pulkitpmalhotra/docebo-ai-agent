@@ -46,6 +46,7 @@ interface Message {
   hasMore?: boolean;
   loadMoreCommand?: string;
 }
+
 interface QuickAction {
   id: string;
   title: string;
@@ -534,7 +535,9 @@ Select a category from the sidebar to see available commands!`,
         totalCount: data.totalCount,
         successCount: data.successCount,
         failureCount: data.failureCount,
-        isBulkOperation: data.successCount !== undefined || data.failureCount !== undefined
+        isBulkOperation: data.successCount !== undefined || data.failureCount !== undefined,
+        hasMore: data.hasMore,
+        loadMoreCommand: data.loadMoreCommand
       };
 
       setMessages(prev => [...prev, assistantMessage]);
@@ -795,7 +798,7 @@ Select a category from the sidebar to see available commands!`,
                   dangerouslySetInnerHTML={{ __html: formatMessage(message.content) }}
                 />
                 
-{message.type === 'assistant' && (
+                {message.type === 'assistant' && (
                   <div className="flex items-center justify-between mt-3 pt-2 border-t border-gray-100">
                     <div className="flex items-center space-x-4 text-xs text-gray-500">
                       <span>{message.timestamp.toLocaleTimeString()}</span>
@@ -828,7 +831,7 @@ Select a category from the sidebar to see available commands!`,
                     <div className="flex items-center space-x-2">
                       {message.loadMoreCommand && (
                         <button
-                          onClick={() => setInputValue(message.loadMoreCommand)}
+                          onClick={() => setInputValue(message.loadMoreCommand || '')}
                           className="text-blue-600 hover:text-blue-800 transition-colors text-xs bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded"
                           title="Load more results"
                         >
