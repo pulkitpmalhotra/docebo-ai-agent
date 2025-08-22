@@ -794,7 +794,7 @@ Select a category from the sidebar to see available commands!`,
                   dangerouslySetInnerHTML={{ __html: formatMessage(message.content) }}
                 />
                 
-                {message.type === 'assistant' && (
+{message.type === 'assistant' && (
                   <div className="flex items-center justify-between mt-3 pt-2 border-t border-gray-100">
                     <div className="flex items-center space-x-4 text-xs text-gray-500">
                       <span>{message.timestamp.toLocaleTimeString()}</span>
@@ -818,8 +818,22 @@ Select a category from the sidebar to see available commands!`,
                           🆘 Help Request
                         </span>
                       )}
+                      {message.hasMore && (
+                        <span className="text-orange-600">
+                          🔄 Has More Data
+                        </span>
+                      )}
                     </div>
                     <div className="flex items-center space-x-2">
+                      {message.loadMoreCommand && (
+                        <button
+                          onClick={() => setInputValue(message.loadMoreCommand)}
+                          className="text-blue-600 hover:text-blue-800 transition-colors text-xs bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded"
+                          title="Load more results"
+                        >
+                          Load More
+                        </button>
+                      )}
                       {(message.isBulkOperation || message.totalCount) && (
                         <button
                           onClick={() => exportResults(message)}
