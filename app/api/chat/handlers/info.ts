@@ -712,8 +712,10 @@ This user is enrolled but has not yet started this ${isLearningPlan ? 'learning 
 
   static async handleUserEnrollments(entities: any, api: DoceboAPI): Promise<NextResponse> {
     try {
-      const { email, userId } = entities;
+      const { email, userId, loadMore, offset } = entities;
       const identifier = email || userId;
+      const currentOffset = parseInt(offset || '0');
+      const pageSize = 10; // Show 10 items per page
       
       if (!identifier) {
         return NextResponse.json({
@@ -723,38 +725,106 @@ This user is enrolled but has not yet started this ${isLearningPlan ? 'learning 
         });
       }
 
+      console.log(`📚 Getting user enrollments: ${identifier} (offset: ${currentOffset})`);
+
+      // Get user details
       const userDetails = await api.getUserDetails(identifier);
-      const enrollmentData = await api.getUserAllEnrollments(userDetails.id);
       
+      // Get ALL enrollments (we'll handle pagination in memory)
+      const allEnrollmentData = await this.getAllUserEnrollments(userDetails.id, api);
+      
+      // Combine all enrollments for pagination
+      const allEnrollments = [
+        ...allEnrollmentData.courses.enrollments.map((e: any) => ({
+          ...api.formatCourseEnrollment(e),
+          type: 'course',
+          rawData: e
+        })),
+        ...allEnrollmentData.learningPlans.enrollments.map((e: any) => ({
+          ...api.formatLearningPlanEnrollment(e),
+          type: 'learning_plan',
+          rawData: e
+        }))
+      ];
+
+      // Sort by enrollment date (most recent first)
+      allEnrollments.sort((a, b) => {
+        const dateA = new Date(a.enrollmentDate || '1970-01-01');
+        const dateB = new Date(b.enrollmentDate || '1970-01-01');
+        return dateB.getTime() - dateA.getTime();
+      });
+
+      const totalEnrollments = allEnrollments.length;
+      const displayEnrollments = allEnrollments.slice(currentOffset, currentOffset + pageSize);
+      const hasMore = currentOffset + pageSize < totalEnrollments;
+      const remainingCount = totalEnrollments - (currentOffset + pageSize);
+
       let responseMessage = `📚 **${userDetails.fullname}'s Enrollments**
 
 👤 **User**: ${userDetails.fullname} (${userDetails.email})
-📊 **Summary**: ${enrollmentData.totalCourses} courses, ${enrollmentData.totalLearningPlans} learning plans`;
+🆔 **User ID**: ${userDetails.id}
+📊 **Status**: ${userDetails.status}
 
-      if (enrollmentData.totalCourses > 0) {
-        const courseList = enrollmentData.courses.enrollments.slice(0, 10).map((enrollment: any, index: number) => {
-          const formatted = api.formatCourseEnrollment(enrollment);
-          return `${index + 1}. ${formatted.enrollmentStatus.toUpperCase()} - ${formatted.courseName}`;
-        }).join('\n');
+📈 **Summary**:
+• **Total Enrollments**: ${totalEnrollments}
+• **Courses**: ${allEnrollmentData.totalCourses}
+• **Learning Plans**: ${allEnrollmentData.totalLearningPlans}
+• **Showing**: ${currentOffset + 1}-${Math.min(currentOffset + pageSize, totalEnrollments)} of ${totalEnrollments}`;
 
-        responseMessage += `\n\n📚 **Courses**:\n${courseList}`;
+      if (displayEnrollments.length > 0) {
+        responseMessage += `\n\n📋 **Enrollments** (${currentOffset + 1}-${Math.min(currentOffset + pageSize, totalEnrollments)}):\n`;
         
-        if (enrollmentData.totalCourses > 10) {
-          responseMessage += `\n... and ${enrollmentData.totalCourses - 10} more courses`;
-        }
+        displayEnrollments.forEach((enrollment: any, index: number) => {
+          let statusIcon = enrollment.type === 'course' ? '📚' : '📋';
+          if (enrollment.enrollmentStatus === 'completed') statusIcon = '✅';
+          else if (enrollment.enrollmentStatus === 'in_progress') statusIcon = '🔄';
+          else if (enrollment.enrollmentStatus === 'suspended') statusIcon = '🚫';
+          else if (enrollment.enrollmentStatus === 'not_started') statusIcon = '⏸️';
+          
+          const itemNumber = currentOffset + index + 1;
+          const name = enrollment.type === 'course' ? enrollment.courseName : enrollment.learningPlanName;
+          const typeLabel = enrollment.type === 'course' ? 'COURSE' : 'LEARNING PLAN';
+          
+          let progressInfo = '';
+          if (enrollment.type === 'course') {
+            progressInfo = enrollment.progress ? ` (${enrollment.progress}%)` : '';
+            if (enrollment.score && enrollment.score > 0) {
+              progressInfo += ` [Score: ${enrollment.score}]`;
+            }
+          } else {
+            const completed = enrollment.completedCourses || 0;
+            const total = enrollment.totalCourses || 0;
+            progressInfo = total > 0 ? ` (${completed}/${total} courses)` : '';
+          }
+          
+          responseMessage += `${itemNumber}. ${statusIcon} **${enrollment.enrollmentStatus.toUpperCase()}** ${typeLabel}\n`;
+          responseMessage += `   📖 ${name}${progressInfo}\n`;
+          if (enrollment.enrollmentDate) {
+            responseMessage += `   📅 Enrolled: ${enrollment.enrollmentDate}\n`;
+          }
+          responseMessage += '\n';
+        });
       }
 
-      if (enrollmentData.totalLearningPlans > 0) {
-        const lpList = enrollmentData.learningPlans.enrollments.slice(0, 5).map((enrollment: any, index: number) => {
-          const formatted = api.formatLearningPlanEnrollment(enrollment);
-          return `${index + 1}. ${formatted.enrollmentStatus.toUpperCase()} - ${formatted.learningPlanName}`;
-        }).join('\n');
+      // Add load more section
+      if (hasMore) {
+        responseMessage += `\n🔄 **Load More Data**:\n`;
+        responseMessage += `• **Remaining**: ${remainingCount} more enrollments\n`;
+        responseMessage += `• **Next**: Items ${currentOffset + pageSize + 1}-${Math.min(currentOffset + (pageSize * 2), totalEnrollments)}\n\n`;
+        responseMessage += `💡 **To see more**: "Load more enrollments for ${userDetails.email}"`;
+      }
 
-        responseMessage += `\n\n📋 **Learning Plans**:\n${lpList}`;
-        
-        if (enrollmentData.totalLearningPlans > 5) {
-          responseMessage += `\n... and ${enrollmentData.totalLearningPlans - 5} more learning plans`;
-        }
+      // Add data sources info
+      responseMessage += `\n\n🔗 **Data Sources**:
+• **Method**: ${allEnrollmentData.method || 'Multiple API endpoints'}
+• **Pages Fetched**: ${allEnrollmentData.pagesFetched || 'Multiple'}
+• **Total Retrieved**: ${totalEnrollments} enrollments`;
+
+      if (!allEnrollmentData.success && totalEnrollments === 0) {
+        responseMessage += `\n\n⚠️ **Note**: No enrollment data could be retrieved. This might be due to:
+• API endpoint access limitations
+• User has no enrollments
+• Network or authentication issues`;
       }
 
       return NextResponse.json({
@@ -762,9 +832,24 @@ This user is enrolled but has not yet started this ${isLearningPlan ? 'learning 
         success: true,
         data: {
           user: userDetails,
-          enrollments: enrollmentData
+          enrollments: displayEnrollments,
+          pagination: {
+            currentOffset: currentOffset,
+            pageSize: pageSize,
+            totalItems: totalEnrollments,
+            hasMore: hasMore,
+            remainingCount: remainingCount,
+            nextOffset: currentOffset + pageSize
+          },
+          summary: {
+            totalCourses: allEnrollmentData.totalCourses,
+            totalLearningPlans: allEnrollmentData.totalLearningPlans,
+            totalEnrollments: totalEnrollments
+          },
+          loadMoreCommand: hasMore ? `Load more enrollments for ${userDetails.email}` : null
         },
-        totalCount: enrollmentData.totalCourses + enrollmentData.totalLearningPlans,
+        totalCount: totalEnrollments,
+        hasMore: hasMore,
         timestamp: new Date().toISOString()
       });
 
@@ -772,11 +857,227 @@ This user is enrolled but has not yet started this ${isLearningPlan ? 'learning 
       console.error('❌ User enrollments error:', error);
       
       return NextResponse.json({
-        response: `❌ **User Enrollments Failed**: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        response: `❌ **User Enrollments Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
+
+Please check:
+• User email is correct and exists in the system
+• You have permission to view user enrollment data`,
         success: false,
         timestamp: new Date().toISOString()
       });
     }
+  }
+
+  // New method to get ALL user enrollments across multiple pages
+  private static async getAllUserEnrollments(userId: string, api: DoceboAPI): Promise<any> {
+    console.log(`🔄 Fetching ALL enrollments for user: ${userId}`);
+    const startTime = Date.now();
+    
+    try {
+      // Get all course enrollments
+      const allCourseEnrollments = await this.getAllCourseEnrollments(userId, api);
+      
+      // Get all learning plan enrollments  
+      const allLearningPlanEnrollments = await this.getAllLearningPlanEnrollments(userId, api);
+      
+      const processingTime = Date.now() - startTime;
+      console.log(`✅ Retrieved ${allCourseEnrollments.enrollments.length} courses and ${allLearningPlanEnrollments.enrollments.length} learning plans in ${processingTime}ms`);
+      
+      return {
+        courses: allCourseEnrollments,
+        learningPlans: allLearningPlanEnrollments,
+        totalCourses: allCourseEnrollments.enrollments.length,
+        totalLearningPlans: allLearningPlanEnrollments.enrollments.length,
+        success: allCourseEnrollments.success || allLearningPlanEnrollments.success,
+        method: 'comprehensive_pagination',
+        pagesFetched: allCourseEnrollments.pagesFetched + allLearningPlanEnrollments.pagesFetched,
+        processingTime: processingTime
+      };
+    } catch (error) {
+      console.error('❌ Error getting all enrollments:', error);
+      return {
+        courses: { enrollments: [], totalCount: 0, success: false },
+        learningPlans: { enrollments: [], totalCount: 0, success: false },
+        totalCourses: 0,
+        totalLearningPlans: 0,
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  private static async getAllCourseEnrollments(userId: string, api: DoceboAPI): Promise<any> {
+    console.log(`📚 Fetching all course enrollments for user: ${userId}`);
+    
+    const endpoints = [
+      `/course/v1/courses/enrollments?user_id[]=${userId}`,
+      `/course/v1/courses/enrollments?user_id=${userId}`,
+      `/learn/v1/enrollments?user_id=${userId}`
+    ];
+    
+    for (const endpoint of endpoints) {
+      try {
+        console.log(`🔍 Trying course endpoint: ${endpoint}`);
+        
+        let allEnrollments: any[] = [];
+        let currentPage = 1;
+        let pagesFetched = 0;
+        const maxPages = 50; // Safety limit to prevent infinite loops
+        
+        while (currentPage <= maxPages) {
+          console.log(`📄 Fetching course page ${currentPage}...`);
+          
+          const result = await api.apiRequest(endpoint, 'GET', null, {
+            page: currentPage,
+            page_size: 200 // Get as many as possible per page
+          });
+          
+          if (result.data?.items?.length > 0) {
+            // Filter for the specific user
+            const userEnrollments = result.data.items.filter((enrollment: any) => {
+              return enrollment.user_id?.toString() === userId.toString();
+            });
+            
+            allEnrollments.push(...userEnrollments);
+            pagesFetched++;
+            
+            console.log(`📄 Page ${currentPage}: Found ${userEnrollments.length} enrollments (Total: ${allEnrollments.length})`);
+            
+            // Check if there's more data
+            const hasMoreData = result.data?.has_more_data === true || result.data.items.length === 200;
+            
+            if (!hasMoreData) {
+              console.log(`✅ No more course data after page ${currentPage}`);
+              break;
+            }
+            
+            currentPage++;
+            
+            // Small delay to be API-friendly
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
+          } else {
+            console.log(`📄 Page ${currentPage}: No items returned, stopping`);
+            break;
+          }
+        }
+        
+        if (allEnrollments.length > 0) {
+          console.log(`✅ Successfully retrieved ${allEnrollments.length} course enrollments from ${endpoint}`);
+          return {
+            enrollments: allEnrollments,
+            totalCount: allEnrollments.length,
+            endpoint: endpoint,
+            success: true,
+            pagesFetched: pagesFetched
+          };
+        }
+        
+      } catch (error) {
+        console.log(`❌ Course enrollment endpoint ${endpoint} failed:`, error);
+        continue;
+      }
+    }
+    
+    return {
+      enrollments: [],
+      totalCount: 0,
+      endpoint: 'none_available',
+      success: false,
+      pagesFetched: 0
+    };
+  }
+
+  private static async getAllLearningPlanEnrollments(userId: string, api: DoceboAPI): Promise<any> {
+    console.log(`📋 Fetching all learning plan enrollments for user: ${userId}`);
+    
+    const endpoints = [
+      `/learningplan/v1/learningplans/enrollments?user_id[]=${userId}`,
+      `/learningplan/v1/learningplans/enrollments?user_id=${userId}`,
+      `/manage/v1/user/${userId}/learningplans`
+    ];
+    
+    for (const endpoint of endpoints) {
+      try {
+        console.log(`🔍 Trying learning plan endpoint: ${endpoint}`);
+        
+        let allEnrollments: any[] = [];
+        let currentPage = 1;
+        let pagesFetched = 0;
+        const maxPages = 50; // Safety limit
+        
+        while (currentPage <= maxPages) {
+          console.log(`📄 Fetching learning plan page ${currentPage}...`);
+          
+          const result = await api.apiRequest(endpoint, 'GET', null, {
+            page: currentPage,
+            page_size: 200
+          });
+          
+          let pageEnrollments = [];
+          if (result.data?.items) {
+            pageEnrollments = result.data.items;
+          } else if (Array.isArray(result.data)) {
+            pageEnrollments = result.data;
+          } else if (Array.isArray(result)) {
+            pageEnrollments = result;
+          }
+          
+          if (pageEnrollments.length > 0) {
+            // Filter for the specific user
+            const userEnrollments = pageEnrollments.filter((enrollment: any) => {
+              const enrollmentUserId = enrollment.user_id || enrollment.id_user || enrollment.userId;
+              return enrollmentUserId?.toString() === userId.toString();
+            });
+            
+            allEnrollments.push(...userEnrollments);
+            pagesFetched++;
+            
+            console.log(`📄 Page ${currentPage}: Found ${userEnrollments.length} LP enrollments (Total: ${allEnrollments.length})`);
+            
+            // Check if there's more data - for learning plans, this might be different
+            const hasMoreData = result.data?.has_more_data === true || pageEnrollments.length === 200;
+            
+            if (!hasMoreData) {
+              console.log(`✅ No more learning plan data after page ${currentPage}`);
+              break;
+            }
+            
+            currentPage++;
+            
+            // Small delay to be API-friendly
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
+          } else {
+            console.log(`📄 Page ${currentPage}: No items returned, stopping`);
+            break;
+          }
+        }
+        
+        if (allEnrollments.length > 0) {
+          console.log(`✅ Successfully retrieved ${allEnrollments.length} learning plan enrollments from ${endpoint}`);
+          return {
+            enrollments: allEnrollments,
+            totalCount: allEnrollments.length,
+            endpoint: endpoint,
+            success: true,
+            pagesFetched: pagesFetched
+          };
+        }
+        
+      } catch (error) {
+        console.log(`❌ Learning plan enrollment endpoint ${endpoint} failed:`, error);
+        continue;
+      }
+    }
+    
+    return {
+      enrollments: [],
+      totalCount: 0,
+      endpoint: 'none_available',
+      success: false,
+      pagesFetched: 0
+    };
   }
 
   static async handleCourseInfo(entities: any, api: DoceboAPI): Promise<NextResponse> {
