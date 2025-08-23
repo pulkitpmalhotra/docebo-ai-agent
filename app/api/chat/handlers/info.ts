@@ -1,4 +1,4 @@
-// app/api/chat/handlers/info.ts - Fixed enrollment checking logic
+// app/api/chat/handlers/info.ts - Fixed pagination response for load more functionality
 import { NextResponse } from 'next/server';
 import { DoceboAPI } from '../docebo-api';
 import { APIResponse } from '../types';
@@ -710,6 +710,7 @@ This user is enrolled but has not yet started this ${isLearningPlan ? 'learning 
     });
   }
 
+  // FIXED: Main handleUserEnrollments method with proper pagination
   static async handleUserEnrollments(entities: any, api: DoceboAPI): Promise<NextResponse> {
     try {
       const { email, userId, loadMore, offset } = entities;
@@ -758,6 +759,7 @@ This user is enrolled but has not yet started this ${isLearningPlan ? 'learning 
       const displayEnrollments = allEnrollments.slice(currentOffset, currentOffset + pageSize);
       const hasMore = currentOffset + pageSize < totalEnrollments;
       const remainingCount = totalEnrollments - (currentOffset + pageSize);
+      const nextOffset = currentOffset + pageSize;
 
       let responseMessage = `📚 **${userDetails.fullname}'s Enrollments**
 
@@ -810,7 +812,7 @@ This user is enrolled but has not yet started this ${isLearningPlan ? 'learning 
       if (hasMore) {
         responseMessage += `\n🔄 **Load More Data**:\n`;
         responseMessage += `• **Remaining**: ${remainingCount} more enrollments\n`;
-        responseMessage += `• **Next**: Items ${currentOffset + pageSize + 1}-${Math.min(currentOffset + (pageSize * 2), totalEnrollments)}\n\n`;
+        responseMessage += `• **Next**: Items ${nextOffset + 1}-${Math.min(nextOffset + pageSize, totalEnrollments)}\n\n`;
         responseMessage += `💡 **To see more**: "Load more enrollments for ${userDetails.email}"`;
       }
 
@@ -827,6 +829,18 @@ This user is enrolled but has not yet started this ${isLearningPlan ? 'learning 
 • Network or authentication issues`;
       }
 
+      // CRITICAL FIX: Ensure hasMore and loadMoreCommand are properly set in response
+      const loadMoreCommand = hasMore ? `Load more enrollments for ${userDetails.email}` : null;
+      
+      console.log(`📊 FIXED Pagination Info:`, {
+        totalEnrollments,
+        currentOffset,
+        nextOffset,
+        hasMore,
+        loadMoreCommand,
+        remainingCount
+      });
+
       return NextResponse.json({
         response: responseMessage,
         success: true,
@@ -839,17 +853,18 @@ This user is enrolled but has not yet started this ${isLearningPlan ? 'learning 
             totalItems: totalEnrollments,
             hasMore: hasMore,
             remainingCount: remainingCount,
-            nextOffset: currentOffset + pageSize
+            nextOffset: nextOffset
           },
           summary: {
             totalCourses: allEnrollmentData.totalCourses,
             totalLearningPlans: allEnrollmentData.totalLearningPlans,
             totalEnrollments: totalEnrollments
           },
-          loadMoreCommand: hasMore ? `Load more enrollments for ${userDetails.email}` : null
+          loadMoreCommand: loadMoreCommand
         },
         totalCount: totalEnrollments,
-        hasMore: hasMore,
+        hasMore: hasMore, // CRITICAL: This was missing!
+        loadMoreCommand: loadMoreCommand, // CRITICAL: This was missing!
         timestamp: new Date().toISOString()
       });
 
