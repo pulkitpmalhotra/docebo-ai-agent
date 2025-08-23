@@ -540,6 +540,12 @@ Select a category from the sidebar to see available commands!`,
         loadMoreCommand: data.loadMoreCommand
       };
 
+      console.log('📋 Assistant message data:', {
+        hasMore: data.hasMore,
+        loadMoreCommand: data.loadMoreCommand,
+        totalCount: data.totalCount
+      });
+
       setMessages(prev => [...prev, assistantMessage]);
     } catch (error) {
       console.error('Error sending message:', error);
