@@ -92,7 +92,7 @@ I can help you with comprehensive enrollment management:
 • Or: "Enroll alice@co.com,bob@co.com in course Python Programming"
 
 Select a category from the sidebar to see available commands!`,
-      timestamp: new Date(),
+      timestamp: new Date('2024-01-01T12:00:00Z'), // Fixed timestamp to avoid hydration issues
       success: true
     }
   ]);
@@ -376,15 +376,25 @@ Select a category from the sidebar to see available commands!`,
   }, [messages]);
 
   useEffect(() => {
-    // Load favorites and recent commands from localStorage
-    const savedFavorites = localStorage.getItem('docebo-favorites');
-    const savedRecent = localStorage.getItem('docebo-recent');
-    
-    if (savedFavorites) {
-      setFavoriteCommands(JSON.parse(savedFavorites));
-    }
-    if (savedRecent) {
-      setRecentCommands(JSON.parse(savedRecent));
+    // Load favorites and recent commands from localStorage on client side only
+    if (typeof window !== 'undefined') {
+      const savedFavorites = localStorage.getItem('docebo-favorites');
+      const savedRecent = localStorage.getItem('docebo-recent');
+      
+      if (savedFavorites) {
+        try {
+          setFavoriteCommands(JSON.parse(savedFavorites));
+        } catch (error) {
+          console.error('Error parsing saved favorites:', error);
+        }
+      }
+      if (savedRecent) {
+        try {
+          setRecentCommands(JSON.parse(savedRecent));
+        } catch (error) {
+          console.error('Error parsing saved recent commands:', error);
+        }
+      }
     }
   }, []);
 
@@ -424,7 +434,7 @@ Select a category from the sidebar to see available commands!`,
       const result = await response.json();
 
       const assistantMessage: Message = {
-        id: Date.now().toString(),
+        id: `csv-${Date.now()}`,
         type: 'assistant',
         content: result.response || 'CSV processing completed.',
         timestamp: new Date(),
@@ -441,7 +451,7 @@ Select a category from the sidebar to see available commands!`,
     } catch (error) {
       console.error('CSV processing error:', error);
       const errorMessage: Message = {
-        id: Date.now().toString(),
+        id: `csv-error-${Date.now()}`,
         type: 'assistant',
         content: '❌ **CSV Processing Error**: Failed to process CSV file. Please try again.',
         timestamp: new Date(),
@@ -462,13 +472,17 @@ Select a category from the sidebar to see available commands!`,
   const addToFavorites = (command: string) => {
     const newFavorites = [...favoriteCommands, command].slice(0, 10);
     setFavoriteCommands(newFavorites);
-    localStorage.setItem('docebo-favorites', JSON.stringify(newFavorites));
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('docebo-favorites', JSON.stringify(newFavorites));
+    }
   };
 
   const addToRecent = (command: string) => {
     const newRecent = [command, ...recentCommands.filter(cmd => cmd !== command)].slice(0, 5);
     setRecentCommands(newRecent);
-    localStorage.setItem('docebo-recent', JSON.stringify(newRecent));
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('docebo-recent', JSON.stringify(newRecent));
+    }
   };
 
   const copyToClipboard = async (text: string) => {
@@ -501,8 +515,9 @@ Select a category from the sidebar to see available commands!`,
   const sendMessage = async () => {
     if (!inputValue.trim() || isLoading) return;
 
+    const messageId = `user-${Date.now()}`;
     const userMessage: Message = {
-      id: Date.now().toString(),
+      id: messageId,
       type: 'user',
       content: inputValue,
       timestamp: new Date()
@@ -525,8 +540,9 @@ Select a category from the sidebar to see available commands!`,
 
       const data = await response.json();
 
+      const assistantMessageId = `assistant-${Date.now()}`;
       const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
+        id: assistantMessageId,
         type: 'assistant',
         content: data.response || 'Sorry, I encountered an error.',
         timestamp: new Date(),
@@ -550,7 +566,7 @@ Select a category from the sidebar to see available commands!`,
     } catch (error) {
       console.error('Error sending message:', error);
       const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
+        id: `error-${Date.now()}`,
         type: 'assistant',
         content: '❌ **Connection Error**: Unable to connect to the server. Please try again.',
         timestamp: new Date(),
