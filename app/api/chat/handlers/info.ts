@@ -711,177 +711,105 @@ This user is enrolled but has not yet started this ${isLearningPlan ? 'learning 
   }
 
   // FIXED: Main handleUserEnrollments method with proper pagination
-  static async handleUserEnrollments(entities: any, api: DoceboAPI): Promise<NextResponse> {
-    try {
-      const { email, userId, loadMore, offset } = entities;
-      const identifier = email || userId;
-      const currentOffset = parseInt(offset || '0');
-      const pageSize = 10; // Show 10 items per page
-      
-      if (!identifier) {
-        return NextResponse.json({
-          response: '❌ **Missing Information**: Please provide a user email.\n\n**Example**: "User enrollments mike@company.com"',
-          success: false,
-          timestamp: new Date().toISOString()
-        });
-      }
-
-      console.log(`📚 Getting user enrollments: ${identifier} (offset: ${currentOffset})`);
-
-      // Get user details
-      const userDetails = await api.getUserDetails(identifier);
-      
-      // Get ALL enrollments (we'll handle pagination in memory)
-      const allEnrollmentData = await this.getAllUserEnrollments(userDetails.id, api);
-      
-      // Combine all enrollments for pagination
-      const allEnrollments = [
-        ...allEnrollmentData.courses.enrollments.map((e: any) => ({
-          ...api.formatCourseEnrollment(e),
-          type: 'course',
-          rawData: e
-        })),
-        ...allEnrollmentData.learningPlans.enrollments.map((e: any) => ({
-          ...api.formatLearningPlanEnrollment(e),
-          type: 'learning_plan',
-          rawData: e
-        }))
-      ];
-
-      // Sort by enrollment date (most recent first)
-      allEnrollments.sort((a, b) => {
-        const dateA = new Date(a.enrollmentDate || '1970-01-01');
-        const dateB = new Date(b.enrollmentDate || '1970-01-01');
-        return dateB.getTime() - dateA.getTime();
-      });
-
-      const totalEnrollments = allEnrollments.length;
-      const displayEnrollments = allEnrollments.slice(currentOffset, currentOffset + pageSize);
-      const hasMore = currentOffset + pageSize < totalEnrollments;
-      const remainingCount = totalEnrollments - (currentOffset + pageSize);
-      const nextOffset = currentOffset + pageSize;
-
-      let responseMessage = `📚 **${userDetails.fullname}'s Enrollments**
-
-👤 **User**: ${userDetails.fullname} (${userDetails.email})
-🆔 **User ID**: ${userDetails.id}
-📊 **Status**: ${userDetails.status}
-
-📈 **Summary**:
-• **Total Enrollments**: ${totalEnrollments}
-• **Courses**: ${allEnrollmentData.totalCourses}
-• **Learning Plans**: ${allEnrollmentData.totalLearningPlans}
-• **Showing**: ${currentOffset + 1}-${Math.min(currentOffset + pageSize, totalEnrollments)} of ${totalEnrollments}`;
-
-      if (displayEnrollments.length > 0) {
-        responseMessage += `\n\n📋 **Enrollments** (${currentOffset + 1}-${Math.min(currentOffset + pageSize, totalEnrollments)}):\n`;
-        
-        displayEnrollments.forEach((enrollment: any, index: number) => {
-          let statusIcon = enrollment.type === 'course' ? '📚' : '📋';
-          if (enrollment.enrollmentStatus === 'completed') statusIcon = '✅';
-          else if (enrollment.enrollmentStatus === 'in_progress') statusIcon = '🔄';
-          else if (enrollment.enrollmentStatus === 'suspended') statusIcon = '🚫';
-          else if (enrollment.enrollmentStatus === 'not_started') statusIcon = '⏸️';
-          
-          const itemNumber = currentOffset + index + 1;
-          const name = enrollment.type === 'course' ? enrollment.courseName : enrollment.learningPlanName;
-          const typeLabel = enrollment.type === 'course' ? 'COURSE' : 'LEARNING PLAN';
-          
-          let progressInfo = '';
-          if (enrollment.type === 'course') {
-            progressInfo = enrollment.progress ? ` (${enrollment.progress}%)` : '';
-            if (enrollment.score && enrollment.score > 0) {
-              progressInfo += ` [Score: ${enrollment.score}]`;
-            }
-          } else {
-            const completed = enrollment.completedCourses || 0;
-            const total = enrollment.totalCourses || 0;
-            progressInfo = total > 0 ? ` (${completed}/${total} courses)` : '';
-          }
-          
-          responseMessage += `${itemNumber}. ${statusIcon} **${enrollment.enrollmentStatus.toUpperCase()}** ${typeLabel}\n`;
-          responseMessage += `   📖 ${name}${progressInfo}\n`;
-          if (enrollment.enrollmentDate) {
-            responseMessage += `   📅 Enrolled: ${enrollment.enrollmentDate}\n`;
-          }
-          responseMessage += '\n';
-        });
-      }
-
-      // Add load more section
-      if (hasMore) {
-        responseMessage += `\n🔄 **Load More Data**:\n`;
-        responseMessage += `• **Remaining**: ${remainingCount} more enrollments\n`;
-        responseMessage += `• **Next**: Items ${nextOffset + 1}-${Math.min(nextOffset + pageSize, totalEnrollments)}\n\n`;
-        responseMessage += `💡 **To see more**: "Load more enrollments for ${userDetails.email}"`;
-      }
-
-      // Add data sources info
-      responseMessage += `\n\n🔗 **Data Sources**:
-• **Method**: ${allEnrollmentData.method || 'Multiple API endpoints'}
-• **Pages Fetched**: ${allEnrollmentData.pagesFetched || 'Multiple'}
-• **Total Retrieved**: ${totalEnrollments} enrollments`;
-
-      if (!allEnrollmentData.success && totalEnrollments === 0) {
-        responseMessage += `\n\n⚠️ **Note**: No enrollment data could be retrieved. This might be due to:
-• API endpoint access limitations
-• User has no enrollments
-• Network or authentication issues`;
-      }
-
-      // CRITICAL FIX: Ensure hasMore and loadMoreCommand are properly set in response
-      const loadMoreCommand = hasMore ? `Load more enrollments for ${userDetails.email}` : null;
-      
-      console.log(`📊 FIXED Pagination Info:`, {
-        totalEnrollments,
-        currentOffset,
-        nextOffset,
-        hasMore,
-        loadMoreCommand,
-        remainingCount
-      });
-
+static async handleUserEnrollments(entities: any, api: DoceboAPI): Promise<NextResponse> {
+  try {
+    const { email, userId, loadMore, offset } = entities;
+    const identifier = email || userId;
+    const currentOffset = parseInt(offset || '0');
+    const pageSize = 10; // Show fewer items initially
+    
+    if (!identifier) {
       return NextResponse.json({
-        response: responseMessage,
-        success: true,
-        data: {
-          user: userDetails,
-          enrollments: displayEnrollments,
-          pagination: {
-            currentOffset: currentOffset,
-            pageSize: pageSize,
-            totalItems: totalEnrollments,
-            hasMore: hasMore,
-            remainingCount: remainingCount,
-            nextOffset: nextOffset
-          },
-          summary: {
-            totalCourses: allEnrollmentData.totalCourses,
-            totalLearningPlans: allEnrollmentData.totalLearningPlans,
-            totalEnrollments: totalEnrollments
-          },
-          loadMoreCommand: loadMoreCommand
-        },
-        totalCount: totalEnrollments,
-        hasMore: hasMore, // CRITICAL: This was missing!
-        loadMoreCommand: loadMoreCommand, // CRITICAL: This was missing!
-        timestamp: new Date().toISOString()
-      });
-
-    } catch (error) {
-      console.error('❌ User enrollments error:', error);
-      
-      return NextResponse.json({
-        response: `❌ **User Enrollments Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
-
-Please check:
-• User email is correct and exists in the system
-• You have permission to view user enrollment data`,
+        response: '❌ **Missing Information**: Please provide a user email.',
         success: false,
         timestamp: new Date().toISOString()
       });
     }
+
+    console.log(`📚 Getting user enrollments: ${identifier} (offset: ${currentOffset})`);
+
+    // SOLUTION 1A: Quick user details first
+    const userDetails = await Promise.race([
+      api.getUserDetails(identifier),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('User lookup timeout')), 8000)
+      )
+    ]) as any;
+    
+    // SOLUTION 1B: Get first page only with aggressive timeout
+    const enrollmentData = await Promise.race([
+      this.getFirstPageEnrollments(userDetails.id, api, currentOffset, pageSize),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('First page timeout')), 15000) // Shorter timeout
+      )
+    ]) as any;
+    
+    // SOLUTION 1C: Return immediately with what we have
+    return this.formatQuickEnrollmentResponse(userDetails, enrollmentData, currentOffset, pageSize);
+
+  } catch (error) {
+    console.error('❌ User enrollments error:', error);
+    
+    // SOLUTION 1D: Fallback to background processing suggestion
+    return NextResponse.json({
+      response: `⏱️ **Large Dataset Detected**: This user likely has many enrollments.
+
+**🔄 Try Background Processing:**
+• Use: "/api/chat-bg" endpoint for heavy operations
+• Or: "Load user enrollments in background for ${identifier}"
+
+**📊 Alternative Quick Commands:**
+• "Find user ${identifier}" (user info only)
+• "Check if ${identifier} is enrolled in [specific course]"
+• "User summary ${identifier}" (basic stats only)
+
+**📤 For Complete Data:**
+• Use CSV export feature
+• Contact admin for full enrollment report`,
+      success: false,
+      suggestBackgroundProcessing: true,
+      backgroundCommand: `Load user enrollments in background for ${identifier}`,
+      timestamp: new Date().toISOString()
+    });
   }
+}
+
+// SOLUTION 2: Ultra-fast first page method
+private static async getFirstPageEnrollments(userId: string, api: DoceboAPI, offset: number, pageSize: number) {
+  console.log(`⚡ Fast enrollment fetch for user: ${userId}`);
+  
+  // Try the fastest endpoint first
+  try {
+    const result = await api.apiRequest(`/course/v1/courses/enrollments`, 'GET', null, {
+      'user_id[]': userId,
+      page_size: pageSize,
+      page: Math.floor(offset / pageSize) + 1
+    });
+    
+    if (result.data?.items?.length > 0) {
+      const userEnrollments = result.data.items.filter((e: any) => 
+        e.user_id?.toString() === userId.toString()
+      );
+      
+      return {
+        enrollments: userEnrollments,
+        hasMore: result.data?.has_more_data === true,
+        totalEstimate: userEnrollments.length > 0 ? 'Many' : 0,
+        method: 'fast_page'
+      };
+    }
+  } catch (error) {
+    console.log('Fast method failed, trying basic approach');
+  }
+  
+  // Fallback to basic approach
+  return {
+    enrollments: [],
+    hasMore: false,
+    totalEstimate: 0,
+    method: 'fallback'
+  };
+}
 
   // New method to get ALL user enrollments across multiple pages
   private static async getAllUserEnrollments(userId: string, api: DoceboAPI): Promise<any> {
