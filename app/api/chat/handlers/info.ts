@@ -716,19 +716,19 @@ static async handleUserEnrollments(entities: any, api: DoceboAPI): Promise<NextR
     const { email, userId, loadMore, offset } = entities;
     const identifier = email || userId;
     const currentOffset = parseInt(offset || '0');
-    const pageSize = 10; // Show fewer items initially
+    const pageSize = 10; // Show fewer items initially for speed
     
     if (!identifier) {
       return NextResponse.json({
-        response: '❌ **Missing Information**: Please provide a user email.',
+        response: '❌ **Missing Information**: Please provide a user email.\n\n**Example**: "User enrollments mike@company.com"',
         success: false,
         timestamp: new Date().toISOString()
       });
     }
 
-    console.log(`📚 Getting user enrollments: ${identifier} (offset: ${currentOffset})`);
+    console.log(`📚 FAST: Getting user enrollments: ${identifier} (offset: ${currentOffset})`);
 
-    // SOLUTION 1A: Quick user details first
+    // STEP 1: Get user details quickly (8 second timeout)
     const userDetails = await Promise.race([
       api.getUserDetails(identifier),
       new Promise((_, reject) => 
@@ -736,49 +736,46 @@ static async handleUserEnrollments(entities: any, api: DoceboAPI): Promise<NextR
       )
     ]) as any;
     
-    // SOLUTION 1B: Get first page only with aggressive timeout
-    const enrollmentData = await Promise.race([
-      this.getFirstPageEnrollments(userDetails.id, api, currentOffset, pageSize),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('First page timeout')), 15000) // Shorter timeout
-      )
-    ]) as any;
-    
-    // SOLUTION 1C: Return immediately with what we have
-    return this.formatQuickEnrollmentResponse(userDetails, enrollmentData, currentOffset, pageSize);
+    // STEP 2: Try fast enrollment fetch (15 second timeout)
+    try {
+      const fastResult = await Promise.race([
+        this.getFastEnrollmentPage(userDetails.id, api, currentOffset, pageSize),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Fast enrollment timeout')), 15000)
+        )
+      ]) as any;
+      
+      // STEP 3: Return quick response with what we have
+      return this.buildQuickEnrollmentResponse(userDetails, fastResult, currentOffset, pageSize);
+      
+    } catch (enrollmentError) {
+      console.error('❌ Fast enrollment fetch failed:', enrollmentError);
+      
+      // STEP 4: Suggest background processing for heavy users
+      return this.buildTimeoutResponse(userDetails, identifier);
+    }
 
   } catch (error) {
     console.error('❌ User enrollments error:', error);
     
-    // SOLUTION 1D: Fallback to background processing suggestion
     return NextResponse.json({
-      response: `⏱️ **Large Dataset Detected**: This user likely has many enrollments.
+      response: `❌ **User Enrollments Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
 
-**🔄 Try Background Processing:**
-• Use: "/api/chat-bg" endpoint for heavy operations
-• Or: "Load user enrollments in background for ${identifier}"
-
-**📊 Alternative Quick Commands:**
-• "Find user ${identifier}" (user info only)
-• "Check if ${identifier} is enrolled in [specific course]"
-• "User summary ${identifier}" (basic stats only)
-
-**📤 For Complete Data:**
-• Use CSV export feature
-• Contact admin for full enrollment report`,
+**⚡ Quick Solutions:**
+• Try: "Find user ${entities.email || entities.userId}" (basic info only)
+• Try: "User summary ${entities.email || entities.userId}" 
+• Use CSV export for complete enrollment data`,
       success: false,
-      suggestBackgroundProcessing: true,
-      backgroundCommand: `Load user enrollments in background for ${identifier}`,
       timestamp: new Date().toISOString()
     });
   }
 }
 
-// SOLUTION 2: Ultra-fast first page method
-private static async getFirstPageEnrollments(userId: string, api: DoceboAPI, offset: number, pageSize: number) {
-  console.log(`⚡ Fast enrollment fetch for user: ${userId}`);
+// ADD this new method for fast enrollment fetching:
+private static async getFastEnrollmentPage(userId: string, api: DoceboAPI, offset: number, pageSize: number) {
+  console.log(`⚡ Fast enrollment fetch for user: ${userId}, offset: ${offset}`);
   
-  // Try the fastest endpoint first
+  // Method 1: Try fastest endpoint with pagination
   try {
     const result = await api.apiRequest(`/course/v1/courses/enrollments`, 'GET', null, {
       'user_id[]': userId,
@@ -791,24 +788,153 @@ private static async getFirstPageEnrollments(userId: string, api: DoceboAPI, off
         e.user_id?.toString() === userId.toString()
       );
       
+      console.log(`✅ Fast method found ${userEnrollments.length} enrollments`);
+      
       return {
-        enrollments: userEnrollments,
-        hasMore: result.data?.has_more_data === true,
-        totalEstimate: userEnrollments.length > 0 ? 'Many' : 0,
-        method: 'fast_page'
+        courses: userEnrollments.map((e: any) => api.formatCourseEnrollment(e)),
+        learningPlans: [], // Skip LPs for speed
+        totalCourses: userEnrollments.length,
+        totalLearningPlans: 0,
+        hasMoreData: result.data?.has_more_data === true,
+        method: 'fast_courses_only',
+        isPartial: true
       };
     }
   } catch (error) {
-    console.log('Fast method failed, trying basic approach');
+    console.log('❌ Fast courses method failed:', error);
   }
   
-  // Fallback to basic approach
+  // Method 2: Fallback to basic user search if fast method fails
   return {
-    enrollments: [],
-    hasMore: false,
-    totalEstimate: 0,
-    method: 'fallback'
+    courses: [],
+    learningPlans: [],
+    totalCourses: 0,
+    totalLearningPlans: 0,
+    hasMoreData: false,
+    method: 'fallback_empty',
+    isPartial: true
   };
+}
+
+// ADD this method for quick response building:
+private static buildQuickEnrollmentResponse(
+  userDetails: any, 
+  enrollmentData: any, 
+  currentOffset: number, 
+  pageSize: number
+): NextResponse {
+  
+  const totalShown = enrollmentData.courses.length;
+  const hasMore = enrollmentData.hasMoreData || totalShown >= pageSize;
+  
+  let responseMessage = `📚 **${userDetails.fullname}'s Enrollments** (Fast Mode)
+
+👤 **User**: ${userDetails.fullname} (${userDetails.email})
+🆔 **User ID**: ${userDetails.id}
+
+⚡ **Quick Results**:
+• **Courses Shown**: ${totalShown}
+• **Method**: ${enrollmentData.method}
+• **Showing**: Items ${currentOffset + 1}-${currentOffset + totalShown}`;
+
+  if (enrollmentData.isPartial) {
+    responseMessage += `\n\n⚠️ **Partial Results**: Showing courses only for speed`;
+  }
+
+  if (totalShown > 0) {
+    responseMessage += `\n\n📋 **Enrollments**:\n`;
+    
+    enrollmentData.courses.forEach((enrollment: any, index: number) => {
+      let statusIcon = '📚';
+      if (enrollment.enrollmentStatus === 'completed') statusIcon = '✅';
+      else if (enrollment.enrollmentStatus === 'in_progress') statusIcon = '🔄';
+      else if (enrollment.enrollmentStatus === 'suspended') statusIcon = '🚫';
+      else if (enrollment.enrollmentStatus === 'not_started') statusIcon = '⏸️';
+      
+      const itemNumber = currentOffset + index + 1;
+      
+      responseMessage += `${itemNumber}. ${statusIcon} **${enrollment.enrollmentStatus.toUpperCase()}** COURSE\n`;
+      responseMessage += `   📖 ${enrollment.courseName}\n`;
+      if (enrollment.enrollmentDate) {
+        responseMessage += `   📅 Enrolled: ${enrollment.enrollmentDate}\n`;
+      }
+      responseMessage += '\n';
+    });
+  } else {
+    responseMessage += `\n\n📋 **No Enrollments Found** in first page.`;
+  }
+
+  // Add load more or background processing suggestions
+  if (hasMore) {
+    responseMessage += `\n🔄 **More Data Available**\n`;
+    responseMessage += `💡 **For Complete Data**: Use background processing\n`;
+    responseMessage += `• Try: "Load all enrollments in background for ${userDetails.email}"`;
+  }
+
+  const loadMoreCommand = hasMore ? `Load more enrollments for ${userDetails.email}` : null;
+
+  return NextResponse.json({
+    response: responseMessage,
+    success: true,
+    data: {
+      user: userDetails,
+      enrollments: enrollmentData.courses,
+      pagination: {
+        currentOffset: currentOffset,
+        pageSize: pageSize,
+        totalItems: totalShown,
+        hasMore: hasMore,
+        isPartial: true,
+        method: enrollmentData.method
+      }
+    },
+    totalCount: totalShown,
+    hasMore: hasMore,
+    loadMoreCommand: loadMoreCommand,
+    isPartialResult: true,
+    timestamp: new Date().toISOString()
+  });
+}
+
+// ADD this method for timeout responses:
+private static buildTimeoutResponse(userDetails: any, identifier: string): NextResponse {
+  return NextResponse.json({
+    response: `⏱️ **Large Dataset Detected**: ${userDetails.fullname} likely has many enrollments.
+
+👤 **User Found**: ${userDetails.fullname} (${userDetails.email})
+🆔 **User ID**: ${userDetails.id}
+
+**🔄 Recommended Solutions:**
+
+**1. Background Processing** (Best for heavy users):
+• Use: "Process enrollments in background for ${identifier}"
+• Get results via job status checking
+
+**2. Quick Alternatives**:
+• "Find user ${identifier}" (user details only)
+• "Check if ${identifier} is enrolled in [specific course name]" 
+• "User summary ${identifier}"
+
+**3. CSV Export**:
+• Use CSV upload feature to export enrollment data
+• Process offline for users with 100+ enrollments
+
+**4. Specific Queries**:
+• "Show recent enrollments for ${identifier}"
+• "Count enrollments for ${identifier}"
+
+💡 **Why This Happens**: Users with 50+ enrollments can take 60+ seconds to process, but Vercel limits us to 30 seconds.`,
+    success: false,
+    suggestBackgroundProcessing: true,
+    backgroundCommand: `Process enrollments in background for ${identifier}`,
+    userFound: true,
+    userData: {
+      id: userDetails.id,
+      fullname: userDetails.fullname,
+      email: userDetails.email
+    },
+    timestamp: new Date().toISOString()
+  });
 }
 
   // New method to get ALL user enrollments across multiple pages
