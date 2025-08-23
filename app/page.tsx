@@ -71,8 +71,27 @@ interface MenuCategory {
 }
 
 export default function ChatInterface() {
-  const [messages, setMessages] = useState<Message[]>([
-    {
+  const [mounted, setMounted] = useState(false);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [inputValue, setInputValue] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [recentCommands, setRecentCommands] = useState<string[]>([]);
+  const [favoriteCommands, setFavoriteCommands] = useState<string[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [showCSVUpload, setShowCSVUpload] = useState(false);
+  const [isCSVProcessing, setIsCSVProcessing] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [menuCategories, setMenuCategories] = useState<MenuCategory[]>([]);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Fix hydration by using mounted state and proper initialization
+  useEffect(() => {
+    setMounted(true);
+    
+    // Initialize with welcome message after mounting to avoid hydration mismatch
+    const welcomeMessage: Message = {
       id: '1',
       type: 'assistant',
       content: `🎯 **Welcome to Docebo AI Assistant**
@@ -92,23 +111,35 @@ I can help you with comprehensive enrollment management:
 • Or: "Enroll alice@co.com,bob@co.com in course Python Programming"
 
 Select a category from the sidebar to see available commands!`,
-      timestamp: new Date('2024-01-01T12:00:00Z'), // Fixed timestamp to avoid hydration issues
+      timestamp: new Date(),
       success: true
+    };
+    
+    setMessages([welcomeMessage]);
+  }, []);
+
+  // Load favorites and recent commands from localStorage only on client
+  useEffect(() => {
+    if (!mounted) return;
+    
+    const savedFavorites = localStorage.getItem('docebo-favorites');
+    const savedRecent = localStorage.getItem('docebo-recent');
+    
+    if (savedFavorites) {
+      try {
+        setFavoriteCommands(JSON.parse(savedFavorites));
+      } catch (error) {
+        console.error('Error parsing saved favorites:', error);
+      }
     }
-  ]);
-  
-  const [inputValue, setInputValue] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
-  const [recentCommands, setRecentCommands] = useState<string[]>([]);
-  const [favoriteCommands, setFavoriteCommands] = useState<string[]>([]);
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  const [showCSVUpload, setShowCSVUpload] = useState(false);
-  const [isCSVProcessing, setIsCSVProcessing] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [menuCategories, setMenuCategories] = useState<MenuCategory[]>([]);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+    if (savedRecent) {
+      try {
+        setRecentCommands(JSON.parse(savedRecent));
+      } catch (error) {
+        console.error('Error parsing saved recent commands:', error);
+      }
+    }
+  }, [mounted]);
 
   // Properly categorized quick actions
   const allQuickActions: QuickAction[] = [
@@ -309,6 +340,8 @@ Select a category from the sidebar to see available commands!`,
 
   // Initialize menu categories
   useEffect(() => {
+    if (!mounted) return;
+    
     const categories: MenuCategory[] = [
       {
         id: 'csv',
@@ -352,7 +385,7 @@ Select a category from the sidebar to see available commands!`,
       }
     ];
     setMenuCategories(categories);
-  }, []);
+  }, [mounted]);
 
   const smartSuggestions: Suggestion[] = [
     { text: 'Upload CSV for bulk course enrollment', category: 'csv' },
@@ -374,29 +407,6 @@ Select a category from the sidebar to see available commands!`,
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
-
-  useEffect(() => {
-    // Load favorites and recent commands from localStorage on client side only
-    if (typeof window !== 'undefined') {
-      const savedFavorites = localStorage.getItem('docebo-favorites');
-      const savedRecent = localStorage.getItem('docebo-recent');
-      
-      if (savedFavorites) {
-        try {
-          setFavoriteCommands(JSON.parse(savedFavorites));
-        } catch (error) {
-          console.error('Error parsing saved favorites:', error);
-        }
-      }
-      if (savedRecent) {
-        try {
-          setRecentCommands(JSON.parse(savedRecent));
-        } catch (error) {
-          console.error('Error parsing saved recent commands:', error);
-        }
-      }
-    }
-  }, []);
 
   const toggleCategory = (categoryId: string) => {
     setMenuCategories(prev => prev.map(cat => 
@@ -470,19 +480,17 @@ Select a category from the sidebar to see available commands!`,
   };
 
   const addToFavorites = (command: string) => {
+    if (!mounted) return;
     const newFavorites = [...favoriteCommands, command].slice(0, 10);
     setFavoriteCommands(newFavorites);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('docebo-favorites', JSON.stringify(newFavorites));
-    }
+    localStorage.setItem('docebo-favorites', JSON.stringify(newFavorites));
   };
 
   const addToRecent = (command: string) => {
+    if (!mounted) return;
     const newRecent = [command, ...recentCommands.filter(cmd => cmd !== command)].slice(0, 5);
     setRecentCommands(newRecent);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('docebo-recent', JSON.stringify(newRecent));
-    }
+    localStorage.setItem('docebo-recent', JSON.stringify(newRecent));
   };
 
   const copyToClipboard = async (text: string) => {
@@ -512,8 +520,21 @@ Select a category from the sidebar to see available commands!`,
     URL.revokeObjectURL(url);
   };
 
+  // Fixed load more handler with proper event handling
+  const handleLoadMore = (loadMoreCommand: string) => {
+    if (!loadMoreCommand || isLoading) return;
+    
+    console.log('🔄 Executing load more command:', loadMoreCommand);
+    setInputValue(loadMoreCommand);
+    
+    // Automatically send the load more command
+    setTimeout(() => {
+      sendMessage();
+    }, 100);
+  };
+
   const sendMessage = async () => {
-    if (!inputValue.trim() || isLoading) return;
+    if (!inputValue.trim() || isLoading || !mounted) return;
 
     const messageId = `user-${Date.now()}`;
     const userMessage: Message = {
@@ -525,6 +546,7 @@ Select a category from the sidebar to see available commands!`,
 
     setMessages(prev => [...prev, userMessage]);
     addToRecent(inputValue);
+    const currentInput = inputValue;
     setInputValue('');
     setIsLoading(true);
     setShowSuggestions(false);
@@ -535,7 +557,7 @@ Select a category from the sidebar to see available commands!`,
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ message: userMessage.content }),
+        body: JSON.stringify({ message: currentInput }),
       });
 
       const data = await response.json();
@@ -606,6 +628,21 @@ Select a category from the sidebar to see available commands!`,
       .replace(/`(.*?)`/g, '<code class="bg-gray-100 px-1 py-0.5 rounded text-sm font-mono">$1</code>')
       .replace(/\n/g, '<br />');
   };
+
+  // Format timestamp to avoid hydration mismatch
+  const formatTimestamp = (timestamp: Date) => {
+    if (!mounted) return '';
+    return timestamp.toLocaleTimeString();
+  };
+
+  // Don't render until mounted to avoid hydration issues
+  if (!mounted) {
+    return (
+      <div className="flex h-screen bg-gray-50 items-center justify-center">
+        <div className="text-gray-600">Loading...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen bg-gray-50">
@@ -823,7 +860,7 @@ Select a category from the sidebar to see available commands!`,
                 {message.type === 'assistant' && (
                   <div className="flex items-center justify-between mt-3 pt-2 border-t border-gray-100">
                     <div className="flex items-center space-x-4 text-xs text-gray-500">
-                      <span>{message.timestamp.toLocaleTimeString()}</span>
+                      <span suppressHydrationWarning>{formatTimestamp(message.timestamp)}</span>
                       {message.success !== undefined && (
                         <span className={message.success ? 'text-green-600' : 'text-red-600'}>
                           {message.success ? '✅ Success' : '❌ Error'}
@@ -853,11 +890,12 @@ Select a category from the sidebar to see available commands!`,
                     <div className="flex items-center space-x-2">
                       {message.loadMoreCommand && (
                         <button
-                          onClick={() => setInputValue(message.loadMoreCommand || '')}
-                          className="text-blue-600 hover:text-blue-800 transition-colors text-xs bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded"
+                          onClick={() => handleLoadMore(message.loadMoreCommand!)}
+                          disabled={isLoading}
+                          className="text-blue-600 hover:text-blue-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-xs bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded"
                           title="Load more results"
                         >
-                          Load More
+                          {isLoading ? 'Loading...' : 'Load More'}
                         </button>
                       )}
                       {(message.isBulkOperation || message.totalCount) && (
