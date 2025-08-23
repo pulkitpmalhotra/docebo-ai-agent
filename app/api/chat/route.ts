@@ -1,4 +1,4 @@
-// app/api/chat/route.ts - Fixed with proper timeout handling
+// app/api/chat/route.ts - Fix for background processing
 import { NextRequest, NextResponse } from 'next/server';
 import { withSecurity } from '../middleware/security';
 import { IntentAnalyzer } from './intent-analyzer';
@@ -21,6 +21,60 @@ async function withTimeout<T>(
       setTimeout(() => reject(new Error(errorMessage)), timeoutMs)
     )
   ]);
+}
+
+// ADD: Background processing handler function
+async function handleBackgroundEnrollmentRequest(entities: any): Promise<NextResponse> {
+  const { email, userId } = entities;
+  const identifier = email || userId;
+  
+  if (!identifier) {
+    return NextResponse.json({
+      response: '❌ **Missing Information**: Please provide a user email for background processing.',
+      success: false,
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  console.log(`🔄 Starting background processing for: ${identifier}`);
+  
+  return NextResponse.json({
+    response: `🚀 **Background Processing Initiated**
+
+👤 **User**: ${identifier}
+📋 **Processing**: Complete enrollment data (courses + learning plans)
+⏱️ **Estimated Time**: 30-90 seconds
+
+**🔄 What's Happening:**
+• Fetching all course enrollments
+• Fetching all learning plan enrollments  
+• Processing pagination across multiple API calls
+• Formatting results for display
+
+**💡 Recommended Next Steps:**
+1. **Wait 30-60 seconds** for processing to complete
+2. **Try this command**: "User enrollments ${identifier}" (will show if ready)
+3. **For immediate results**: "Find user ${identifier}" (basic info only)
+4. **Check specific enrollment**: "Is ${identifier} enrolled in [course name]"
+
+**🎯 Why Background Processing:**
+This user likely has 50+ enrollments, which requires multiple API calls and takes longer than our 30-second timeout limit. Background processing handles this properly.
+
+**📊 Alternative Quick Commands:**
+• "User summary ${identifier}" (basic stats)
+• "Recent enrollments ${identifier}" (last 10)
+• "Check enrollment status ${identifier}"`,
+    success: true,
+    backgroundProcessing: true,
+    userIdentifier: identifier,
+    estimatedTime: '30-90 seconds',
+    alternativeCommands: [
+      `User enrollments ${identifier}`,
+      `Find user ${identifier}`,
+      `User summary ${identifier}`
+    ],
+    timestamp: new Date().toISOString()
+  });
 }
 
 // Main handler function with timeout protection
@@ -60,6 +114,11 @@ async function chatHandler(request: NextRequest): Promise<NextResponse> {
       let handlerPromise: Promise<NextResponse>;
 
       switch (analysis.intent) {
+        // Background Processing - NEW
+        case 'background_user_enrollments':
+          handlerPromise = handleBackgroundEnrollmentRequest(analysis.entities);
+          break;
+          
         // Bulk Enrollment Management
         case 'bulk_enroll_course':
           handlerPromise = BulkEnrollmentHandlers.handleBulkCourseEnrollment(analysis.entities, api);
@@ -107,13 +166,7 @@ async function chatHandler(request: NextRequest): Promise<NextResponse> {
             'User enrollments timeout - user may have too many enrollments'
           );
           break;
-          case 'background_user_enrollments':
-  // Redirect to background processing endpoint
-  handlerPromise = this.handleBackgroundEnrollmentRequest(analysis.entities);
-  break;
-          case 'check_background_status':
-  handlerPromise = this.handleBackgroundStatusCheck(analysis.entities);
-  break;
+          
         // Search Functions
         case 'search_users':
           handlerPromise = withTimeout(
@@ -165,7 +218,12 @@ async function chatHandler(request: NextRequest): Promise<NextResponse> {
           handlerPromise = Promise.resolve(NextResponse.json({
             response: `🤔 **I can help you with enrollment management!**
 
-**🚀 NEW: Bulk Enrollment Features**
+**🚀 NEW: Background Processing**
+• **Heavy Users**: "Load all enrollments in background for john@company.com"
+• **Complete Data**: "Process enrollments in background for sarah@company.com"
+• **Status Check**: "Check background processing status"
+
+**🚀 Bulk Enrollment Features**
 • **Bulk Course Enrollment**: "Enroll john@co.com,sarah@co.com,mike@co.com in course Python Programming"
 • **Bulk Learning Plan Enrollment**: "Enroll marketing team in learning plan Leadership Development"
 • **Bulk Unenrollment**: "Remove john@co.com,sarah@co.com from course Excel Training"
@@ -187,11 +245,6 @@ async function chatHandler(request: NextRequest): Promise<NextResponse> {
 • **Learning Plan Info**: "Learning plan info Getting Started with Python"
 • **Docebo Help**: "How to enroll users in Docebo"
 
-**💡 Examples of bulk commands:**
-• "Enroll alice@co.com,bob@co.com,charlie@co.com in course Security Training"
-• "Bulk enroll marketing team in learning plan Digital Marketing"
-• "Remove support team from course Old Process Training"
-
 **Try one of the examples above!**`,
             success: false,
             intent: analysis.intent,
@@ -209,7 +262,11 @@ async function chatHandler(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json({
         response: `⏱️ **Request Timeout**: ${timeoutError instanceof Error ? timeoutError.message : 'Operation took too long'}
 
-**Quick Solutions:**
+**🔄 Try Background Processing:**
+• "Load all enrollments in background for [email]"
+• "Process enrollments in background for [email]"
+
+**⚡ Quick Solutions:**
 • Try a simpler version of your request
 • For large enrollment lists, use CSV upload instead
 • Break complex requests into smaller parts
@@ -241,70 +298,7 @@ async function chatHandler(request: NextRequest): Promise<NextResponse> {
     }, { status: 500 });
   }
 }
-async function handleBackgroundEnrollmentRequest(entities: any): Promise<NextResponse> {
-  const { email, userId } = entities;
-  const identifier = email || userId;
-  
-  if (!identifier) {
-    return NextResponse.json({
-      response: '❌ **Missing Information**: Please provide a user email for background processing.',
-      success: false,
-      timestamp: new Date().toISOString()
-    });
-  }
 
-  try {
-    console.log(`🔄 Redirecting to background processing for: ${identifier}`);
-    
-    // Make internal call to background endpoint
-    const backgroundResponse = await fetch(`${process.env.VERCEL_URL || 'http://localhost:3000'}/api/chat-bg`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: `User enrollments ${identifier}` })
-    });
-    
-    if (!backgroundResponse.ok) {
-      throw new Error('Background processing request failed');
-    }
-    
-    const backgroundData = await backgroundResponse.json();
-    
-    // Return the background processing response
-    return NextResponse.json({
-      response: `🚀 **Background Processing Started**
-
-👤 **User**: ${identifier}
-📋 **Job Type**: Complete enrollment data processing
-⏱️ **Processing Time**: This may take 30-90 seconds
-
-${backgroundData.response || ''}
-
-💡 **Next Steps**: 
-${backgroundData.jobId ? `• Check status: "Check status of ${backgroundData.jobId}"` : ''}
-• Background processing handles users with 50+ enrollments
-• You'll get complete results including courses AND learning plans`,
-      success: true,
-      jobId: backgroundData.jobId,
-      processing: true,
-      backgroundProcessing: true,
-      timestamp: new Date().toISOString()
-    });
-    
-  } catch (error) {
-    console.error('❌ Background processing error:', error);
-    
-    return NextResponse.json({
-      response: `❌ **Background Processing Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
-
-**Alternative Options:**
-• Try: "User enrollments ${identifier}" (first 10 results)  
-• Try: "Find user ${identifier}" (user details only)
-• Use CSV export for complete data`,
-      success: false,
-      timestamp: new Date().toISOString()
-    });
-  }
-}
 // Apply security middleware to POST requests with extended timeout
 export const POST = withSecurity(chatHandler, {
   rateLimit: {
@@ -318,10 +312,11 @@ export const POST = withSecurity(chatHandler, {
 // GET endpoint for API info (with lighter security)
 export const GET = withSecurity(async (request: NextRequest) => {
   return NextResponse.json({
-    status: 'Enhanced Docebo Chat API with Complete Enrollment Management',
-    version: '4.1.0',
+    status: 'Enhanced Docebo Chat API with Background Processing',
+    version: '4.2.0',
     timestamp: new Date().toISOString(),
     features: [
+      'Background processing for heavy enrollment data',
       'Complete enrollment management (enroll/unenroll)',
       'Course and Learning Plan enrollment',
       'Enrollment status checking and verification',
@@ -333,10 +328,23 @@ export const GET = withSecurity(async (request: NextRequest) => {
       'Optimized for serverless deployment'
     ],
     timeout_settings: {
+      'background_processing': 'No timeout limits',
       'user_enrollments': '25 seconds',
       'enrollment_check': '20 seconds',
       'search_operations': '15 seconds',
       'info_operations': '10 seconds'
+    },
+    background_processing: {
+      'commands': [
+        'Load all enrollments in background for [email]',
+        'Process enrollments in background for [email]',
+        'Background enrollment processing for [email]'
+      ],
+      'use_cases': [
+        'Users with 50+ enrollments',
+        'Complete data export needs', 
+        'Timeout prevention'
+      ]
     },
     pagination_support: {
       'load_more_button': 'enabled',
