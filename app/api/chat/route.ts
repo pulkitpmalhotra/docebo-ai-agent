@@ -107,7 +107,13 @@ async function chatHandler(request: NextRequest): Promise<NextResponse> {
             'User enrollments timeout - user may have too many enrollments'
           );
           break;
-          
+          case 'background_user_enrollments':
+  // Redirect to background processing endpoint
+  handlerPromise = this.handleBackgroundEnrollmentRequest(analysis.entities);
+  break;
+          case 'check_background_status':
+  handlerPromise = this.handleBackgroundStatusCheck(analysis.entities);
+  break;
         // Search Functions
         case 'search_users':
           handlerPromise = withTimeout(
@@ -235,7 +241,70 @@ async function chatHandler(request: NextRequest): Promise<NextResponse> {
     }, { status: 500 });
   }
 }
+async function handleBackgroundEnrollmentRequest(entities: any): Promise<NextResponse> {
+  const { email, userId } = entities;
+  const identifier = email || userId;
+  
+  if (!identifier) {
+    return NextResponse.json({
+      response: '❌ **Missing Information**: Please provide a user email for background processing.',
+      success: false,
+      timestamp: new Date().toISOString()
+    });
+  }
 
+  try {
+    console.log(`🔄 Redirecting to background processing for: ${identifier}`);
+    
+    // Make internal call to background endpoint
+    const backgroundResponse = await fetch(`${process.env.VERCEL_URL || 'http://localhost:3000'}/api/chat-bg`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: `User enrollments ${identifier}` })
+    });
+    
+    if (!backgroundResponse.ok) {
+      throw new Error('Background processing request failed');
+    }
+    
+    const backgroundData = await backgroundResponse.json();
+    
+    // Return the background processing response
+    return NextResponse.json({
+      response: `🚀 **Background Processing Started**
+
+👤 **User**: ${identifier}
+📋 **Job Type**: Complete enrollment data processing
+⏱️ **Processing Time**: This may take 30-90 seconds
+
+${backgroundData.response || ''}
+
+💡 **Next Steps**: 
+${backgroundData.jobId ? `• Check status: "Check status of ${backgroundData.jobId}"` : ''}
+• Background processing handles users with 50+ enrollments
+• You'll get complete results including courses AND learning plans`,
+      success: true,
+      jobId: backgroundData.jobId,
+      processing: true,
+      backgroundProcessing: true,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('❌ Background processing error:', error);
+    
+    return NextResponse.json({
+      response: `❌ **Background Processing Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
+
+**Alternative Options:**
+• Try: "User enrollments ${identifier}" (first 10 results)  
+• Try: "Find user ${identifier}" (user details only)
+• Use CSV export for complete data`,
+      success: false,
+      timestamp: new Date().toISOString()
+    });
+  }
+}
 // Apply security middleware to POST requests with extended timeout
 export const POST = withSecurity(chatHandler, {
   rateLimit: {
