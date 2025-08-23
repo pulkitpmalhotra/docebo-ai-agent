@@ -289,14 +289,3 @@ export const GET = withSecurity(async (request: NextRequest) => {
   },
   validateInput: false
 });
-
-// Export timeout config for Vercel
-export const config = {
-  api: {
-    responseLimit: false,
-    bodyParser: {
-      sizeLimit: '10mb',
-    },
-  },
-  maxDuration: 30, // 30 seconds max for Vercel
-};
