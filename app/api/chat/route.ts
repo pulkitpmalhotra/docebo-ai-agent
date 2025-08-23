@@ -1,4 +1,4 @@
-// app/api/chat/route.ts - Main endpoint handler with security
+// app/api/chat/route.ts - Fixed with proper timeout handling
 import { NextRequest, NextResponse } from 'next/server';
 import { withSecurity } from '../middleware/security';
 import { IntentAnalyzer } from './intent-analyzer';
@@ -9,7 +9,21 @@ import { BulkEnrollmentHandlers } from './handlers/bulk-enrollment';
 
 let api: DoceboAPI;
 
-// Main handler function
+// Add timeout wrapper for all operations
+async function withTimeout<T>(
+  operation: Promise<T>, 
+  timeoutMs: number = 25000, 
+  errorMessage: string = 'Operation timed out'
+): Promise<T> {
+  return Promise.race([
+    operation,
+    new Promise<T>((_, reject) => 
+      setTimeout(() => reject(new Error(errorMessage)), timeoutMs)
+    )
+  ]);
+}
+
+// Main handler function with timeout protection
 async function chatHandler(request: NextRequest): Promise<NextResponse> {
   try {
     // Initialize API client if needed
@@ -18,8 +32,13 @@ async function chatHandler(request: NextRequest): Promise<NextResponse> {
       api = new DoceboAPI(config);
     }
 
-    // Parse request
-    const body = await request.json();
+    // Parse request with timeout
+    const body = await withTimeout(
+      request.json(),
+      5000,
+      'Request parsing timeout'
+    );
+    
     const { message } = body;
     
     if (!message || typeof message !== 'string') {
@@ -32,67 +51,112 @@ async function chatHandler(request: NextRequest): Promise<NextResponse> {
 
     console.log(`🤖 Processing: "${message}"`);
     
-    // Analyze intent
+    // Analyze intent quickly
     const analysis = IntentAnalyzer.analyzeIntent(message);
     console.log(`🎯 Intent: ${analysis.intent}, Confidence: ${analysis.confidence}`);
     
-    // Route to appropriate handler
+    // Route to appropriate handler with timeout protection
     try {
+      let handlerPromise: Promise<NextResponse>;
+
       switch (analysis.intent) {
-        // Bulk Enrollment Management - NEW!
+        // Bulk Enrollment Management
         case 'bulk_enroll_course':
-          return await BulkEnrollmentHandlers.handleBulkCourseEnrollment(analysis.entities, api);
+          handlerPromise = BulkEnrollmentHandlers.handleBulkCourseEnrollment(analysis.entities, api);
+          break;
           
         case 'bulk_enroll_learning_plan':
-          return await BulkEnrollmentHandlers.handleBulkLearningPlanEnrollment(analysis.entities, api);
+          handlerPromise = BulkEnrollmentHandlers.handleBulkLearningPlanEnrollment(analysis.entities, api);
+          break;
           
         case 'bulk_unenroll_course':
         case 'bulk_unenroll_learning_plan':
-          return await BulkEnrollmentHandlers.handleBulkUnenrollment(analysis.entities, api);
+          handlerPromise = BulkEnrollmentHandlers.handleBulkUnenrollment(analysis.entities, api);
+          break;
         
         // Individual Enrollment Management
         case 'enroll_user_in_course':
-          return await handlers.enrollment.handleEnrollUserInCourse(analysis.entities, api);
+          handlerPromise = handlers.enrollment.handleEnrollUserInCourse(analysis.entities, api);
+          break;
           
         case 'enroll_user_in_learning_plan':
-          return await handlers.enrollment.handleEnrollUserInLearningPlan(analysis.entities, api);
+          handlerPromise = handlers.enrollment.handleEnrollUserInLearningPlan(analysis.entities, api);
+          break;
           
         case 'unenroll_user_from_course':
-          return await handlers.enrollment.handleUnenrollUserFromCourse(analysis.entities, api);
+          handlerPromise = handlers.enrollment.handleUnenrollUserFromCourse(analysis.entities, api);
+          break;
           
         case 'unenroll_user_from_learning_plan':
-          return await handlers.enrollment.handleUnenrollUserFromLearningPlan(analysis.entities, api);
+          handlerPromise = handlers.enrollment.handleUnenrollUserFromLearningPlan(analysis.entities, api);
+          break;
           
-       // Enrollment Checking
+       // Enrollment Checking with timeout
         case 'check_specific_enrollment':
-          return await handlers.info.handleSpecificEnrollmentCheck(analysis.entities, api);
+          handlerPromise = withTimeout(
+            handlers.info.handleSpecificEnrollmentCheck(analysis.entities, api),
+            20000,
+            'Enrollment check timeout - please try with a simpler query'
+          );
+          break;
           
         case 'get_user_enrollments':
-          return await handlers.info.handleUserEnrollments(analysis.entities, api);
+          handlerPromise = withTimeout(
+            handlers.info.handleUserEnrollments(analysis.entities, api),
+            25000,
+            'User enrollments timeout - user may have too many enrollments'
+          );
+          break;
           
         // Search Functions
         case 'search_users':
-          return await handlers.search.handleUserSearch(analysis.entities, api);
+          handlerPromise = withTimeout(
+            handlers.search.handleUserSearch(analysis.entities, api),
+            15000,
+            'User search timeout'
+          );
+          break;
           
         case 'search_courses':
-          return await handlers.search.handleCourseSearch(analysis.entities, api);
+          handlerPromise = withTimeout(
+            handlers.search.handleCourseSearch(analysis.entities, api),
+            15000,
+            'Course search timeout'
+          );
+          break;
           
         case 'search_learning_plans':
-          return await handlers.search.handleLearningPlanSearch(analysis.entities, api);
+          handlerPromise = withTimeout(
+            handlers.search.handleLearningPlanSearch(analysis.entities, api),
+            15000,
+            'Learning plan search timeout'
+          );
+          break;
           
         // Info Functions
         case 'get_course_info':
-          return await handlers.info.handleCourseInfo(analysis.entities, api);
+          handlerPromise = withTimeout(
+            handlers.info.handleCourseInfo(analysis.entities, api),
+            10000,
+            'Course info timeout'
+          );
+          break;
           
         case 'get_learning_plan_info':
-          return await handlers.info.handleLearningPlanInfo(analysis.entities, api);
+          handlerPromise = withTimeout(
+            handlers.info.handleLearningPlanInfo(analysis.entities, api),
+            10000,
+            'Learning plan info timeout'
+          );
+          break;
           
         // Help
         case 'docebo_help':
-          return await handlers.info.handleDoceboHelp(analysis.entities, api);
+          handlerPromise = handlers.info.handleDoceboHelp(analysis.entities, api);
+          break;
           
         default:
-          return NextResponse.json({
+          handlerPromise = Promise.resolve(NextResponse.json({
             response: `🤔 **I can help you with enrollment management!**
 
 **🚀 NEW: Bulk Enrollment Features**
@@ -127,13 +191,29 @@ async function chatHandler(request: NextRequest): Promise<NextResponse> {
             intent: analysis.intent,
             confidence: analysis.confidence,
             timestamp: new Date().toISOString()
-          });
+          }));
       }
-    } catch (error) {
-      console.error('❌ Processing error:', error);
+
+      // Execute handler with timeout
+      const result = await handlerPromise;
+      return result;
+
+    } catch (timeoutError) {
+      console.error('❌ Handler timeout:', timeoutError);
       return NextResponse.json({
-        response: `❌ **Error**: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        response: `⏱️ **Request Timeout**: ${timeoutError instanceof Error ? timeoutError.message : 'Operation took too long'}
+
+**Quick Solutions:**
+• Try a simpler version of your request
+• For large enrollment lists, use CSV upload instead
+• Break complex requests into smaller parts
+
+**Examples of simpler requests:**
+• "Find user john@company.com"
+• "User enrollments mike@company.com" (shows first 10 results)
+• "Enroll single user instead of bulk"`,
         success: false,
+        timeout: true,
         timestamp: new Date().toISOString()
       });
     }
@@ -142,17 +222,24 @@ async function chatHandler(request: NextRequest): Promise<NextResponse> {
     console.error('❌ Chat error:', error);
     
     return NextResponse.json({
-      response: `❌ **System Error**: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      response: `❌ **System Error**: ${error instanceof Error ? error.message : 'Unknown error'}
+
+**Possible Causes:**
+• Network timeout or connection issue
+• Server overload
+• Invalid request format
+
+**Please try again** or use a simpler request format.`,
       success: false,
       timestamp: new Date().toISOString()
     }, { status: 500 });
   }
 }
 
-// Apply security middleware to POST requests
+// Apply security middleware to POST requests with extended timeout
 export const POST = withSecurity(chatHandler, {
   rateLimit: {
-    maxRequests: 30, // 30 requests per minute for chat
+    maxRequests: 30,
     windowMs: 60 * 1000
   },
   validateInput: true,
@@ -163,7 +250,7 @@ export const POST = withSecurity(chatHandler, {
 export const GET = withSecurity(async (request: NextRequest) => {
   return NextResponse.json({
     status: 'Enhanced Docebo Chat API with Complete Enrollment Management',
-    version: '4.0.0',
+    version: '4.1.0',
     timestamp: new Date().toISOString(),
     features: [
       'Complete enrollment management (enroll/unenroll)',
@@ -172,38 +259,44 @@ export const GET = withSecurity(async (request: NextRequest) => {
       'User search and details',
       'Course and learning plan search',
       'Natural language processing',
-      'Modular architecture',
-      'Security middleware with rate limiting',
-      'Input validation and sanitization'
+      'Timeout protection and error handling',
+      'Load more pagination support',
+      'Optimized for serverless deployment'
     ],
+    timeout_settings: {
+      'user_enrollments': '25 seconds',
+      'enrollment_check': '20 seconds',
+      'search_operations': '15 seconds',
+      'info_operations': '10 seconds'
+    },
+    pagination_support: {
+      'load_more_button': 'enabled',
+      'page_size': 10,
+      'max_items_per_request': 1000
+    },
     api_endpoints_used: {
       'users': '/manage/v1/user',
       'courses': '/course/v1/courses',
       'learning_plans': '/learningplan/v1/learningplans',
       'course_enrollments': '/learn/v1/enrollments',
       'lp_enrollments': '/learningplan/v1/learningplans/enrollments'
-    },
-    enrollment_capabilities: [
-      'Enroll user in course: "Enroll john@company.com in course Python Programming"',
-      'Enroll user in learning plan: "Enroll sarah@company.com in learning plan Data Science"',
-      'Unenroll from course: "Unenroll mike@company.com from course Excel Training"',
-      'Unenroll from learning plan: "Remove user@company.com from learning plan Leadership"',
-      'Check enrollment status: "Check if john@company.com is enrolled in course Python"',
-      'Check completion: "Has sarah@company.com completed learning plan Data Science?"',
-      'View all enrollments: "User enrollments mike@company.com"'
-    ],
-    security_features: [
-      'Rate limiting (30 requests/minute)',
-      'Input validation and sanitization',
-      'CORS headers',
-      'Security headers',
-      'Error handling'
-    ]
+    }
   });
 }, {
   rateLimit: {
-    maxRequests: 100, // More lenient for GET requests
+    maxRequests: 100,
     windowMs: 60 * 1000
   },
-  validateInput: false // No input validation needed for GET
+  validateInput: false
 });
+
+// Export timeout config for Vercel
+export const config = {
+  api: {
+    responseLimit: false,
+    bodyParser: {
+      sizeLimit: '10mb',
+    },
+  },
+  maxDuration: 30, // 30 seconds max for Vercel
+};
