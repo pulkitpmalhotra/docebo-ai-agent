@@ -192,7 +192,29 @@ export class IntentAnalyzer {
         },
         confidence: 0.98
       },
-      
+      {
+  intent: 'background_user_enrollments',
+  patterns: [
+    /(?:load all enrollments in background|process enrollments in background|background enrollments|get all enrollments background)\s+(?:for\s+)?(.+)/i,
+    /(?:load|process|get)\s+(?:all\s+)?enrollments?\s+(?:in\s+)?background\s+(?:for\s+)?(.+)/i,
+    /background\s+(?:processing|load|get)\s+(?:enrollments?\s+)?(?:for\s+)?(.+)/i,
+    /(?:heavy|full|complete)\s+enrollment\s+(?:processing|load|data)\s+(?:for\s+)?(.+)/i
+  ],
+  extractEntities: () => {
+    const emailInMessage = this.extractEmail(message);
+    const userIdentifier = emailInMessage || 
+      this.extractAfterPattern(message, /(?:background|load all|process all|get all)\s+(?:enrollments?\s+)?(?:in\s+background\s+)?(?:for\s+)?(.+?)(?:\s|$)/i);
+    
+    return {
+      email: emailInMessage,
+      userId: userIdentifier,
+      processingType: 'background',
+      requestType: 'all_enrollments',
+      backgroundProcessing: true
+    };
+  },
+  confidence: 0.95
+},
       {
         intent: 'unenroll_user_from_course',
         patterns: [
