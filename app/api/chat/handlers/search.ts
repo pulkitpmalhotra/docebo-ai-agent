@@ -57,7 +57,6 @@ export class SearchHandlers {
 🔑 **Username**: ${enhancedUserDetails.username}
 📊 **Status**: ${enhancedUserDetails.status}
 👑 **Level**: ${enhancedUserDetails.level}
-🏢 **Department**: ${enhancedUserDetails.department}
 🌍 **Language**: ${enhancedUserDetails.language}
 🕐 **Timezone**: ${enhancedUserDetails.timezone}
 📅 **Created**: ${enhancedUserDetails.creationDate}
