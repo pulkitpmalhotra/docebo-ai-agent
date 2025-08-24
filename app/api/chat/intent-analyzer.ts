@@ -76,11 +76,15 @@ export class IntentAnalyzer {
           /load more enrollments for\s+(.+)/i,
           /show more enrollments for\s+(.+)/i,
           /more enrollments for\s+(.+)/i,
-          /continue enrollments for\s+(.+)/i
+          /continue enrollments for\s+(.+)/i,
+          /load more for\s+(.+)/i,
+          /get more enrollments\s+(.+)/i
         ],
         extractEntities: () => {
-          const userMatch = message.match(/(?:load more|show more|more) enrollments for\s+(.+?)(?:\s|$)/i);
+          const userMatch = message.match(/(?:load more|show more|more|continue|get more).*?(?:enrollments?\s+for|for)\s+(.+?)(?:\s|$)/i);
           const userIdentifier = userMatch ? userMatch[1].trim() : email;
+          
+          console.log(`🔄 LOAD MORE: Extracted user identifier: "${userIdentifier}"`);
           
           return {
             email: userIdentifier ? this.extractEmailFromText(userIdentifier) || userIdentifier : null,
