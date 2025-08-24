@@ -308,8 +308,9 @@ export class DoceboAPI {
       managers: user.managers || [],
       expired: user.expired || false,
       dateFormat: user.date_format || 'Not specified',
-      newsletterOptout: user.newsletter_optout === '1' ? 'Yes' : 'No'
+      newsletterOptout: user.newsletter_optout === '1' ? 'Yes' : 'No',
     };
+  }
 
   async getEnhancedUserDetails(userId: string): Promise<any> {
     console.log(`📋 Getting enhanced user details for: ${userId}`);
