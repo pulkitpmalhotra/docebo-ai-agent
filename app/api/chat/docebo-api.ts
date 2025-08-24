@@ -30,16 +30,16 @@ export class DoceboAPI {
       }),
     });
 
-    const tokenData = await response.json();
+        const tokenData = await response.json();
     this.accessToken = tokenData.access_token;
     this.tokenExpiry = new Date(Date.now() + (tokenData.expires_in || 3600) * 1000);
-    
+
     return this.accessToken!;
   }
 
   async apiRequest(endpoint: string, method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET', body?: any, params?: any): Promise<any> {
     const token = await this.getAccessToken();
-    
+
     let url = `${this.baseUrl}${endpoint}`;
     if (params) {
       const queryParams = new URLSearchParams();
@@ -90,23 +90,23 @@ export class DoceboAPI {
 
   async searchCourses(searchText: string, limit: number = 100): Promise<any[]> {
     console.log(`🔍 FIXED: Searching courses with /learn/v1/courses and search_text: "${searchText}"`);
-    
+
     const result = await this.apiRequest('/learn/v1/courses', 'GET', null, {
       search_text: searchText,
       page_size: Math.min(limit, 200),
       sort_attr: 'name',
       sort_dir: 'asc'
     });
-    
+
     const courses = result.data?.items || [];
     console.log(`📊 Course search returned ${courses.length} results`);
-    
+
     return courses;
   }
 
   async searchLearningPlans(searchText: string, limit: number = 100): Promise<any[]> {
     console.log(`🔍 FIXED: Searching learning plans with /learningplan/v1/learningplans: "${searchText}"`);
-    
+
     try {
       // Try with search_text parameter first
       const result = await this.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
@@ -115,14 +115,14 @@ export class DoceboAPI {
         sort_attr: 'name',
         sort_dir: 'asc'
       });
-      
+
       let learningPlans = result.data?.items || [];
-      
+
       if (learningPlans.length > 0) {
         console.log(`✅ Found ${learningPlans.length} learning plans via search_text`);
         return learningPlans;
       }
-      
+
       // Fallback: get all and filter manually
       console.log(`🔄 No results from search_text, trying manual filtering...`);
       const allResult = await this.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
@@ -130,23 +130,23 @@ export class DoceboAPI {
         sort_attr: 'name',
         sort_dir: 'asc'
       });
-      
+
       const allLearningPlans = allResult.data?.items || [];
-      
+
       if (allLearningPlans.length > 0) {
         const filteredPlans = allLearningPlans.filter((lp: any) => {
           const name = this.getLearningPlanName(lp).toLowerCase();
           const description = (lp.description || '').toLowerCase();
-          return name.includes(searchText.toLowerCase()) || 
+          return name.includes(searchText.toLowerCase()) ||
                  description.includes(searchText.toLowerCase());
         });
-        
+
         console.log(`✅ Manual filtering returned ${filteredPlans.length} learning plans`);
         return filteredPlans.slice(0, limit);
       }
-      
+
       return [];
-      
+
     } catch (error) {
       console.error(`❌ Learning plan search failed:`, error);
       return [];
@@ -159,7 +159,7 @@ export class DoceboAPI {
 
   async getCourseDetails(identifier: string): Promise<any> {
     console.log(`📚 FIXED: Getting detailed course info for: ${identifier}`);
-    
+
     try {
       // First, try direct course lookup by ID if identifier is numeric
       if (/^\d+$/.test(identifier)) {
@@ -178,25 +178,25 @@ export class DoceboAPI {
       // Fallback to course search
       console.log(`🔍 Searching for course: ${identifier}`);
       const courses = await this.searchCourses(identifier, 50);
-      
+
       if (courses.length === 0) {
         throw new Error(`Course not found: ${identifier}`);
       }
-      
+
       // Find best match
       let bestMatch = courses.find(course => {
         const courseName = this.getCourseName(course);
         const courseCode = course.code || course.course_code || '';
         const courseId = (course.id || course.course_id)?.toString();
-        
+
         // Exact matches
         if (courseId === identifier.toString()) return true;
         if (courseCode === identifier) return true;
         if (courseName.toLowerCase() === identifier.toLowerCase()) return true;
-        
+
         return false;
       });
-      
+
       // If no exact match, try partial match
       if (!bestMatch) {
         bestMatch = courses.find(course => {
@@ -204,14 +204,14 @@ export class DoceboAPI {
           return courseName.toLowerCase().includes(identifier.toLowerCase());
         });
       }
-      
+
       // Default to first result if nothing else matches
       if (!bestMatch) {
         bestMatch = courses[0];
       }
-      
+
       console.log(`✅ Selected course: ${this.getCourseName(bestMatch)} (ID: ${bestMatch.id || bestMatch.course_id})`);
-      
+
       // Try to get more detailed information for the course
       const courseId = bestMatch.id || bestMatch.course_id;
       if (courseId) {
@@ -226,10 +226,10 @@ export class DoceboAPI {
           console.log(`⚠️ Could not get detailed course info, using search result`);
         }
       }
-      
+
       // Return enriched search result if detailed lookup failed
       return this.enrichCourseData(bestMatch);
-      
+
     } catch (error) {
       console.error(`❌ Error getting course details:`, error);
       throw error;
@@ -238,7 +238,7 @@ export class DoceboAPI {
 
   async getLearningPlanDetails(identifier: string): Promise<any> {
     console.log(`📋 FIXED: Getting detailed learning plan info for: ${identifier}`);
-    
+
     try {
       // First, try direct learning plan lookup by ID if identifier is numeric
       if (/^\d+$/.test(identifier)) {
@@ -257,25 +257,25 @@ export class DoceboAPI {
       // Fallback to learning plan search
       console.log(`🔍 Searching for learning plan: ${identifier}`);
       const learningPlans = await this.searchLearningPlans(identifier, 50);
-      
+
       if (learningPlans.length === 0) {
         throw new Error(`Learning plan not found: ${identifier}`);
       }
-      
+
       // Find best match
       let bestMatch = learningPlans.find(lp => {
         const lpName = this.getLearningPlanName(lp);
         const lpCode = lp.code || '';
         const lpId = (lp.learning_plan_id || lp.id)?.toString();
-        
+
         // Exact matches
         if (lpId === identifier.toString()) return true;
         if (lpCode === identifier) return true;
         if (lpName.toLowerCase() === identifier.toLowerCase()) return true;
-        
+
         return false;
       });
-      
+
       // If no exact match, try partial match
       if (!bestMatch) {
         bestMatch = learningPlans.find(lp => {
@@ -283,14 +283,14 @@ export class DoceboAPI {
           return lpName.toLowerCase().includes(identifier.toLowerCase());
         });
       }
-      
+
       // Default to first result if nothing else matches
       if (!bestMatch) {
         bestMatch = learningPlans[0];
       }
-      
+
       console.log(`✅ Selected learning plan: ${this.getLearningPlanName(bestMatch)} (ID: ${bestMatch.learning_plan_id || bestMatch.id})`);
-      
+
       // Try to get more detailed information for the learning plan
       const lpId = bestMatch.learning_plan_id || bestMatch.id;
       if (lpId) {
@@ -305,10 +305,10 @@ export class DoceboAPI {
           console.log(`⚠️ Could not get detailed learning plan info, using search result`);
         }
       }
-      
+
       // Return enriched search result if detailed lookup failed
       return this.enrichLearningPlanData(bestMatch);
-      
+
     } catch (error) {
       console.error(`❌ Error getting learning plan details:`, error);
       throw error;
@@ -321,49 +321,49 @@ export class DoceboAPI {
 
   private enrichCourseData(courseData: any): any {
     console.log(`📊 FIXED: Enriching course data with correct field mappings`);
-    
+
     return {
       // Basic identification
       id: courseData.id || courseData.course_id || courseData.idCourse,
       course_id: courseData.id || courseData.course_id || courseData.idCourse,
-      
+
       // Names and identifiers
       title: courseData.name || courseData.title || courseData.course_name,
       course_name: courseData.name || courseData.title || courseData.course_name,
       name: courseData.name || courseData.title || courseData.course_name,
       code: courseData.code || courseData.course_code,
-      
+
       // Type and status - FIXED
       type: courseData.course_type || 'elearning',
       course_type: courseData.course_type || 'elearning',
       status: courseData.status,
       can_subscribe: courseData.can_subscribe,
-      
+
       // Descriptions and content
       description: courseData.description || '',
-      
+
       // Dates - FIXED for Unix timestamps
       date_creation: courseData.date_creation,
       date_modification: courseData.date_modification,
       creation_date: courseData.date_creation ? new Date(courseData.date_creation * 1000).toISOString() : null,
       last_update: courseData.date_modification ? new Date(courseData.date_modification * 1000).toISOString() : null,
-      
+
       // Language and localization
       language: courseData.lang_code || courseData.language,
       lang_code: courseData.lang_code,
-      
+
       // Enrollment information - FIXED
       enrolled_count: courseData.enrolled_users_count || courseData.enrolled_users || courseData.subscription_count || 0,
       enrollment_count: courseData.enrolled_users_count || courseData.enrolled_users || courseData.subscription_count || 0,
       enrolled_users_count: courseData.enrolled_users_count,
       subscription_count: courseData.subscription_count,
-      
+
       // Category and organization
       category_name: courseData.category_name,
-      
+
       // Credits and scoring
       credits: courseData.credits || 0,
-      
+
       // Pass through any additional fields
       ...courseData
     };
@@ -371,43 +371,43 @@ export class DoceboAPI {
 
   private enrichLearningPlanData(lpData: any): any {
     console.log(`📊 FIXED: Enriching learning plan data with correct field mappings`);
-    
+
     return {
       // Basic identification
       id: lpData.id || lpData.learning_plan_id || lpData.lp_id,
       learning_plan_id: lpData.learning_plan_id || lpData.id || lpData.lp_id,
       lp_id: lpData.learning_plan_id || lpData.id || lpData.lp_id,
-      
+
       // Names and identifiers
       title: lpData.name || lpData.title || lpData.learning_plan_name,
       name: lpData.name || lpData.title || lpData.learning_plan_name,
       learning_plan_name: lpData.name || lpData.title || lpData.learning_plan_name,
       code: lpData.code,
-      
+
       // Status - FIXED
       is_active: lpData.is_active,
       status: lpData.status,
-      
+
       // Descriptions
       description: lpData.description || '',
-      
+
       // Dates - FIXED for Unix timestamps
       date_creation: lpData.date_creation,
       date_modification: lpData.date_modification,
       creation_date: lpData.date_creation ? new Date(lpData.date_creation * 1000).toISOString() : null,
       last_update: lpData.date_modification ? new Date(lpData.date_modification * 1000).toISOString() : null,
-      
+
       // Enrollment information - FIXED
       enrolled_users_count: lpData.enrolled_users_count,
       enrolled_users: lpData.enrolled_users,
       total_users: lpData.total_users,
       user_count: lpData.user_count,
       enrollment_count: lpData.enrolled_users_count || lpData.enrolled_users || lpData.total_users || lpData.user_count || 0,
-      
+
       // Course information
       courses_count: lpData.courses_count || lpData.total_courses || 0,
       total_courses: lpData.courses_count || lpData.total_courses || 0,
-      
+
       // Pass through any additional fields
       ...lpData
     };
@@ -418,17 +418,17 @@ export class DoceboAPI {
   // ============================================================================
 
   getCourseName(course: any): string {
-    return course.name || 
-           course.title || 
-           course.course_name || 
+    return course.name ||
+           course.title ||
+           course.course_name ||
            'Unknown Course';
   }
 
   getLearningPlanName(lp: any): string {
     return lp.name ||
-           lp.title || 
-           lp.learning_plan_name || 
-           lp.lp_name || 
+           lp.title ||
+           lp.learning_plan_name ||
+           lp.lp_name ||
            lp.learningplan_name ||
            lp.plan_name ||
            'Unknown Learning Plan';
@@ -441,33 +441,33 @@ export class DoceboAPI {
   async getUserDetails(identifier: string): Promise<UserDetails> {
     // Keep existing implementation
     console.log(`🔍 Getting user details for: ${identifier}`);
-    
+
     try {
       if (identifier.includes('@')) {
         console.log(`📧 Email search detected: ${identifier}`);
-        
+
         const exactEmailUsers = await this.apiRequest('/manage/v1/user', 'GET', null, {
           search_text: identifier,
           page_size: 50,
           sort_attr: 'user_id',
           sort_dir: 'asc'
         });
-        
+
         if (exactEmailUsers.data?.items?.length > 0) {
           const exactMatch = exactEmailUsers.data.items.find((u: any) => {
             const userEmail = (u.email || '').toLowerCase();
             const searchEmail = identifier.toLowerCase();
             return userEmail === searchEmail;
           });
-          
+
           if (exactMatch) {
             return this.formatUserDetails(exactMatch);
           }
         }
       }
-      
+
       throw new Error(`User not found: ${identifier}`);
-      
+
     } catch (error) {
       console.error(`❌ Error getting user details for ${identifier}:`, error);
       throw error;
@@ -496,7 +496,7 @@ export class DoceboAPI {
     } else if (user.level === 'powUser' || user.level === '2') {
       level = 'Power User';
     }
-    
+
     return {
       id: userId,
       fullname: fullname || `User ${userId}`,
@@ -515,7 +515,7 @@ export class DoceboAPI {
   // Keep all other existing methods unchanged...
   async getEnhancedUserDetails(userId: string): Promise<any> {
     console.log(`📋 Getting enhanced user details for: ${userId}`);
-    
+
     try {
       const result = await this.apiRequest(`/manage/v1/user/${userId}`, 'GET');
       return result.data || result;
@@ -527,24 +527,23 @@ export class DoceboAPI {
 
   async getUserAllEnrollments(userId: string): Promise<EnrollmentData> {
     console.log(`📚 Getting all enrollments for user: ${userId}`);
-    
+
     try {
       // Get course enrollments
       const courseEnrollments = await this.apiRequest('/course/v1/courses/enrollments', 'GET', null, {
         'user_id[]': userId,
         page_size: 200
       });
-      
+
       // Get learning plan enrollments
       const lpEnrollments = await this.apiRequest('/learningplan/v1/learningplans/enrollments', 'GET', null, {
         'user_id[]': userId,
         page_size: 200
       });
-      
+
       const courses = courseEnrollments.data?.items || [];
       const learningPlans = lpEnrollments.data?.items || [];
-      
-      return {
+
       return {
         courses: {
           enrollments: courses.map((enrollment: any) => this.formatCourseEnrollment(enrollment)),
@@ -564,7 +563,8 @@ export class DoceboAPI {
       };
     } catch (error) {
       console.error(`❌ Error getting all enrollments:`, error);
-              courses: {
+      return {
+        courses: {
           enrollments: [],
           totalCount: 0,
           endpoint: '/course/v1/courses/enrollments',
@@ -610,14 +610,14 @@ export class DoceboAPI {
 
   async enrollUserInCourse(userId: string, courseId: string, options: any = {}): Promise<any> {
     console.log(`📚 Enrolling user ${userId} in course ${courseId}`);
-    
+
     try {
       const result = await this.apiRequest('/course/v1/courses/enrollments', 'POST', {
         user_ids: [userId],
         course_id: courseId,
         ...options
       });
-      
+
       return result;
     } catch (error) {
       console.error(`❌ Error enrolling user in course:`, error);
@@ -627,14 +627,14 @@ export class DoceboAPI {
 
   async enrollUserInLearningPlan(userId: string, learningPlanId: string, options: any = {}): Promise<any> {
     console.log(`📋 Enrolling user ${userId} in learning plan ${learningPlanId}`);
-    
+
     try {
       const result = await this.apiRequest('/learningplan/v1/learningplans/enrollments', 'POST', {
         user_ids: [userId],
         learning_plan_id: learningPlanId,
         ...options
       });
-      
+
       return result;
     } catch (error) {
       console.error(`❌ Error enrolling user in learning plan:`, error);
@@ -644,7 +644,7 @@ export class DoceboAPI {
 
   async unenrollUserFromCourse(userId: string, courseId: string): Promise<any> {
     console.log(`📚 Unenrolling user ${userId} from course ${courseId}`);
-    
+
     try {
       const result = await this.apiRequest(`/course/v1/courses/${courseId}/enrollments/${userId}`, 'DELETE');
       return result;
@@ -656,7 +656,7 @@ export class DoceboAPI {
 
   async unenrollUserFromLearningPlan(userId: string, learningPlanId: string): Promise<any> {
     console.log(`📋 Unenrolling user ${userId} from learning plan ${learningPlanId}`);
-    
+
     try {
       const result = await this.apiRequest(`/learningplan/v1/learningplans/${learningPlanId}/enrollments/${userId}`, 'DELETE');
       return result;
