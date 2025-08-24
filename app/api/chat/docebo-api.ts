@@ -1,4 +1,4 @@
-// FIXED: app/api/chat/docebo-api.ts - Enhanced with correct endpoints and better data handling
+
 import { DoceboConfig, UserDetails, EnrollmentData, FormattedEnrollment } from './types';
 
 export class DoceboAPI {
@@ -17,95 +17,136 @@ export class DoceboAPI {
       return this.accessToken;
     }
 
-    const response = await fetch(`${this.baseUrl}/oauth2/token`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        grant_type: 'password',
-        client_id: this.config.clientId,
-        client_secret: this.config.clientSecret,
-        scope: 'api',
-        username: this.config.username,
-        password: this.config.password,
-      }),
-    });
+    try {
+      const response = await fetch(`${this.baseUrl}/oauth2/token`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Accept': 'application/json'
+        },
+        body: new URLSearchParams({
+          grant_type: 'password',
+          client_id: this.config.clientId,
+          client_secret: this.config.clientSecret,
+          scope: 'api',
+          username: this.config.username,
+          password: this.config.password,
+        }),
+      });
 
-        const tokenData = await response.json();
-    this.accessToken = tokenData.access_token;
-    this.tokenExpiry = new Date(Date.now() + (tokenData.expires_in || 3600) * 1000);
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Token request failed: ${response.status} - ${errorText}`);
+      }
 
-    return this.accessToken!;
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const responseText = await response.text();
+        throw new Error(`Invalid response format. Expected JSON but got: ${contentType}. Response: ${responseText.substring(0, 200)}...`);
+      }
+
+      const tokenData = await response.json();
+      
+      if (!tokenData.access_token) {
+        throw new Error(`No access token in response: ${JSON.stringify(tokenData)}`);
+      }
+
+      this.accessToken = tokenData.access_token;
+      this.tokenExpiry = new Date(Date.now() + (tokenData.expires_in || 3600) * 1000);
+
+      return this.accessToken;
+    } catch (error) {
+      console.error('❌ Token acquisition failed:', error);
+      throw new Error(`Failed to get access token: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   async apiRequest(endpoint: string, method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET', body?: any, params?: any): Promise<any> {
-    const token = await this.getAccessToken();
+    try {
+      const token = await this.getAccessToken();
 
-    let url = `${this.baseUrl}${endpoint}`;
-    if (params) {
-      const queryParams = new URLSearchParams();
-      Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null) {
-          queryParams.append(key, value.toString());
+      let url = `${this.baseUrl}${endpoint}`;
+      if (params) {
+        const queryParams = new URLSearchParams();
+        Object.entries(params).forEach(([key, value]) => {
+          if (value !== undefined && value !== null) {
+            queryParams.append(key, value.toString());
+          }
+        });
+        if (queryParams.toString()) {
+          url += `?${queryParams}`;
         }
-      });
-      if (queryParams.toString()) {
-        url += `?${queryParams}`;
       }
+
+      const headers: Record<string, string> = {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/json',
+      };
+
+      if (method !== 'GET' && body) {
+        headers['Content-Type'] = 'application/json';
+      }
+
+      const response = await fetch(url, {
+        method,
+        headers,
+        body: body ? JSON.stringify(body) : undefined,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Docebo API error: ${response.status} - ${errorText}`);
+      }
+
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const responseText = await response.text();
+        throw new Error(`API returned non-JSON response. Content-Type: ${contentType}. Response: ${responseText.substring(0, 200)}...`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error(`❌ API request failed for ${endpoint}:`, error);
+      throw error;
     }
-
-    const headers: Record<string, string> = {
-      'Authorization': `Bearer ${token}`,
-      'Accept': 'application/json',
-    };
-
-    if (method !== 'GET' && body) {
-      headers['Content-Type'] = 'application/json';
-    }
-
-    const response = await fetch(url, {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : undefined,
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Docebo API error: ${response.status} - ${errorText}`);
-    }
-
-    return await response.json();
   }
 
-  // ============================================================================
-  // FIXED SEARCH METHODS - Using correct endpoints and parameters
-  // ============================================================================
-
+  // Search Methods
   async searchUsers(searchText: string, limit: number = 100): Promise<any[]> {
-    const result = await this.apiRequest('/manage/v1/user', 'GET', null, {
-      search_text: searchText,
-      page_size: Math.min(limit, 200)
-    });
-    return result.data?.items || [];
+    try {
+      const result = await this.apiRequest('/manage/v1/user', 'GET', null, {
+        search_text: searchText,
+        page_size: Math.min(limit, 200)
+      });
+      return result.data?.items || [];
+    } catch (error) {
+      console.error(`❌ User search failed:`, error);
+      return [];
+    }
   }
 
   async searchCourses(searchText: string, limit: number = 100): Promise<any[]> {
-    console.log(`🔍 FIXED: Searching courses with /learn/v1/courses and search_text: "${searchText}"`);
+    console.log(`🔍 Searching courses: "${searchText}"`);
+    
+    try {
+      const result = await this.apiRequest('/learn/v1/courses', 'GET', null, {
+        search_text: searchText,
+        page_size: Math.min(limit, 200),
+        sort_attr: 'name',
+        sort_dir: 'asc'
+      });
 
-    const result = await this.apiRequest('/learn/v1/courses', 'GET', null, {
-      search_text: searchText,
-      page_size: Math.min(limit, 200),
-      sort_attr: 'name',
-      sort_dir: 'asc'
-    });
-
-    const courses = result.data?.items || [];
-    console.log(`📊 Course search returned ${courses.length} results`);
-
-    return courses;
+      const courses = result.data?.items || [];
+      console.log(`📊 Course search returned ${courses.length} results`);
+      return courses;
+    } catch (error) {
+      console.error(`❌ Course search failed:`, error);
+      return [];
+    }
   }
 
   async searchLearningPlans(searchText: string, limit: number = 100): Promise<any[]> {
-    console.log(`🔍 FIXED: Searching learning plans with /learningplan/v1/learningplans: "${searchText}"`);
+    console.log(`🔍 Searching learning plans: "${searchText}"`);
 
     try {
       // Try with search_text parameter first
@@ -119,12 +160,12 @@ export class DoceboAPI {
       let learningPlans = result.data?.items || [];
 
       if (learningPlans.length > 0) {
-        console.log(`✅ Found ${learningPlans.length} learning plans via search_text`);
+        console.log(`✅ Found ${learningPlans.length} learning plans via search`);
         return learningPlans;
       }
 
       // Fallback: get all and filter manually
-      console.log(`🔄 No results from search_text, trying manual filtering...`);
+      console.log(`🔄 No results from search, trying manual filtering...`);
       const allResult = await this.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
         page_size: Math.min(limit * 2, 200),
         sort_attr: 'name',
@@ -146,22 +187,103 @@ export class DoceboAPI {
       }
 
       return [];
-
     } catch (error) {
       console.error(`❌ Learning plan search failed:`, error);
       return [];
     }
   }
 
-  // ============================================================================
-  // FIXED INFO METHODS - Enhanced course and learning plan details
-  // ============================================================================
-
-  async getCourseDetails(identifier: string): Promise<any> {
-    console.log(`📚 FIXED: Getting detailed course info for: ${identifier}`);
+  // User Methods
+  async getUserDetails(identifier: string): Promise<UserDetails> {
+    console.log(`🔍 Getting user details for: ${identifier}`);
 
     try {
-      // First, try direct course lookup by ID if identifier is numeric
+      if (identifier.includes('@')) {
+        console.log(`📧 Email search detected: ${identifier}`);
+
+        const exactEmailUsers = await this.apiRequest('/manage/v1/user', 'GET', null, {
+          search_text: identifier,
+          page_size: 50,
+          sort_attr: 'user_id',
+          sort_dir: 'asc'
+        });
+
+        if (exactEmailUsers.data?.items?.length > 0) {
+          const exactMatch = exactEmailUsers.data.items.find((u: any) => {
+            const userEmail = (u.email || '').toLowerCase();
+            const searchEmail = identifier.toLowerCase();
+            return userEmail === searchEmail;
+          });
+
+          if (exactMatch) {
+            return this.formatUserDetails(exactMatch);
+          }
+        }
+      }
+
+      throw new Error(`User not found: ${identifier}`);
+    } catch (error) {
+      console.error(`❌ Error getting user details for ${identifier}:`, error);
+      throw error;
+    }
+  }
+
+  private formatUserDetails(user: any): UserDetails {
+    const userId = (user.user_id || user.id || '').toString();
+    const email = user.email || '';
+    const fullname = user.fullname || `${user.first_name || ''} ${user.last_name || ''}`.trim() || '';
+
+    if (!userId || !email) {
+      throw new Error('Missing required user data');
+    }
+
+    let status = 'Unknown';
+    if (user.valid === '1' || user.valid === 1) {
+      status = 'Active';
+    } else if (user.valid === '0' || user.valid === 0) {
+      status = 'Inactive';
+    }
+
+    let level = 'User';
+    if (user.level === 'godadmin' || user.level === '1') {
+      level = 'Superadmin';
+    } else if (user.level === 'powUser' || user.level === '2') {
+      level = 'Power User';
+    }
+
+    return {
+      id: userId,
+      fullname: fullname || `User ${userId}`,
+      email: email,
+      username: user.username || user.userid || email,
+      status: status,
+      level: level,
+      creationDate: user.creation_date || user.register_date || '2023-11-22 20:00:04',
+      lastAccess: user.last_update || user.last_access_date || '2025-08-09 01:59:53',
+      timezone: user.timezone || user.time_zone || 'America/New_York',
+      language: user.language === 'english' ? 'English' : user.language || 'English',
+      department: user.department || user.orgchart_desc || 'Not specified'
+    };
+  }
+
+  async getEnhancedUserDetails(userId: string): Promise<any> {
+    console.log(`📋 Getting enhanced user details for: ${userId}`);
+
+    try {
+      const result = await this.apiRequest(`/manage/v1/user/${userId}`, 'GET');
+      return result.data || result;
+    } catch (error) {
+      console.error(`❌ Error getting enhanced user details:`, error);
+      throw error;
+    }
+  }
+
+  // Course and Learning Plan Details
+  async getCourseDetails(identifier: string): Promise<any> {
+    console.log(`📚 Getting course details for: ${identifier}`);
+
+    try {
+      // Try direct course lookup by ID if identifier is numeric
       if (/^\d+$/.test(identifier)) {
         console.log(`🆔 Trying direct course lookup by ID: ${identifier}`);
         try {
@@ -210,9 +332,9 @@ export class DoceboAPI {
         bestMatch = courses[0];
       }
 
-      console.log(`✅ Selected course: ${this.getCourseName(bestMatch)} (ID: ${bestMatch.id || bestMatch.course_id})`);
+      console.log(`✅ Selected course: ${this.getCourseName(bestMatch)}`);
 
-      // Try to get more detailed information for the course
+      // Try to get more detailed information
       const courseId = bestMatch.id || bestMatch.course_id;
       if (courseId) {
         try {
@@ -227,9 +349,7 @@ export class DoceboAPI {
         }
       }
 
-      // Return enriched search result if detailed lookup failed
       return this.enrichCourseData(bestMatch);
-
     } catch (error) {
       console.error(`❌ Error getting course details:`, error);
       throw error;
@@ -237,10 +357,10 @@ export class DoceboAPI {
   }
 
   async getLearningPlanDetails(identifier: string): Promise<any> {
-    console.log(`📋 FIXED: Getting detailed learning plan info for: ${identifier}`);
+    console.log(`📋 Getting learning plan details for: ${identifier}`);
 
     try {
-      // First, try direct learning plan lookup by ID if identifier is numeric
+      // Try direct learning plan lookup by ID if identifier is numeric
       if (/^\d+$/.test(identifier)) {
         console.log(`🆔 Trying direct learning plan lookup by ID: ${identifier}`);
         try {
@@ -289,9 +409,9 @@ export class DoceboAPI {
         bestMatch = learningPlans[0];
       }
 
-      console.log(`✅ Selected learning plan: ${this.getLearningPlanName(bestMatch)} (ID: ${bestMatch.learning_plan_id || bestMatch.id})`);
+      console.log(`✅ Selected learning plan: ${this.getLearningPlanName(bestMatch)}`);
 
-      // Try to get more detailed information for the learning plan
+      // Try to get more detailed information
       const lpId = bestMatch.learning_plan_id || bestMatch.id;
       if (lpId) {
         try {
@@ -306,225 +426,75 @@ export class DoceboAPI {
         }
       }
 
-      // Return enriched search result if detailed lookup failed
       return this.enrichLearningPlanData(bestMatch);
-
     } catch (error) {
       console.error(`❌ Error getting learning plan details:`, error);
       throw error;
     }
   }
 
-  // ============================================================================
-  // FIXED DATA ENRICHMENT METHODS
-  // ============================================================================
-
+  // Data Enrichment Methods
   private enrichCourseData(courseData: any): any {
-    console.log(`📊 FIXED: Enriching course data with correct field mappings`);
+    console.log(`📊 Enriching course data`);
 
     return {
-      // Basic identification
       id: courseData.id || courseData.course_id || courseData.idCourse,
       course_id: courseData.id || courseData.course_id || courseData.idCourse,
-
-      // Names and identifiers
       title: courseData.name || courseData.title || courseData.course_name,
       course_name: courseData.name || courseData.title || courseData.course_name,
       name: courseData.name || courseData.title || courseData.course_name,
       code: courseData.code || courseData.course_code,
-
-      // Type and status - FIXED
       type: courseData.course_type || 'elearning',
       course_type: courseData.course_type || 'elearning',
       status: courseData.status,
       can_subscribe: courseData.can_subscribe,
-
-      // Descriptions and content
       description: courseData.description || '',
-
-      // Dates - FIXED for Unix timestamps
       date_creation: courseData.date_creation,
       date_modification: courseData.date_modification,
       creation_date: courseData.date_creation ? new Date(courseData.date_creation * 1000).toISOString() : null,
       last_update: courseData.date_modification ? new Date(courseData.date_modification * 1000).toISOString() : null,
-
-      // Language and localization
       language: courseData.lang_code || courseData.language,
       lang_code: courseData.lang_code,
-
-      // Enrollment information - FIXED
       enrolled_count: courseData.enrolled_users_count || courseData.enrolled_users || courseData.subscription_count || 0,
       enrollment_count: courseData.enrolled_users_count || courseData.enrolled_users || courseData.subscription_count || 0,
       enrolled_users_count: courseData.enrolled_users_count,
       subscription_count: courseData.subscription_count,
-
-      // Category and organization
       category_name: courseData.category_name,
-
-      // Credits and scoring
       credits: courseData.credits || 0,
-
-      // Pass through any additional fields
       ...courseData
     };
   }
 
   private enrichLearningPlanData(lpData: any): any {
-    console.log(`📊 FIXED: Enriching learning plan data with correct field mappings`);
+    console.log(`📊 Enriching learning plan data`);
 
     return {
-      // Basic identification
       id: lpData.id || lpData.learning_plan_id || lpData.lp_id,
       learning_plan_id: lpData.learning_plan_id || lpData.id || lpData.lp_id,
       lp_id: lpData.learning_plan_id || lpData.id || lpData.lp_id,
-
-      // Names and identifiers
       title: lpData.name || lpData.title || lpData.learning_plan_name,
       name: lpData.name || lpData.title || lpData.learning_plan_name,
       learning_plan_name: lpData.name || lpData.title || lpData.learning_plan_name,
       code: lpData.code,
-
-      // Status - FIXED
       is_active: lpData.is_active,
       status: lpData.status,
-
-      // Descriptions
       description: lpData.description || '',
-
-      // Dates - FIXED for Unix timestamps
       date_creation: lpData.date_creation,
       date_modification: lpData.date_modification,
       creation_date: lpData.date_creation ? new Date(lpData.date_creation * 1000).toISOString() : null,
       last_update: lpData.date_modification ? new Date(lpData.date_modification * 1000).toISOString() : null,
-
-      // Enrollment information - FIXED
       enrolled_users_count: lpData.enrolled_users_count,
       enrolled_users: lpData.enrolled_users,
       total_users: lpData.total_users,
       user_count: lpData.user_count,
       enrollment_count: lpData.enrolled_users_count || lpData.enrolled_users || lpData.total_users || lpData.user_count || 0,
-
-      // Course information
       courses_count: lpData.courses_count || lpData.total_courses || 0,
       total_courses: lpData.courses_count || lpData.total_courses || 0,
-
-      // Pass through any additional fields
       ...lpData
     };
   }
 
-  // ============================================================================
-  // UTILITY METHODS - Enhanced name getters
-  // ============================================================================
-
-  getCourseName(course: any): string {
-    return course.name ||
-           course.title ||
-           course.course_name ||
-           'Unknown Course';
-  }
-
-  getLearningPlanName(lp: any): string {
-    return lp.name ||
-           lp.title ||
-           lp.learning_plan_name ||
-           lp.lp_name ||
-           lp.learningplan_name ||
-           lp.plan_name ||
-           'Unknown Learning Plan';
-  }
-
-  // ============================================================================
-  // EXISTING METHODS (Keep unchanged as they were working)
-  // ============================================================================
-
-  async getUserDetails(identifier: string): Promise<UserDetails> {
-    // Keep existing implementation
-    console.log(`🔍 Getting user details for: ${identifier}`);
-
-    try {
-      if (identifier.includes('@')) {
-        console.log(`📧 Email search detected: ${identifier}`);
-
-        const exactEmailUsers = await this.apiRequest('/manage/v1/user', 'GET', null, {
-          search_text: identifier,
-          page_size: 50,
-          sort_attr: 'user_id',
-          sort_dir: 'asc'
-        });
-
-        if (exactEmailUsers.data?.items?.length > 0) {
-          const exactMatch = exactEmailUsers.data.items.find((u: any) => {
-            const userEmail = (u.email || '').toLowerCase();
-            const searchEmail = identifier.toLowerCase();
-            return userEmail === searchEmail;
-          });
-
-          if (exactMatch) {
-            return this.formatUserDetails(exactMatch);
-          }
-        }
-      }
-
-      throw new Error(`User not found: ${identifier}`);
-
-    } catch (error) {
-      console.error(`❌ Error getting user details for ${identifier}:`, error);
-      throw error;
-    }
-  }
-
-  private formatUserDetails(user: any): UserDetails {
-    const userId = (user.user_id || user.id || '').toString();
-    const email = user.email || '';
-    const fullname = user.fullname || `${user.first_name || ''} ${user.last_name || ''}`.trim() || '';
-
-    if (!userId || !email) {
-      throw new Error('Missing required user data');
-    }
-
-    let status = 'Unknown';
-    if (user.valid === '1' || user.valid === 1) {
-      status = 'Active';
-    } else if (user.valid === '0' || user.valid === 0) {
-      status = 'Inactive';
-    }
-
-    let level = 'User';
-    if (user.level === 'godadmin' || user.level === '1') {
-      level = 'Superadmin';
-    } else if (user.level === 'powUser' || user.level === '2') {
-      level = 'Power User';
-    }
-
-    return {
-      id: userId,
-      fullname: fullname || `User ${userId}`,
-      email: email,
-      username: user.username || user.userid || email,
-      status: status,
-      level: level,
-      creationDate: user.creation_date || user.register_date || '2023-11-22 20:00:04',
-      lastAccess: user.last_update || user.last_access_date || '2025-08-09 01:59:53',
-      timezone: user.timezone || user.time_zone || 'America/New_York',
-      language: user.language === 'english' ? 'English' : user.language || 'English',
-      department: user.department || user.orgchart_desc || 'Not specified'
-    };
-  }
-
-  // Keep all other existing methods unchanged...
-  async getEnhancedUserDetails(userId: string): Promise<any> {
-    console.log(`📋 Getting enhanced user details for: ${userId}`);
-
-    try {
-      const result = await this.apiRequest(`/manage/v1/user/${userId}`, 'GET');
-      return result.data || result;
-    } catch (error) {
-      console.error(`❌ Error getting enhanced user details:`, error);
-      throw error;
-    }
-  }
-
+  // Enrollment Methods
   async getUserAllEnrollments(userId: string): Promise<EnrollmentData> {
     console.log(`📚 Getting all enrollments for user: ${userId}`);
 
@@ -666,13 +636,30 @@ export class DoceboAPI {
     }
   }
 
+  // Utility Methods
+  getCourseName(course: any): string {
+    return course.name ||
+           course.title ||
+           course.course_name ||
+           'Unknown Course';
+  }
+
+  getLearningPlanName(lp: any): string {
+    return lp.name ||
+           lp.title ||
+           lp.learning_plan_name ||
+           lp.lp_name ||
+           lp.learningplan_name ||
+           lp.plan_name ||
+           'Unknown Learning Plan';
+  }
+
+  // Legacy compatibility methods
   async findCourseByIdentifier(identifier: string): Promise<any> {
-    // Use the new getCourseDetails method
     return await this.getCourseDetails(identifier);
   }
 
   async findLearningPlanByIdentifier(identifier: string): Promise<any> {
-    // Use the new getLearningPlanDetails method
     return await this.getLearningPlanDetails(identifier);
   }
 }
