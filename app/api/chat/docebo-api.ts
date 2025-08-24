@@ -942,255 +942,443 @@ export class DoceboAPI {
   // ============================================================================
 
   async getCourseDetails(identifier: string): Promise<any> {
-    const course = await this.findCourseByIdentifier(identifier);
-    const courseId = course.id || course.course_id;
+    console.log(`📚 Getting detailed course info for: ${identifier}`);
     
     try {
-      const detailsResult = await this.apiRequest(`/course/v1/courses/${courseId}`, 'GET');
-      if (detailsResult.data) {
-        return detailsResult.data;
+      // First, try direct course lookup by ID if identifier is numeric
+      if (/^\d+$/.test(identifier)) {
+        console.log(`🆔 Trying direct course lookup by ID: ${identifier}`);
+        try {
+          const directResult = await this.apiRequest(`/learn/v1/courses/${identifier}`, 'GET');
+          if (directResult.data) {
+            console.log(`✅ Found course by direct ID lookup`);
+            return this.enrichCourseData(directResult.data);
+          }
+        } catch (directError) {
+          console.log(`❌ Direct course lookup failed, trying search...`);
+        }
       }
+
+      // Fallback to course search
+      console.log(`🔍 Searching for course: ${identifier}`);
+      const courses = await this.searchCourses(identifier, 50);
+      
+      if (courses.length === 0) {
+        throw new Error(`Course not found: ${identifier}`);
+      }
+      
+      // Find best match
+      let bestMatch = courses.find(course => {
+        const courseName = this.getCourseName(course);
+        const courseCode = course.code || course.course_code || '';
+        const courseId = (course.id || course.course_id)?.toString();
+        
+        // Exact matches
+        if (courseId === identifier.toString()) return true;
+        if (courseCode === identifier) return true;
+        if (courseName.toLowerCase() === identifier.toLowerCase()) return true;
+        
+        return false;
+      });
+      
+      // If no exact match, try partial match
+      if (!bestMatch) {
+        bestMatch = courses.find(course => {
+          const courseName = this.getCourseName(course);
+          return courseName.toLowerCase().includes(identifier.toLowerCase());
+        });
+      }
+      
+      // Default to first result if nothing else matches
+      if (!bestMatch) {
+        bestMatch = courses[0];
+      }
+      
+      console.log(`✅ Selected course: ${this.getCourseName(bestMatch)} (ID: ${bestMatch.id || bestMatch.course_id})`);
+      
+      // Try to get more detailed information for the course
+      const courseId = bestMatch.id || bestMatch.course_id;
+      if (courseId) {
+        try {
+          console.log(`📋 Getting detailed course information for ID: ${courseId}`);
+          const detailedResult = await this.apiRequest(`/learn/v1/courses/${courseId}`, 'GET');
+          if (detailedResult.data) {
+            console.log(`✅ Got detailed course information`);
+            return this.enrichCourseData(detailedResult.data);
+          }
+        } catch (detailError) {
+          console.log(`⚠️ Could not get detailed course info, using search result`);
+        }
+      }
+      
+      // Return enriched search result if detailed lookup failed
+      return this.enrichCourseData(bestMatch);
+      
     } catch (error) {
-      console.log('Could not get detailed course info, using search result');
+      console.error(`❌ Error getting course details:`, error);
+      throw error;
     }
-    
-    return course;
   }
 
   async getLearningPlanDetails(identifier: string): Promise<any> {
-    console.log(`🔍 Finding learning plan: "${identifier}"`);
+    console.log(`📋 Getting detailed learning plan info for: ${identifier}`);
     
-    // First try direct ID lookup if the identifier is numeric
-    if (/^\d+$/.test(identifier)) {
-      try {
-        console.log(`🆔 Trying direct lookup by ID: ${identifier}`);
-        const directResult = await this.apiRequest(`/learningplan/v1/learningplans/${identifier}`, 'GET');
-        if (directResult.data) {
-          console.log(`✅ Found learning plan by direct ID: ${identifier}`);
-          console.log(`📋 Learning plan data structure:`, JSON.stringify(directResult.data, null, 2));
-          return directResult.data;
+    try {
+      // First, try direct learning plan lookup by ID if identifier is numeric
+      if (/^\d+$/.test(identifier)) {
+        console.log(`🆔 Trying direct learning plan lookup by ID: ${identifier}`);
+        try {
+          const directResult = await this.apiRequest(`/learningplan/v1/learningplans/${identifier}`, 'GET');
+          if (directResult.data) {
+            console.log(`✅ Found learning plan by direct ID lookup`);
+            return this.enrichLearningPlanData(directResult.data);
+          }
+        } catch (directError) {
+          console.log(`❌ Direct learning plan lookup failed, trying search...`);
         }
-      } catch (error) {
-        console.log(`❌ Direct learning plan lookup failed, trying search...`);
       }
-    }
-    
-    // Search for the learning plan by name
-    console.log(`🔍 Searching for learning plan: "${identifier}"`);
-    const learningPlans = await this.searchLearningPlans(identifier, 100);
-    console.log(`📊 Search returned ${learningPlans.length} learning plans`);
-    
-    if (learningPlans.length === 0) {
-      // If no results, try the debug list to see what's available
-      console.log(`🔍 No search results found. Running debug list to see available learning plans...`);
-      await this.debugListAllLearningPlans(20);
-      throw new Error(`Learning plan not found: ${identifier}. Check the debug output above to see available learning plans.`);
-    }
-    
-    // Find exact or best match
-    const lp = learningPlans.find((plan: any) => {
-      const planName = this.getLearningPlanName(plan);
-      const planId = plan.learning_plan_id || plan.id;
-      const planCode = plan.code;
+
+      // Fallback to learning plan search
+      console.log(`🔍 Searching for learning plan: ${identifier}`);
+      const learningPlans = await this.searchLearningPlans(identifier, 50);
       
-      // Exact matches
-      if (planId?.toString() === identifier.toString()) return true;
-      if (planCode === identifier) return true;
-      if (planName.toLowerCase() === identifier.toLowerCase()) return true;
-      
-      // Partial matches
-      if (planName.toLowerCase().includes(identifier.toLowerCase())) return true;
-      
-      return false;
-    }) || learningPlans[0]; // Fallback to first result
-    
-    if (!lp) {
-      throw new Error(`Learning plan not found: ${identifier}`);
-    }
-    
-    const learningPlanId = lp.learning_plan_id || lp.id;
-    console.log(`✅ Found learning plan: ${this.getLearningPlanName(lp)} (ID: ${learningPlanId})`);
-    
-    // Try to get detailed information if we have an ID
-    if (learningPlanId) {
-      try {
-        console.log(`🔍 Getting detailed learning plan info for ID: ${learningPlanId}`);
-        const detailsResult = await this.apiRequest(`/learningplan/v1/learningplans/${learningPlanId}`, 'GET');
-        if (detailsResult.data) {
-          console.log(`✅ Got detailed learning plan info`);
-          console.log(`📋 Detailed learning plan data:`, JSON.stringify(detailsResult.data, null, 2));
-          return detailsResult.data;
-        }
-      } catch (error) {
-        console.log(`⚠️ Could not get detailed learning plan info, using search result:`, error);
+      if (learningPlans.length === 0) {
+        throw new Error(`Learning plan not found: ${identifier}`);
       }
-    }
-    
-    // Return the search result if detailed lookup failed
-    console.log(`📋 Using search result data:`, JSON.stringify(lp, null, 2));
-    return lp;
-  }
-
-  // ============================================================================
-  // PUBLIC HELPER METHODS FOR LEARNING PLAN INFO
-  // ============================================================================
-
-  async getLearningPlanEnrollmentStats(learningPlanId: string): Promise<any> {
-    try {
-      console.log(`📊 Getting enrollment statistics for learning plan ${learningPlanId}`);
-      const result = await this.apiRequest(`/learningplan/v1/learningplans/${learningPlanId}/enrollments`, 'GET', null, {
-        page_size: 1 // Just get count, not full data
-      });
-      return result;
-    } catch (error) {
-      console.log(`⚠️ Could not get enrollment statistics:`, error);
-      throw error;
-    }
-  }
-
-  async getLearningPlanCourses(learningPlanId: string): Promise<any> {
-    try {
-      console.log(`📚 Getting courses for learning plan ${learningPlanId}`);
-      const result = await this.apiRequest(`/learningplan/v1/learningplans/${learningPlanId}/courses`, 'GET');
-      return result;
-    } catch (error) {
-      console.log(`⚠️ Could not get course information:`, error);
-      throw error;
-    }
-  }
-
-  // Debug method to list all learning plans (for troubleshooting)
-  async debugListAllLearningPlans(maxResults: number = 50): Promise<any[]> {
-    try {
-      console.log(`🔍 DEBUG: Getting all learning plans for troubleshooting`);
-      const result = await this.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
-        page_size: Math.min(maxResults, 200)
+      
+      // Find best match
+      let bestMatch = learningPlans.find(lp => {
+        const lpName = this.getLearningPlanName(lp);
+        const lpCode = lp.code || '';
+        const lpId = (lp.learning_plan_id || lp.id)?.toString();
+        
+        // Exact matches
+        if (lpId === identifier.toString()) return true;
+        if (lpCode === identifier) return true;
+        if (lpName.toLowerCase() === identifier.toLowerCase()) return true;
+        
+        return false;
       });
       
-      if (result.data?.items?.length > 0) {
-        console.log(`📊 DEBUG: Found ${result.data.items.length} total learning plans:`);
-        result.data.items.forEach((lp: any, index: number) => {
-          const name = this.getLearningPlanName(lp);
-          const id = lp.learning_plan_id || lp.id;
-          const code = lp.code || 'No code';
-          const uuid = lp.uuid || 'No UUID';
-          const published = lp.is_published ? 'Published' : 'Draft';
-          console.log(`  ${index + 1}. "${name}" (ID: ${id}, Code: ${code}, UUID: ${uuid}, Status: ${published})`);
+      // If no exact match, try partial match
+      if (!bestMatch) {
+        bestMatch = learningPlans.find(lp => {
+          const lpName = this.getLearningPlanName(lp);
+          return lpName.toLowerCase().includes(identifier.toLowerCase());
         });
-        return result.data.items;
-      } else {
-        console.log(`📊 DEBUG: No learning plans found in system`);
-        return [];
       }
+      
+      // Default to first result if nothing else matches
+      if (!bestMatch) {
+        bestMatch = learningPlans[0];
+      }
+      
+      console.log(`✅ Selected learning plan: ${this.getLearningPlanName(bestMatch)} (ID: ${bestMatch.learning_plan_id || bestMatch.id})`);
+      
+      // Try to get more detailed information for the learning plan
+      const lpId = bestMatch.learning_plan_id || bestMatch.id;
+      if (lpId) {
+        try {
+          console.log(`📋 Getting detailed learning plan information for ID: ${lpId}`);
+          const detailedResult = await this.apiRequest(`/learningplan/v1/learningplans/${lpId}`, 'GET');
+          if (detailedResult.data) {
+            console.log(`✅ Got detailed learning plan information`);
+            return this.enrichLearningPlanData(detailedResult.data);
+          }
+        } catch (detailError) {
+          console.log(`⚠️ Could not get detailed learning plan info, using search result`);
+        }
+      }
+      
+      // Return enriched search result if detailed lookup failed
+      return this.enrichLearningPlanData(bestMatch);
+      
     } catch (error) {
-      console.error(`❌ DEBUG: Failed to list learning plans:`, error);
-      return [];
+      console.error(`❌ Error getting learning plan details:`, error);
+      throw error;
     }
   }
-  
+
   // ============================================================================
-  // DATA FORMATTING HELPERS
+  // DATA ENRICHMENT METHODS
   // ============================================================================
 
-  formatCourseEnrollment(enrollment: any): FormattedEnrollment {
-    return {
-      courseId: enrollment.course_id || enrollment.id_course || enrollment.idCourse,
-      courseName: enrollment.course_name || enrollment.name || enrollment.title || 'Unknown Course',
-      enrollmentStatus: enrollment.status || enrollment.enrollment_status || enrollment.state || 'Unknown',
-      enrollmentDate: enrollment.enroll_date_of_enrollment || 
-                     enrollment.enroll_begin_date || 
-                     enrollment.enrollment_date || 
-                     enrollment.enrollment_created_at || 
-                     enrollment.date_enrolled || 
-                     enrollment.created_at,
-      completionDate: enrollment.course_complete_date || 
-                     enrollment.date_complete || 
-                     enrollment.enrollment_completion_date || 
-                     enrollment.completion_date || 
-                     enrollment.completed_at || 
-                     enrollment.date_completed,
-      progress: enrollment.progress || enrollment.completion_percentage || enrollment.percentage || 0,
-      score: enrollment.score || enrollment.final_score || enrollment.grade || null,
-      dueDate: enrollment.enroll_end_date || 
-               enrollment.soft_deadline ||
-               enrollment.course_end_date ||
-               enrollment.enrollment_validity_end_date || 
-               enrollment.active_until || 
-               enrollment.due_date || 
-               enrollment.deadline,
-      assignmentType: enrollment.assignment_type || 
-                     enrollment.type || 
-                     enrollment.enrollment_type ||
-                     enrollment.assign_type
-    };
-  }
-
-  formatLearningPlanEnrollment(enrollment: any): FormattedEnrollment {
-    let enrollmentStatus = 'Unknown';
-    if (enrollment.status !== undefined && enrollment.status !== null) {
-      switch (parseInt(enrollment.status)) {
-        case -1:
-          enrollmentStatus = 'waiting_for_payment';
-          break;
-        case 0:
-          enrollmentStatus = 'enrolled';
-          break;
-        case 1:
-          enrollmentStatus = 'in_progress';
-          break;
-        case 2:
-          enrollmentStatus = 'completed';
-          break;
-        default:
-          enrollmentStatus = enrollment.status || enrollment.enrollment_status || enrollment.state || 'Unknown';
-      }
-    } else {
-      enrollmentStatus = enrollment.enrollment_status || enrollment.state || enrollment.lp_status || 'Unknown';
-    }
+  private enrichCourseData(courseData: any): any {
+    console.log(`📊 Enriching course data:`, Object.keys(courseData));
     
-    return {
-      learningPlanId: enrollment.learning_plan_id || enrollment.id_learning_plan || enrollment.lp_id,
-      learningPlanName: enrollment.learning_plan_name || 
-                       enrollment.name || 
-                       enrollment.title ||
-                       enrollment.lp_name ||
-                       'Unknown Learning Plan',
-      enrollmentStatus: enrollmentStatus,
-      enrollmentDate: enrollment.enroll_date_of_enrollment || 
-                     enrollment.enroll_begin_date || 
-                     enrollment.enrollment_date || 
-                     enrollment.enrollment_created_at || 
-                     enrollment.date_enrolled || 
-                     enrollment.created_at,
-      completionDate: enrollment.course_complete_date || 
-                     enrollment.date_complete || 
-                     enrollment.enrollment_completion_date || 
-                     enrollment.completion_date || 
-                     enrollment.completed_at || 
-                     enrollment.date_completed,
-      progress: enrollment.progress || enrollment.completion_percentage || enrollment.percentage || 0,
-      completedCourses: enrollment.completed_courses || enrollment.courses_completed || 0,
-      totalCourses: enrollment.total_courses || enrollment.courses_total || 0,
-      dueDate: enrollment.enroll_end_date || 
-               enrollment.soft_deadline ||
-               enrollment.course_end_date ||
-               enrollment.enrollment_validity_end_date || 
-               enrollment.active_until || 
-               enrollment.due_date || 
-               enrollment.deadline,
-      assignmentType: enrollment.assignment_type || 
-                     enrollment.type || 
-                     enrollment.enrollment_type ||
-                     enrollment.assign_type
+    // Create enriched course object with all possible fields
+    const enriched = {
+      // Basic identification
+      id: courseData.id || courseData.course_id || courseData.idCourse,
+      course_id: courseData.id || courseData.course_id || courseData.idCourse,
+      
+      // Names and identifiers
+      title: courseData.title || courseData.course_name || courseData.name,
+      course_name: courseData.title || courseData.course_name || courseData.name,
+      name: courseData.title || courseData.course_name || courseData.name,
+      code: courseData.code || courseData.course_code,
+      course_code: courseData.code || courseData.course_code,
+      uid: courseData.uid || courseData.course_uid,
+      course_uid: courseData.uid || courseData.course_uid,
+      
+      // Type and status
+      type: courseData.type || courseData.course_type || 'elearning',
+      course_type: courseData.type || courseData.course_type || 'elearning',
+      status: courseData.status || courseData.course_status || courseData.published,
+      course_status: courseData.status || courseData.course_status || courseData.published,
+      
+      // Descriptions and content
+      description: courseData.description || courseData.course_description || '',
+      course_description: courseData.description || courseData.course_description || '',
+      
+      // Dates and timestamps
+      creation_date: courseData.creation_date || courseData.created_at || courseData.date_created,
+      created_at: courseData.creation_date || courseData.created_at || courseData.date_created,
+      last_update: courseData.last_update || courseData.updated_at || courseData.date_modified,
+      updated_at: courseData.last_update || courseData.updated_at || courseData.date_modified,
+      
+      // Duration and timing
+      duration: courseData.duration || courseData.estimated_duration || courseData.course_duration || 0,
+      estimated_duration: courseData.duration || courseData.estimated_duration || courseData.course_duration || 0,
+      course_duration: courseData.duration || courseData.estimated_duration || courseData.course_duration || 0,
+      
+      // Creator and modifier information
+      created_by: courseData.created_by || courseData.author_name || courseData.creator,
+      author_name: courseData.created_by || courseData.author_name || courseData.creator,
+      updated_by: courseData.updated_by || courseData.last_updated_by || courseData.modifier,
+      last_updated_by: courseData.updated_by || courseData.last_updated_by || courseData.modifier,
+      
+      // Skills and competencies
+      skills: courseData.skills || courseData.competencies || courseData.tags || [],
+      competencies: courseData.skills || courseData.competencies || courseData.tags || [],
+      tags: courseData.skills || courseData.competencies || courseData.tags || [],
+      
+      // Categories and organization
+      category: courseData.category || courseData.category_name || courseData.course_path,
+      category_name: courseData.category || courseData.category_name || courseData.course_path,
+      course_path: courseData.category || courseData.category_name || courseData.course_path,
+      
+      // Credits and scoring
+      credits: courseData.credits || courseData.course_credits || 0,
+      course_credits: courseData.credits || courseData.course_credits || 0,
+      
+      // Enrollment information
+      enrolled_count: courseData.enrolled_count || courseData.enrollment_count || courseData.enrollments || 0,
+      enrollment_count: courseData.enrolled_count || courseData.enrollment_count || courseData.enrollments || 0,
+      enrollments: courseData.enrolled_count || courseData.enrollment_count || courseData.enrollments || 0,
+      
+      // Self enrollment settings
+      can_enroll_with_code: courseData.can_enroll_with_code || false,
+      enrollment_type: courseData.enrollment_type || (courseData.can_enroll_with_code ? 'self_with_code' : 'admin_only'),
+      self_enrollment: courseData.self_enrollment || courseData.can_enroll_with_code || false,
+      
+      // Rating system
+      rating_enabled: courseData.rating_enabled || false,
+      average_rating: courseData.average_rating || courseData.rating || 0,
+      rating: courseData.average_rating || courseData.rating || 0,
+      
+      // Language and localization
+      language: courseData.language || courseData.lang_code || 'English',
+      lang_code: courseData.language || courseData.lang_code || 'en',
+      
+      // Completion tracking
+      completion_tracking: courseData.completion_tracking || courseData.tracking_type,
+      tracking_type: courseData.completion_tracking || courseData.tracking_type,
+      completion_time_required: courseData.completion_time_required || courseData.required_time,
+      
+      // Certificate information
+      has_certificate: courseData.has_certificate || courseData.certificate_enabled || false,
+      certificate_enabled: courseData.has_certificate || courseData.certificate_enabled || false,
+      
+      // Additional metadata
+      difficulty_level: courseData.difficulty_level || courseData.level,
+      level: courseData.difficulty_level || courseData.level,
+      
+      // Pass through any additional fields that weren't mapped
+      ...courseData
     };
+    
+    console.log(`✅ Enriched course data with ${Object.keys(enriched).length} fields`);
+    return enriched;
+  }
+
+  private enrichLearningPlanData(lpData: any): any {
+    console.log(`📊 Enriching learning plan data:`, Object.keys(lpData));
+    
+    // Create enriched learning plan object with all possible fields
+    const enriched = {
+      // Basic identification
+      id: lpData.id || lpData.learning_plan_id || lpData.lp_id,
+      learning_plan_id: lpData.id || lpData.learning_plan_id || lpData.lp_id,
+      lp_id: lpData.id || lpData.learning_plan_id || lpData.lp_id,
+      
+      // Names and identifiers
+      title: lpData.title || lpData.name || lpData.learning_plan_name || lpData.lp_name,
+      name: lpData.title || lpData.name || lpData.learning_plan_name || lpData.lp_name,
+      learning_plan_name: lpData.title || lpData.name || lpData.learning_plan_name || lpData.lp_name,
+      lp_name: lpData.title || lpData.name || lpData.learning_plan_name || lpData.lp_name,
+      code: lpData.code || lpData.lp_code,
+      lp_code: lpData.code || lpData.lp_code,
+      uuid: lpData.uuid || lpData.lp_uuid,
+      lp_uuid: lpData.uuid || lpData.lp_uuid,
+      
+      // Status and publication
+      is_published: lpData.is_published !== undefined ? lpData.is_published : (lpData.status === 'active' || lpData.status === 2),
+      status: lpData.status !== undefined ? lpData.status : (lpData.is_published ? 'active' : 'inactive'),
+      
+      // Type and category
+      type: lpData.type || lpData.learning_plan_type || lpData.lp_type,
+      learning_plan_type: lpData.type || lpData.learning_plan_type || lpData.lp_type,
+      lp_type: lpData.type || lpData.learning_plan_type || lpData.lp_type,
+      
+      // Descriptions and content
+      description: lpData.description || lpData.learning_plan_description || '',
+      learning_plan_description: lpData.description || lpData.learning_plan_description || '',
+      
+      // Dates and timestamps
+      creation_date: lpData.creation_date || lpData.created_at || lpData.date_created,
+      created_at: lpData.creation_date || lpData.created_at || lpData.date_created,
+      last_update: lpData.last_update || lpData.updated_at || lpData.date_modified,
+      updated_at: lpData.last_update || lpData.updated_at || lpData.date_modified,
+      
+      // Duration and timing
+      duration: lpData.duration || lpData.estimated_duration || lpData.lp_duration || 0,
+      estimated_duration: lpData.duration || lpData.estimated_duration || lpData.lp_duration || 0,
+      lp_duration: lpData.duration || lpData.estimated_duration || lpData.lp_duration || 0,
+      
+      // Creator information
+      created_by: lpData.created_by || lpData.author_name || lpData.creator,
+      author_name: lpData.created_by || lpData.author_name || lpData.creator,
+      
+      // Enrollment information
+      assigned_enrollments_count: lpData.assigned_enrollments_count || lpData.enrollment_count || lpData.enrolled_users || lpData.total_enrollments || lpData.user_count || 0,
+      enrollment_count: lpData.assigned_enrollments_count || lpData.enrollment_count || lpData.enrolled_users || lpData.total_enrollments || lpData.user_count || 0,
+      enrolled_users: lpData.assigned_enrollments_count || lpData.enrollment_count || lpData.enrolled_users || lpData.total_enrollments || lpData.user_count || 0,
+      total_enrollments: lpData.assigned_enrollments_count || lpData.enrollment_count || lpData.enrolled_users || lpData.total_enrollments || lpData.user_count || 0,
+      user_count: lpData.assigned_enrollments_count || lpData.enrollment_count || lpData.enrolled_users || lpData.total_enrollments || lpData.user_count || 0,
+      
+      // Course information
+      courses_count: lpData.courses_count || lpData.total_courses || lpData.course_count || 0,
+      total_courses: lpData.courses_count || lpData.total_courses || lpData.course_count || 0,
+      course_count: lpData.courses_count || lpData.total_courses || lpData.course_count || 0,
+      
+      // Prerequisites and requirements
+      prerequisites: lpData.prerequisites || lpData.requirements || [],
+      requirements: lpData.prerequisites || lpData.requirements || [],
+      
+      // Skills and competencies
+      skills: lpData.skills || lpData.competencies || lpData.tags || [],
+      competencies: lpData.skills || lpData.competencies || lpData.tags || [],
+      tags: lpData.skills || lpData.competencies || lpData.tags || [],
+      
+      // Categories and organization
+      category: lpData.category || lpData.category_name || lpData.lp_category,
+      category_name: lpData.category || lpData.category_name || lpData.lp_category,
+      lp_category: lpData.category || lpData.category_name || lpData.lp_category,
+      
+      // Certificate and completion
+      has_certificate: lpData.has_certificate || lpData.certificate_enabled || false,
+      certificate_enabled: lpData.has_certificate || lpData.certificate_enabled || false,
+      
+      // Credits and scoring
+      credits: lpData.credits || lpData.credit_hours || lpData.lp_credits || 0,
+      credit_hours: lpData.credits || lpData.credit_hours || lpData.lp_credits || 0,
+      lp_credits: lpData.credits || lpData.credit_hours || lpData.lp_credits || 0,
+      
+      // Difficulty and level
+      difficulty_level: lpData.difficulty_level || lpData.level,
+      level: lpData.difficulty_level || lpData.level,
+      
+      // Language and localization
+      language: lpData.language || lpData.lang_code || 'English',
+      lang_code: lpData.language || lpData.lang_code || 'en',
+      
+      // Validity and expiration
+      validity_days: lpData.validity_days || lpData.expiration_days,
+      expiration_days: lpData.validity_days || lpData.expiration_days,
+      
+      // Statistics and engagement
+      completion_rate: lpData.completion_rate || 0,
+      average_progress: lpData.average_progress || 0,
+      active_users: lpData.active_users || 0,
+      
+      // Pass through any additional fields that weren't mapped
+      ...lpData
+    };
+    
+    console.log(`✅ Enriched learning plan data with ${Object.keys(enriched).length} fields`);
+    return enriched;
   }
 
   // ============================================================================
-  // UTILITY METHODS
+  // ADDITIONAL METHODS FOR ENHANCED DETAILS
+  // ============================================================================
+
+  async getCourseStatistics(courseId: string): Promise<any> {
+    try {
+      console.log(`📊 Getting course statistics for ID: ${courseId}`);
+      const result = await this.apiRequest(`/learn/v1/courses/${courseId}/statistics`, 'GET');
+      return result.data || {};
+    } catch (error) {
+      console.log(`⚠️ Could not get course statistics:`, error);
+      return {};
+    }
+  }
+
+  async getLearningPlanStatistics(lpId: string): Promise<any> {
+    try {
+      console.log(`📊 Getting learning plan statistics for ID: ${lpId}`);
+      const result = await this.apiRequest(`/learningplan/v1/learningplans/${lpId}/statistics`, 'GET');
+      return result.data || {};
+    } catch (error) {
+      console.log(`⚠️ Could not get learning plan statistics:`, error);
+      return {};
+    }
+  }
+
+  async getCourseEnrollmentDetails(courseId: string): Promise<any> {
+    try {
+      console.log(`👥 Getting course enrollment details for ID: ${courseId}`);
+      const result = await this.apiRequest(`/learn/v1/courses/${courseId}/enrollments`, 'GET', null, {
+        page_size: 1, // Just get count
+        include_statistics: true
+      });
+      return {
+        total_enrolled: result.data?.count || result.data?.total || 0,
+        enrollment_data: result.data || {}
+      };
+    } catch (error) {
+      console.log(`⚠️ Could not get course enrollment details:`, error);
+      return { total_enrolled: 0, enrollment_data: {} };
+    }
+  }
+
+  async getLearningPlanEnrollmentDetails(lpId: string): Promise<any> {
+    try {
+      console.log(`👥 Getting learning plan enrollment details for ID: ${lpId}`);
+      const result = await this.apiRequest(`/learningplan/v1/learningplans/${lpId}/enrollments`, 'GET', null, {
+        page_size: 1, // Just get count
+        include_statistics: true
+      });
+      return {
+        total_enrolled: result.data?.count || result.data?.total || 0,
+        enrollment_data: result.data || {}
+      };
+    } catch (error) {
+      console.log(`⚠️ Could not get learning plan enrollment details:`, error);
+      return { total_enrolled: 0, enrollment_data: {} };
+    }
+  }
+
+  // ============================================================================
+  // UTILITY METHODS FOR ENHANCED DISPLAY
   // ============================================================================
 
   getCourseName(course: any): string {
-    return course.title || course.course_name || course.name || 'Unknown Course';
+    return course.title || 
+           course.course_name || 
+           course.name || 
+           'Unknown Course';
   }
 
   getLearningPlanName(lp: any): string {
@@ -1202,4 +1390,3 @@ export class DoceboAPI {
            lp.plan_name ||
            'Unknown Learning Plan';
   }
-}
