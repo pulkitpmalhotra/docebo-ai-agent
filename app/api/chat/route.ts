@@ -1,4 +1,4 @@
-// app/api/chat/route.ts - Fix for background processing
+// app/api/chat/route.ts - Fixed imports and error handling
 import { NextRequest, NextResponse } from 'next/server';
 import { withSecurity } from '../middleware/security';
 import { IntentAnalyzer } from './intent-analyzer';
