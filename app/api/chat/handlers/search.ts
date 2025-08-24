@@ -225,7 +225,7 @@ ${users.length > 10 ? `\n... and ${users.length - 10} more users` : ''}
     }
   }
 
- static async handleCourseSearch(entities: any, api: DoceboAPI): Promise<NextResponse> {
+  static async handleCourseSearch(entities: any, api: DoceboAPI): Promise<NextResponse> {
     try {
       const { searchTerm } = entities;
       
@@ -462,3 +462,4 @@ ${lpItems.length > 20 ? `\n... and ${lpItems.length - 20} more learning plans` :
       });
     }
   }
+}
