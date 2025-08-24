@@ -1,10 +1,10 @@
-// app/api/chat/intent-analyzer.ts - FIXED Load More Intent Detection
+// app/api/chat/intent-analyzer.ts - COMPLETE with ALL intent patterns
 import { IntentAnalysis } from './types';
 
 export class IntentAnalyzer {
   static analyzeIntent(message: string): IntentAnalysis {
     const lower = message.toLowerCase().trim();
-    console.log(`🎯 FIXED: Analyzing intent for: "${message}"`);
+    console.log(`🎯 COMPLETE: Analyzing intent for: "${message}"`);
     
     // Extract entities first with improved patterns
     const email = this.extractEmail(message);
@@ -14,7 +14,7 @@ export class IntentAnalyzer {
     const learningPlanName = this.extractLearningPlanName(message);
     const userId = this.extractUserId(message);
     
-    console.log(`📊 FIXED: Extracted entities:`, {
+    console.log(`📊 COMPLETE: Extracted entities:`, {
       email,
       emails: emails.length > 0 ? emails : 'none',
       courseName: courseName || 'none',
@@ -22,7 +22,7 @@ export class IntentAnalyzer {
       userId: userId || 'none'
     });
     
-    // Intent patterns with improved matching - PRIORITY ORDER MATTERS
+    // Intent patterns with improved matching - COMPLETE LIST
     const patterns = [
       // FIXED: Load More Commands (HIGHEST PRIORITY - moved to top)
       {
@@ -78,7 +78,7 @@ export class IntentAnalyzer {
         confidence: 0.99 // HIGHEST confidence
       },
 
-      // ADDED: User Summary Commands (high priority)
+      // User Summary Commands (high priority)
       {
         intent: 'get_user_summary',
         patterns: [
@@ -99,7 +99,7 @@ export class IntentAnalyzer {
         confidence: 0.98
       },
 
-      // ADDED: Recent Enrollments Commands (high priority)
+      // Recent Enrollments Commands (high priority)
       {
         intent: 'get_recent_enrollments',
         patterns: [
@@ -117,34 +117,13 @@ export class IntentAnalyzer {
             email: userIdentifier ? this.extractEmailFromText(userIdentifier) || userIdentifier : null,
             userId: userIdentifier,
             requestType: 'recent_enrollments',
-            limit: 20 // Default limit for recent enrollments
+            limit: 20
           };
         },
         confidence: 0.97
       },
 
-      // FIXED: Status check commands (specific job status)
-      {
-        intent: 'check_job_status',
-        patterns: [
-          /check status of\s+(.+)/i,
-          /status of job\s+(.+)/i,
-          /job status\s+(.+)/i,
-          /background status\s+(.+)/i
-        ],
-        extractEntities: () => {
-          const jobMatch = message.match(/(?:check status of|status of job|job status|background status)\s+(.+?)(?:\s|$)/i);
-          const jobId = jobMatch ? jobMatch[1].trim() : null;
-          
-          return {
-            jobId: jobId,
-            requestType: 'status_check'
-          };
-        },
-        confidence: 0.98
-      },
-
-      // FIXED: Background processing commands
+      // Background processing commands
       {
         intent: 'background_user_enrollments',
         patterns: [
@@ -168,7 +147,28 @@ export class IntentAnalyzer {
         confidence: 0.97
       },
 
-      // FIXED: User enrollments (regular paginated) - LOWERED PRIORITY
+      // Status check commands (specific job status)
+      {
+        intent: 'check_job_status',
+        patterns: [
+          /check status of\s+(.+)/i,
+          /status of job\s+(.+)/i,
+          /job status\s+(.+)/i,
+          /background status\s+(.+)/i
+        ],
+        extractEntities: () => {
+          const jobMatch = message.match(/(?:check status of|status of job|job status|background status)\s+(.+?)(?:\s|$)/i);
+          const jobId = jobMatch ? jobMatch[1].trim() : null;
+          
+          return {
+            jobId: jobId,
+            requestType: 'status_check'
+          };
+        },
+        confidence: 0.98
+      },
+
+      // User enrollments (regular paginated) - LOWERED PRIORITY
       {
         intent: 'get_user_enrollments',
         patterns: [
@@ -215,8 +215,276 @@ export class IntentAnalyzer {
         confidence: email || userId ? 0.85 : 0.75  // LOWERED to avoid conflicts
       },
 
-      // Rest of the patterns remain the same...
-      // (Include all other patterns from the original file)
+      // Specific enrollment checks
+      {
+        intent: 'check_specific_enrollment',
+        patterns: [
+          /(?:check if|is)\s+(.+?)\s+(?:enrolled|taking|assigned to|has completed|completed)\s+(?:in\s+)?(?:course|learning plan|lp)\s+(.+)/i,
+          /(?:has|did)\s+(.+?)\s+(?:complete|completed|finish|finished)\s+(?:course|learning plan|lp)\s+(.+)/i,
+          /enrollment status\s+(.+?)\s+(?:in\s+)?(?:course|learning plan|lp)\s+(.+)/i
+        ],
+        extractEntities: () => {
+          const checkMatch = message.match(/(?:check if|is|has|did|enrollment status)\s+(.+?)\s+(?:enrolled|taking|completed?|finish|status)\s+(?:in\s+)?(?:course|learning plan|lp)\s+(.+?)(?:\s*$|\?|!|\.)/i);
+          
+          if (checkMatch) {
+            const userPart = checkMatch[1].trim();
+            const resourcePart = checkMatch[2].trim();
+            const isLearningPlan = /learning plan|lp/i.test(message);
+            const isCompletionCheck = /completed?|finish|has completed/i.test(message);
+            
+            return {
+              email: this.extractEmailFromText(userPart) || userPart,
+              resourceName: resourcePart,
+              resourceType: isLearningPlan ? 'learning_plan' : 'course',
+              checkType: isCompletionCheck ? 'completion' : 'enrollment'
+            };
+          }
+          
+          return {
+            email: email,
+            resourceName: courseName || learningPlanName || '',
+            resourceType: learningPlanName ? 'learning_plan' : 'course',
+            checkType: /completed?|finish/i.test(message) ? 'completion' : 'enrollment'
+          };
+        },
+        confidence: 0.95
+      },
+
+      // Course and Learning Plan enrollment
+      {
+        intent: 'enroll_user_in_course',
+        patterns: [
+          /(?:enroll|add|assign|register)\s+(.+?)\s+(?:in|to|for)\s+(?:course|training)\s+(.+)/i,
+          /(?:course enrollment|course assign)\s+(.+?)\s+(?:to|in)\s+(.+)/i
+        ],
+        extractEntities: () => {
+          const enrollMatch = message.match(/(?:enroll|add|assign|register)\s+(.+?)\s+(?:in|to|for)\s+(?:course|training)\s+(.+?)(?:\s|$)/i);
+          
+          if (enrollMatch) {
+            const userPart = enrollMatch[1].trim();
+            const coursePart = enrollMatch[2].trim();
+            
+            return {
+              email: this.extractEmailFromText(userPart) || userPart,
+              courseName: coursePart,
+              resourceType: 'course',
+              action: 'enroll'
+            };
+          }
+          
+          return {
+            email: email,
+            courseName: courseName,
+            resourceType: 'course',
+            action: 'enroll'
+          };
+        },
+        confidence: 0.95
+      },
+
+      {
+        intent: 'enroll_user_in_learning_plan',
+        patterns: [
+          /(?:enroll|add|assign|register)\s+(.+?)\s+(?:in|to|for)\s+(?:learning plan|lp|learning path)\s+(.+)/i,
+          /(?:learning plan enrollment|lp assign)\s+(.+?)\s+(?:to|in)\s+(.+)/i
+        ],
+        extractEntities: () => {
+          const enrollMatch = message.match(/(?:enroll|add|assign|register)\s+(.+?)\s+(?:in|to|for)\s+(?:learning plan|lp|learning path)\s+(.+?)(?:\s|$)/i);
+          
+          if (enrollMatch) {
+            const userPart = enrollMatch[1].trim();
+            const lpPart = enrollMatch[2].trim();
+            
+            return {
+              email: this.extractEmailFromText(userPart) || userPart,
+              learningPlanName: lpPart,
+              resourceType: 'learning_plan',
+              action: 'enroll'
+            };
+          }
+          
+          return {
+            email: email,
+            learningPlanName: learningPlanName,
+            resourceType: 'learning_plan',
+            action: 'enroll'
+          };
+        },
+        confidence: 0.95
+      },
+
+      // Unenrollment patterns
+      {
+        intent: 'unenroll_user_from_course',
+        patterns: [
+          /(?:unenroll|remove|drop)\s+(.+?)\s+(?:from|out of)\s+(?:course|training)\s+(.+)/i,
+          /(?:course unenrollment|remove from course)\s+(.+?)\s+(?:from|out of)\s+(.+)/i
+        ],
+        extractEntities: () => {
+          const unenrollMatch = message.match(/(?:unenroll|remove|drop)\s+(.+?)\s+(?:from|out of)\s+(?:course|training)\s+(.+?)(?:\s|$)/i);
+          
+          if (unenrollMatch) {
+            const userPart = unenrollMatch[1].trim();
+            const coursePart = unenrollMatch[2].trim();
+            
+            return {
+              email: this.extractEmailFromText(userPart) || userPart,
+              courseName: coursePart,
+              resourceType: 'course',
+              action: 'unenroll'
+            };
+          }
+          
+          return {
+            email: email,
+            courseName: courseName,
+            resourceType: 'course',
+            action: 'unenroll'
+          };
+        },
+        confidence: 0.95
+      },
+
+      {
+        intent: 'unenroll_user_from_learning_plan',
+        patterns: [
+          /(?:unenroll|remove|drop)\s+(.+?)\s+(?:from|out of)\s+(?:learning plan|lp|learning path)\s+(.+)/i,
+          /(?:lp unenrollment|remove from lp)\s+(.+?)\s+(?:from|out of)\s+(.+)/i
+        ],
+        extractEntities: () => {
+          const unenrollMatch = message.match(/(?:unenroll|remove|drop)\s+(.+?)\s+(?:from|out of)\s+(?:learning plan|lp|learning path)\s+(.+?)(?:\s|$)/i);
+          
+          if (unenrollMatch) {
+            const userPart = unenrollMatch[1].trim();
+            const lpPart = unenrollMatch[2].trim();
+            
+            return {
+              email: this.extractEmailFromText(userPart) || userPart,
+              learningPlanName: lpPart,
+              resourceType: 'learning_plan',
+              action: 'unenroll'
+            };
+          }
+          
+          return {
+            email: email,
+            learningPlanName: learningPlanName,
+            resourceType: 'learning_plan',
+            action: 'unenroll'
+          };
+        },
+        confidence: 0.95
+      },
+
+      // User search (specific to email lookup) - LOWERED priority
+      {
+        intent: 'search_users',
+        patterns: [
+          /(?:find user|search user|look up user|user info|user details|who is)\s+(.+)/i,
+          /^(.+@.+\..+)$/i // Email pattern
+        ],
+        extractEntities: () => {
+          const searchMatch = message.match(/(?:find user|search user|look up user|user info|user details|who is)\s+(.+?)(?:\s|$)/i);
+          const searchTerm = searchMatch ? searchMatch[1].trim() : (email || message.trim());
+          
+          return {
+            email: this.extractEmailFromText(searchTerm) || (searchTerm.includes('@') ? searchTerm : null),
+            searchTerm: searchTerm,
+            userId: /^\d+$/.test(searchTerm) ? searchTerm : null
+          };
+        },
+        confidence: email ? 0.85 : 0.7 // REDUCED priority so user summary takes precedence
+      },
+
+      // Course and Learning Plan searches
+      {
+        intent: 'search_courses',
+        patterns: [
+          /(?:find|search)\s+(.+?)\s+(?:course|courses|training)/i,
+          /(?:course|courses)\s+(?:about|for|on)\s+(.+)/i,
+          /find course\s+(.+)/i,
+          /search course\s+(.+)/i
+        ],
+        extractEntities: () => {
+          const courseMatch = message.match(/(?:find|search)\s+(.+?)\s+(?:course|courses|training)/i) ||
+                             message.match(/(?:course|courses)\s+(?:about|for|on)\s+(.+?)(?:\s|$)/i) ||
+                             message.match(/(?:find course|search course)\s+(.+?)(?:\s|$)/i);
+          
+          return {
+            searchTerm: courseMatch ? courseMatch[1].trim() : (courseName || '')
+          };
+        },
+        confidence: 0.9
+      },
+
+      {
+        intent: 'search_learning_plans',
+        patterns: [
+          /(?:find|search)\s+(.+?)\s+(?:learning plan|learning plans|lp)/i,
+          /(?:learning plan|learning plans|lp)\s+(?:about|for|on)\s+(.+)/i,
+          /find learning plan\s+(.+)/i
+        ],
+        extractEntities: () => {
+          const lpMatch = message.match(/(?:find|search)\s+(.+?)\s+(?:learning plan|learning plans|lp)/i) ||
+                        message.match(/(?:learning plan|learning plans|lp)\s+(?:about|for|on)\s+(.+?)(?:\s|$)/i) ||
+                        message.match(/find learning plan\s+(.+?)(?:\s|$)/i);
+          
+          return {
+            searchTerm: lpMatch ? lpMatch[1].trim() : (learningPlanName || '')
+          };
+        },
+        confidence: 0.9
+      },
+
+      // Info commands
+      {
+        intent: 'get_course_info',
+        patterns: [
+          /(?:course info|course details|course information)\s+(.+)/i,
+          /(?:info|details|information)\s+(?:about\s+)?course\s+(.+)/i,
+          /tell me about course\s+(.+)/i
+        ],
+        extractEntities: () => {
+          const infoMatch = message.match(/(?:course info|course details|course information|info about course|details about course|tell me about course)\s+(.+?)(?:\s|$)/i);
+          
+          return {
+            courseId: courseId,
+            courseName: infoMatch ? infoMatch[1].trim() : (courseName || '')
+          };
+        },
+        confidence: 0.92
+      },
+
+      {
+        intent: 'get_learning_plan_info',
+        patterns: [
+          /(?:learning plan info|lp info|plan info)\s+(.+)/i,
+          /(?:info|details|information)\s+(?:about\s+)?(?:learning plan|lp)\s+(.+)/i,
+          /tell me about learning plan\s+(.+)/i
+        ],
+        extractEntities: () => {
+          const infoMatch = message.match(/(?:learning plan info|lp info|plan info|info about learning plan|details about learning plan|tell me about learning plan)\s+(.+?)(?:\s|$)/i);
+          
+          return {
+            learningPlanName: infoMatch ? infoMatch[1].trim() : (learningPlanName || '')
+          };
+        },
+        confidence: 0.92
+      },
+
+      // Help commands
+      {
+        intent: 'docebo_help',
+        patterns: [
+          /(?:how to|how do i|how does|how can i)/i,
+          /(?:help|guide|tutorial|documentation)/i,
+          /(?:troubleshoot|problem|issue|error)/i
+        ],
+        extractEntities: () => ({
+          query: message
+        }),
+        confidence: 0.7
+      }
     ];
     
     // Find best matching pattern
@@ -234,7 +502,7 @@ export class IntentAnalyzer {
                 entities: entities,
                 confidence: pattern.confidence
               };
-              console.log(`🎯 FIXED: Matched intent: ${pattern.intent} with confidence: ${pattern.confidence}`);
+              console.log(`🎯 COMPLETE: Matched intent: ${pattern.intent} with confidence: ${pattern.confidence}`);
               break; // Take the first strong match
             }
           }
@@ -247,7 +515,7 @@ export class IntentAnalyzer {
       }
     }
     
-    console.log(`🎯 FIXED: Final intent analysis:`, {
+    console.log(`🎯 COMPLETE: Final intent analysis:`, {
       intent: bestMatch.intent,
       confidence: bestMatch.confidence,
       entities: bestMatch.entities
@@ -286,6 +554,12 @@ export class IntentAnalyzer {
         return !!(entities.email && entities.courseName);
       
       case 'enroll_user_in_learning_plan':
+        return !!(entities.email && entities.learningPlanName);
+      
+      case 'unenroll_user_from_course':
+        return !!(entities.email && entities.courseName);
+      
+      case 'unenroll_user_from_learning_plan':
         return !!(entities.email && entities.learningPlanName);
       
       case 'search_users':
@@ -328,7 +602,7 @@ export class IntentAnalyzer {
     return [...new Set(emails.map(email => email.toLowerCase()))];
   }
   
-  // FIXED: User ID extraction
+  // User ID extraction
   static extractUserId(message: string): string | null {
     const patterns = [
       /(?:user\s+)?id[:\s]+(\d+)/i,
@@ -344,7 +618,6 @@ export class IntentAnalyzer {
     return null;
   }
   
-  // Rest of the extraction methods remain the same...
   static extractCourseId(message: string): string | null {
     const patterns = [
       /(?:course\s+)?id[:\s]+(\d+)/i,
