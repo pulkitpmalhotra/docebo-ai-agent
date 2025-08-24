@@ -576,8 +576,121 @@ export class DoceboAPI {
   }
 
   // ============================================================================
-  // ENROLLMENT METHODS (SIMPLIFIED FOR CORE FUNCTIONALITY)
+  // ADDITIONAL MISSING METHODS FOR FULL COMPATIBILITY
   // ============================================================================
+
+  async getEnhancedUserDetails(userId: string): Promise<EnhancedUserDetails> {
+    console.log(`👤 Getting enhanced user details for ID: ${userId}`);
+    
+    try {
+      // Get basic user details first
+      const userDetails = await this.getUserDetails(userId);
+      
+      // For now, return basic details without manager info
+      // This can be enhanced later with actual manager lookup
+      return {
+        ...userDetails,
+        manager: null,
+        additionalFields: {}
+      };
+    } catch (error) {
+      console.error(`Error getting enhanced user details for ${userId}:`, error);
+      throw error;
+    }
+  }
+
+  async getUserAllEnrollments(userId: string): Promise<EnrollmentData> {
+    console.log(`🎯 Getting all enrollments for user: ${userId}`);
+    
+    try {
+      // Simplified version - can be enhanced with actual enrollment fetching
+      return {
+        courses: { enrollments: [], totalCount: 0, endpoint: '', success: false },
+        learningPlans: { enrollments: [], totalCount: 0, endpoint: '', success: false },
+        totalCourses: 0,
+        totalLearningPlans: 0,
+        success: false
+      };
+    } catch (error) {
+      console.error(`❌ Error getting all enrollments for user ${userId}:`, error);
+      return {
+        courses: { enrollments: [], totalCount: 0, endpoint: '', success: false },
+        learningPlans: { enrollments: [], totalCount: 0, endpoint: '', success: false },
+        totalCourses: 0,
+        totalLearningPlans: 0,
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  formatCourseEnrollment(enrollment: any): FormattedEnrollment {
+    return {
+      courseId: enrollment.course_id || enrollment.id_course || enrollment.idCourse,
+      courseName: enrollment.course_name || enrollment.name || enrollment.title || 'Unknown Course',
+      enrollmentStatus: enrollment.status || enrollment.enrollment_status || enrollment.state || 'Unknown',
+      enrollmentDate: enrollment.enroll_date_of_enrollment || 
+                     enrollment.enroll_begin_date || 
+                     enrollment.enrollment_date || 
+                     enrollment.enrollment_created_at,
+      completionDate: enrollment.course_complete_date || 
+                     enrollment.date_complete || 
+                     enrollment.enrollment_completion_date,
+      progress: enrollment.progress || enrollment.completion_percentage || enrollment.percentage || 0,
+      score: enrollment.score || enrollment.final_score || enrollment.grade || null,
+      dueDate: enrollment.enroll_end_date || 
+               enrollment.soft_deadline ||
+               enrollment.course_end_date,
+      assignmentType: enrollment.assignment_type || 
+                     enrollment.type || 
+                     enrollment.enrollment_type
+    };
+  }
+
+  formatLearningPlanEnrollment(enrollment: any): FormattedEnrollment {
+    let enrollmentStatus = 'Unknown';
+    if (enrollment.status !== undefined && enrollment.status !== null) {
+      switch (parseInt(enrollment.status)) {
+        case -1:
+          enrollmentStatus = 'waiting_for_payment';
+          break;
+        case 0:
+          enrollmentStatus = 'enrolled';
+          break;
+        case 1:
+          enrollmentStatus = 'in_progress';
+          break;
+        case 2:
+          enrollmentStatus = 'completed';
+          break;
+        default:
+          enrollmentStatus = enrollment.status || 'Unknown';
+      }
+    }
+    
+    return {
+      learningPlanId: enrollment.learning_plan_id || enrollment.id_learning_plan || enrollment.lp_id,
+      learningPlanName: enrollment.learning_plan_name || 
+                       enrollment.name || 
+                       enrollment.title ||
+                       'Unknown Learning Plan',
+      enrollmentStatus: enrollmentStatus,
+      enrollmentDate: enrollment.enroll_date_of_enrollment || 
+                     enrollment.enroll_begin_date || 
+                     enrollment.enrollment_date,
+      completionDate: enrollment.course_complete_date || 
+                     enrollment.date_complete || 
+                     enrollment.enrollment_completion_date,
+      progress: enrollment.progress || enrollment.completion_percentage || enrollment.percentage || 0,
+      completedCourses: enrollment.completed_courses || enrollment.courses_completed || 0,
+      totalCourses: enrollment.total_courses || enrollment.courses_total || 0,
+      dueDate: enrollment.enroll_end_date || 
+               enrollment.soft_deadline,
+      assignmentType: enrollment.assignment_type || 
+                     enrollment.type || 
+                     enrollment.enrollment_type
+    };
+  }
 
   async enrollUserInCourse(userId: string, courseId: string, options: any = {}): Promise<any> {
     try {
@@ -608,6 +721,36 @@ export class DoceboAPI {
       return { success: true, result: result.data || result };
     } catch (error) {
       console.error('Learning plan enrollment failed:', error);
+      throw error;
+    }
+  }
+
+  async unenrollUserFromCourse(userId: string, courseId: string): Promise<any> {
+    console.log(`❌ Unenrolling user ${userId} from course ${courseId}`);
+    
+    try {
+      const result = await this.apiRequest(`/learn/v1/enrollments`, 'DELETE', null, {
+        user_id: userId,
+        course_id: courseId
+      });
+      return { success: true, result: result.data || result };
+    } catch (error) {
+      console.error('Course unenrollment failed:', error);
+      throw error;
+    }
+  }
+
+  async unenrollUserFromLearningPlan(userId: string, learningPlanId: string): Promise<any> {
+    console.log(`❌ Unenrolling user ${userId} from learning plan ${learningPlanId}`);
+    
+    try {
+      const result = await this.apiRequest(`/learningplan/v1/learningplans/enrollments`, 'DELETE', null, {
+        user_id: userId,
+        learning_plan_id: learningPlanId
+      });
+      return { success: true, result: result.data || result };
+    } catch (error) {
+      console.error('Learning plan unenrollment failed:', error);
       throw error;
     }
   }
