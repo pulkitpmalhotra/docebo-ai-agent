@@ -23,7 +23,7 @@ async function withTimeout<T>(
   ]);
 }
 
-// ADD: Background processing handler function
+// Background processing handler function
 async function handleBackgroundEnrollmentRequest(entities: any): Promise<NextResponse> {
   const { email, userId } = entities;
   const identifier = email || userId;
@@ -99,6 +99,106 @@ async function chatHandler(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json({
         response: '❌ Please provide a valid message',
         success: false,
+        timeout: true,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+  } catch (error) {
+    console.error('❌ Chat error:', error);
+    
+    return NextResponse.json({
+      response: `❌ **System Error**: ${error instanceof Error ? error.message : 'Unknown error'}
+
+**Possible Causes:**
+• Network timeout or connection issue
+• Server overload
+• Invalid request format
+
+**Please try again** or use a simpler request format.`,
+      success: false,
+      timestamp: new Date().toISOString()
+    }, { status: 500 });
+  }
+}
+
+// Apply security middleware to POST requests with extended timeout
+export const POST = withSecurity(chatHandler, {
+  rateLimit: {
+    maxRequests: 30,
+    windowMs: 60 * 1000
+  },
+  validateInput: true,
+  sanitizeOutput: true
+});
+
+// GET endpoint for API info (with lighter security)
+export const GET = withSecurity(async (request: NextRequest) => {
+  return NextResponse.json({
+    status: 'Enhanced Docebo Chat API with FIXED Load More Support',
+    version: '4.3.0',
+    timestamp: new Date().toISOString(),
+    features: [
+      'FIXED: Load more enrollments command support',
+      'Background processing for heavy enrollment data',
+      'Complete enrollment management (enroll/unenroll)',
+      'Course and Learning Plan enrollment',
+      'Enrollment status checking and verification',
+      'User search and details',
+      'Course and learning plan search',
+      'Natural language processing',
+      'Timeout protection and error handling',
+      'Pagination with load more functionality',
+      'Optimized for serverless deployment'
+    ],
+    load_more_commands: [
+      'Load more enrollments for [email]',
+      'Show more enrollments for [email]',
+      'More enrollments for [email]',
+      'Continue enrollments for [email]',
+      'Get more enrollments [email]'
+    ],
+    timeout_settings: {
+      'background_processing': 'No timeout limits',
+      'user_enrollments': '25 seconds',
+      'load_more_enrollments': '25 seconds',
+      'enrollment_check': '20 seconds',
+      'search_operations': '15 seconds',
+      'info_operations': '10 seconds'
+    },
+    background_processing: {
+      'commands': [
+        'Load all enrollments in background for [email]',
+        'Process enrollments in background for [email]',
+        'Background enrollment processing for [email]'
+      ],
+      'use_cases': [
+        'Users with 50+ enrollments',
+        'Complete data export needs', 
+        'Timeout prevention'
+      ]
+    },
+    pagination_support: {
+      'load_more_button': 'enabled',
+      'load_more_commands': 'FIXED and working',
+      'page_size': 20,
+      'max_items_per_request': 1000
+    },
+    api_endpoints_used: {
+      'users': '/manage/v1/user',
+      'courses': '/course/v1/courses',
+      'learning_plans': '/learningplan/v1/learningplans',
+      'course_enrollments': '/learn/v1/enrollments',
+      'lp_enrollments': '/learningplan/v1/learningplans/enrollments'
+    }
+  });
+}, {
+  rateLimit: {
+    maxRequests: 100,
+    windowMs: 60 * 1000
+  },
+  validateInput: false
+});
         timestamp: new Date().toISOString()
       }, { status: 400 });
     }
@@ -109,90 +209,111 @@ async function chatHandler(request: NextRequest): Promise<NextResponse> {
     const analysis = IntentAnalyzer.analyzeIntent(message);
     console.log(`🎯 Intent: ${analysis.intent}, Confidence: ${analysis.confidence}`);
     
+    // FIXED: Debugging for Load More intent specifically
+    if (analysis.intent === 'load_more_enrollments') {
+      console.log(`🔄 LOAD MORE DETECTED:`, {
+        intent: analysis.intent,
+        confidence: analysis.confidence,
+        entities: analysis.entities,
+        originalMessage: message
+      });
+    }
+    
     // Route to appropriate handler with timeout protection
     try {
       let handlerPromise: Promise<NextResponse>;
-switch (analysis.intent) {
-  // Background Processing - NEW
-  case 'background_user_enrollments':
-    handlerPromise = handleBackgroundEnrollmentRequest(analysis.entities);
-    break;
-    
-  // ADDED: User Summary (optimized with enrollment counts)
-  case 'get_user_summary':
-    handlerPromise = withTimeout(
-      handlers.info.handleUserSummary(analysis.entities, api),
-      15000,
-      'User summary timeout'
-    );
-    break;
-    
-  // ADDED: Recent Enrollments (optimized with sorting)
-  case 'get_recent_enrollments':
-    handlerPromise = withTimeout(
-      handlers.info.handleRecentEnrollments(analysis.entities, api),
-      15000,
-      'Recent enrollments timeout'
-    );
-    break;
-    
-  // Bulk Enrollment Management
-  case 'bulk_enroll_course':
-    handlerPromise = BulkEnrollmentHandlers.handleBulkCourseEnrollment(analysis.entities, api);
-    break;
-    
-  case 'bulk_enroll_learning_plan':
-    handlerPromise = BulkEnrollmentHandlers.handleBulkLearningPlanEnrollment(analysis.entities, api);
-    break;
-    
-  case 'bulk_unenroll_course':
-  case 'bulk_unenroll_learning_plan':
-    handlerPromise = BulkEnrollmentHandlers.handleBulkUnenrollment(analysis.entities, api);
-    break;
-  
-  // Individual Enrollment Management
-  case 'enroll_user_in_course':
-    handlerPromise = handlers.enrollment.handleEnrollUserInCourse(analysis.entities, api);
-    break;
-    
-  case 'enroll_user_in_learning_plan':
-    handlerPromise = handlers.enrollment.handleEnrollUserInLearningPlan(analysis.entities, api);
-    break;
-    
-  case 'unenroll_user_from_course':
-    handlerPromise = handlers.enrollment.handleUnenrollUserFromCourse(analysis.entities, api);
-    break;
-    
-  case 'unenroll_user_from_learning_plan':
-    handlerPromise = handlers.enrollment.handleUnenrollUserFromLearningPlan(analysis.entities, api);
-    break;
-    
- // Enrollment Checking with timeout
-  case 'check_specific_enrollment':
-    handlerPromise = withTimeout(
-      handlers.info.handleSpecificEnrollmentCheck(analysis.entities, api),
-      20000,
-      'Enrollment check timeout - please try with a simpler query'
-    );
-    break;
-    
-  case 'get_user_enrollments':
-    handlerPromise = withTimeout(
-      handlers.info.handleUserEnrollments(analysis.entities, api),
-      25000,
-      'User enrollments timeout - user may have too many enrollments'
-    );
-    break;
-    
-  // Search Functions
-  case 'search_users':
-    handlerPromise = withTimeout(
-      handlers.search.handleUserSearch(analysis.entities, api),
-      15000,
-      'User search timeout'
-    );
-    break;
+      
+      switch (analysis.intent) {
+        // Background Processing - NEW
+        case 'background_user_enrollments':
+          handlerPromise = handleBackgroundEnrollmentRequest(analysis.entities);
+          break;
           
+        // FIXED: Load More Enrollments (ensure this case exists)
+        case 'load_more_enrollments':
+          console.log(`🔄 ROUTING TO LOAD MORE HANDLER:`, analysis.entities);
+          handlerPromise = withTimeout(
+            handlers.info.handleUserEnrollments(analysis.entities, api),
+            25000,
+            'Load more enrollments timeout'
+          );
+          break;
+          
+        // ADDED: User Summary (optimized with enrollment counts)
+        case 'get_user_summary':
+          handlerPromise = withTimeout(
+            handlers.info.handleUserSummary(analysis.entities, api),
+            15000,
+            'User summary timeout'
+          );
+          break;
+          
+        // ADDED: Recent Enrollments (optimized with sorting)
+        case 'get_recent_enrollments':
+          handlerPromise = withTimeout(
+            handlers.info.handleRecentEnrollments(analysis.entities, api),
+            15000,
+            'Recent enrollments timeout'
+          );
+          break;
+          
+        // Bulk Enrollment Management
+        case 'bulk_enroll_course':
+          handlerPromise = BulkEnrollmentHandlers.handleBulkCourseEnrollment(analysis.entities, api);
+          break;
+          
+        case 'bulk_enroll_learning_plan':
+          handlerPromise = BulkEnrollmentHandlers.handleBulkLearningPlanEnrollment(analysis.entities, api);
+          break;
+          
+        case 'bulk_unenroll_course':
+        case 'bulk_unenroll_learning_plan':
+          handlerPromise = BulkEnrollmentHandlers.handleBulkUnenrollment(analysis.entities, api);
+          break;
+        
+        // Individual Enrollment Management
+        case 'enroll_user_in_course':
+          handlerPromise = handlers.enrollment.handleEnrollUserInCourse(analysis.entities, api);
+          break;
+          
+        case 'enroll_user_in_learning_plan':
+          handlerPromise = handlers.enrollment.handleEnrollUserInLearningPlan(analysis.entities, api);
+          break;
+          
+        case 'unenroll_user_from_course':
+          handlerPromise = handlers.enrollment.handleUnenrollUserFromCourse(analysis.entities, api);
+          break;
+          
+        case 'unenroll_user_from_learning_plan':
+          handlerPromise = handlers.enrollment.handleUnenrollUserFromLearningPlan(analysis.entities, api);
+          break;
+          
+        // Enrollment Checking with timeout
+        case 'check_specific_enrollment':
+          handlerPromise = withTimeout(
+            handlers.info.handleSpecificEnrollmentCheck(analysis.entities, api),
+            20000,
+            'Enrollment check timeout - please try with a simpler query'
+          );
+          break;
+          
+        case 'get_user_enrollments':
+          handlerPromise = withTimeout(
+            handlers.info.handleUserEnrollments(analysis.entities, api),
+            25000,
+            'User enrollments timeout - user may have too many enrollments'
+          );
+          break;
+          
+        // Search Functions
+        case 'search_users':
+          handlerPromise = withTimeout(
+            handlers.search.handleUserSearch(analysis.entities, api),
+            15000,
+            'User search timeout'
+          );
+          break;
+                
         case 'search_courses':
           handlerPromise = withTimeout(
             handlers.search.handleCourseSearch(analysis.entities, api),
@@ -232,8 +353,14 @@ switch (analysis.intent) {
           break;
           
         default:
+          console.log(`🤔 UNKNOWN INTENT: ${analysis.intent} for message: "${message}"`);
           handlerPromise = Promise.resolve(NextResponse.json({
             response: `🤔 **I can help you with enrollment management!**
+
+**🔄 Load More Commands:**
+• **Load More Enrollments**: "Load more enrollments for john@company.com"
+• **Show More**: "Show more enrollments for sarah@company.com"
+• **Continue**: "More enrollments for mike@company.com"
 
 **🚀 NEW: Background Processing**
 • **Heavy Users**: "Load all enrollments in background for john@company.com"
@@ -261,6 +388,8 @@ switch (analysis.intent) {
 • **Course Info**: "Course info Working with Data in Python"
 • **Learning Plan Info**: "Learning plan info Getting Started with Python"
 • **Docebo Help**: "How to enroll users in Docebo"
+
+**💡 Your message was:** "${message}"
 
 **Try one of the examples above!**`,
             success: false,
