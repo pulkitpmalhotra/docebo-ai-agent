@@ -45,6 +45,30 @@ export class IntentAnalyzer {
         confidence: 0.98
       },
 
+      // ADDED: Recent Enrollments Commands (high priority)
+      {
+        intent: 'get_recent_enrollments',
+        patterns: [
+          /(?:recent enrollments|recent enrollment|latest enrollments)\s+(.+)/i,
+          /(?:recent|latest)\s+(.+?)\s+enrollments/i,
+          /show recent\s+(.+)/i,
+          /get recent for\s+(.+)/i
+        ],
+        extractEntities: () => {
+          const recentMatch = message.match(/(?:recent enrollments|recent enrollment|latest enrollments|show recent|get recent for)\s+(.+?)(?:\s|$)/i) ||
+                             message.match(/(?:recent|latest)\s+(.+?)\s+enrollments/i);
+          const userIdentifier = recentMatch ? recentMatch[1].trim() : email || userId;
+          
+          return {
+            email: userIdentifier ? this.extractEmailFromText(userIdentifier) || userIdentifier : null,
+            userId: userIdentifier,
+            requestType: 'recent_enrollments',
+            limit: 20 // Default limit for recent enrollments
+          };
+        },
+        confidence: 0.97
+      },
+
       // FIXED: Load More Commands (highest priority)
       {
         intent: 'load_more_enrollments',
@@ -410,6 +434,9 @@ export class IntentAnalyzer {
   private static validateEntities(entities: any, intent: string): boolean {
     switch (intent) {
       case 'get_user_summary':
+        return !!(entities.email || entities.userId);
+        
+      case 'get_recent_enrollments':
         return !!(entities.email || entities.userId);
         
       case 'load_more_enrollments':
