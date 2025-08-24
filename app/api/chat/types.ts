@@ -41,7 +41,6 @@ export interface UserDetails {
   dateFormat?: string;
   newsletterOptout?: string;
 }
-}
 
 export interface EnhancedUserDetails extends UserDetails {
   manager?: {
