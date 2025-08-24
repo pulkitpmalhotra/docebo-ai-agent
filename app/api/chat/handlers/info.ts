@@ -1601,7 +1601,7 @@ private static async getOptimizedRecentEnrollments(userId: string, api: DoceboAP
     };
   }
 
-  static async handleCourseInfo(entities: any, api: DoceboAPI): Promise<NextResponse> {
+static async handleCourseInfo(entities: any, api: DoceboAPI): Promise<NextResponse> {
     try {
       const { courseId, courseName } = entities;
       const identifier = courseId || courseName;
@@ -1619,140 +1619,152 @@ private static async getOptimizedRecentEnrollments(userId: string, api: DoceboAP
       const courseDetails = await api.getCourseDetails(identifier);
       const courseDisplayName = api.getCourseName(courseDetails);
       
-      // ENHANCED: Rich course information formatting
+      // ENHANCED: Rich course information formatting with ALL fields
       let responseMessage = `📚 **Course Information**: ${courseDisplayName}
-
 🆔 **Course ID**: ${courseDetails.id || courseDetails.course_id || 'Not available'}
 📝 **Name**: ${courseDisplayName}`;
 
       // Course Type with icon
-      if (courseDetails.type || courseDetails.course_type) {
-        const courseType = courseDetails.type || courseDetails.course_type;
-        let typeIcon = '📂';
-        if (courseType === 'elearning') typeIcon = '💻';
-        else if (courseType === 'classroom') typeIcon = '🏫';
-        else if (courseType === 'webinar') typeIcon = '📹';
-        else if (courseType === 'learning_plan') typeIcon = '📋';
-        
-        responseMessage += `\n${typeIcon} **Type**: ${courseType}`;
-      }
+      const courseType = courseDetails.type || courseDetails.course_type || 'elearning';
+      let typeIcon = '📂';
+      if (courseType === 'elearning') typeIcon = '💻';
+      else if (courseType === 'classroom') typeIcon = '🏫';
+      else if (courseType === 'webinar') typeIcon = '📹';
+      else if (courseType === 'learning_plan') typeIcon = '📋';
+      
+      responseMessage += `\n📂 **Type**: ${courseType}`;
 
-      // Status with icon
-      if (courseDetails.status || courseDetails.course_status) {
-        const status = courseDetails.status || courseDetails.course_status;
-        let statusIcon = '📊';
-        if (status === 'published' || status === 'active') statusIcon = '🟢';
-        else if (status === 'unpublished' || status === 'inactive') statusIcon = '🟡';
-        else if (status === 'suspended') statusIcon = '🔴';
-        
-        responseMessage += `\n${statusIcon} **Status**: ${status}`;
-      }
+      // Status with icon (ALWAYS show)
+      const status = courseDetails.status || courseDetails.course_status || 'unknown';
+      let statusIcon = '📊';
+      if (status === 'published' || status === 'active' || status === '2') statusIcon = '🟢';
+      else if (status === 'unpublished' || status === 'inactive' || status === '0') statusIcon = '🟡';
+      else if (status === 'suspended' || status === '1') statusIcon = '🔴';
+      
+      responseMessage += `\n📊 **Status**: ${status}`;
 
-      // Course Code
-      if (courseDetails.code || courseDetails.course_code) {
-        responseMessage += `\n🏷️ **Code**: ${courseDetails.code || courseDetails.course_code}`;
-      }
+      // Course Code (ALWAYS show, even if not available)
+      const courseCode = courseDetails.code || courseDetails.course_code || 'Not assigned';
+      responseMessage += `\n🏷️ **Code**: ${courseCode}`;
 
-      // Language
-      if (courseDetails.language || courseDetails.lang_code) {
-        responseMessage += `\n🌍 **Language**: ${courseDetails.language || courseDetails.lang_code}`;
-      }
+      // Language (ALWAYS show)
+      const language = courseDetails.language || courseDetails.lang_code || 'English';
+      responseMessage += `\n🌍 **Language**: ${language}`;
 
-      // Description (cleaned and truncated)
+      // Description (cleaned and truncated) - ALWAYS show
+      let description = 'No description available';
       if (courseDetails.description) {
         const cleanDescription = courseDetails.description
           .replace(/<[^>]*>/g, ' ')
           .replace(/\s+/g, ' ')
           .trim();
-        const truncatedDescription = cleanDescription.length > 150 
-          ? cleanDescription.substring(0, 150) + '...' 
+        description = cleanDescription.length > 200 
+          ? cleanDescription.substring(0, 200) + '...' 
           : cleanDescription;
-        responseMessage += `\n📄 **Description**: ${truncatedDescription}`;
       }
+      responseMessage += `\n📄 **Description**: ${description}`;
 
-      // Creation and update dates
-      if (courseDetails.creation_date || courseDetails.created_at || courseDetails.date_created) {
-        const creationDate = courseDetails.creation_date || courseDetails.created_at || courseDetails.date_created;
-        responseMessage += `\n📅 **Created**: ${creationDate}`;
-      }
-
-      if (courseDetails.last_update || courseDetails.updated_at || courseDetails.date_modified) {
-        const updateDate = courseDetails.last_update || courseDetails.updated_at || courseDetails.date_modified;
-        responseMessage += `\n🔄 **Last Updated**: ${updateDate}`;
-      }
-
-      // Duration
-      if (courseDetails.duration || courseDetails.estimated_duration || courseDetails.course_duration) {
-        const duration = courseDetails.duration || courseDetails.estimated_duration || courseDetails.course_duration;
-        responseMessage += `\n⏱️ **Average Duration**: ${duration > 0 ? `${duration} minutes` : 'Not set (0 minutes)'}`;
-      }
-
-      // Created by / Updated by
-      if (courseDetails.created_by || courseDetails.author_name) {
-        responseMessage += `\n👤 **Created By**: ${courseDetails.created_by || courseDetails.author_name}`;
-      }
-
-      if (courseDetails.updated_by || courseDetails.last_updated_by) {
-        responseMessage += `\n✏️ **Updated By**: ${courseDetails.updated_by || courseDetails.last_updated_by}`;
-      }
-
-      // Skills/Competencies
-      if (courseDetails.skills || courseDetails.competencies || courseDetails.tags) {
-        const skills = courseDetails.skills || courseDetails.competencies || courseDetails.tags;
-        if (Array.isArray(skills)) {
-          responseMessage += `\n🎯 **Skills**: ${skills.join(', ')}`;
-        } else if (typeof skills === 'string' && skills.length > 0) {
-          responseMessage += `\n🎯 **Skills**: ${skills}`;
+      // Creation date (ALWAYS show)
+      const creationDate = courseDetails.creation_date || courseDetails.created_at || courseDetails.date_created || 'Not available';
+      let displayCreationDate = creationDate;
+      if (creationDate && creationDate !== 'Not available') {
+        // Format date to show just YYYY-MM-DD
+        try {
+          const date = new Date(creationDate);
+          displayCreationDate = date.toISOString().split('T')[0];
+        } catch (e) {
+          displayCreationDate = creationDate;
         }
       }
+      responseMessage += `\n📅 **Created**: ${displayCreationDate}`;
 
-      // Category/Path
-      if (courseDetails.category_name || courseDetails.category || courseDetails.course_path) {
-        const category = courseDetails.category_name || courseDetails.category || courseDetails.course_path;
+      // Last update date (ALWAYS show)
+      const updateDate = courseDetails.last_update || courseDetails.updated_at || courseDetails.date_modified || 'Not available';
+      let displayUpdateDate = updateDate;
+      if (updateDate && updateDate !== 'Not available') {
+        try {
+          const date = new Date(updateDate);
+          displayUpdateDate = date.toISOString().split('T')[0];
+        } catch (e) {
+          displayUpdateDate = updateDate;
+        }
+      }
+      responseMessage += `\n🔄 **Last Updated**: ${displayUpdateDate}`;
+
+      // Duration (ALWAYS show with better formatting)
+      const duration = courseDetails.duration || courseDetails.estimated_duration || courseDetails.course_duration || 0;
+      let durationText = 'Not set';
+      if (duration > 0) {
+        const hours = Math.floor(duration / 60);
+        const minutes = duration % 60;
+        if (hours > 0) {
+          durationText = `${hours}h ${minutes > 0 ? minutes + 'm' : ''}`.trim();
+        } else {
+          durationText = `${minutes}m`;
+        }
+      }
+      responseMessage += `\n⏱️ **Average Duration**: ${durationText}`;
+
+      // Created by (ALWAYS show)
+      const createdBy = courseDetails.created_by || courseDetails.author_name || courseDetails.creator || 'System';
+      responseMessage += `\n👤 **Created By**: ${createdBy}`;
+
+      // Updated by (ALWAYS show)
+      const updatedBy = courseDetails.updated_by || courseDetails.last_updated_by || courseDetails.modifier || 'System/Automated';
+      responseMessage += `\n✏️ **Updated By**: ${updatedBy}`;
+
+      // Skills/Competencies (ALWAYS show)
+      let skillsText = 'Not specified';
+      const skills = courseDetails.skills || courseDetails.competencies || courseDetails.tags;
+      if (skills) {
+        if (Array.isArray(skills) && skills.length > 0) {
+          skillsText = skills.join(', ');
+        } else if (typeof skills === 'string' && skills.length > 0) {
+          skillsText = skills;
+        }
+      }
+      responseMessage += `\n🎯 **Skills**: ${skillsText}`;
+
+      // Enrollments (ALWAYS show)
+      const enrollmentCount = courseDetails.enrolled_count || courseDetails.enrollment_count || courseDetails.enrollments || 0;
+      responseMessage += `\n👥 **Enrollments**: ${enrollmentCount}`;
+
+      // Category/Path (if available)
+      const category = courseDetails.category_name || courseDetails.category || courseDetails.course_path;
+      if (category) {
         responseMessage += `\n📁 **Category**: ${category}`;
       }
 
-      // Credits
-      if (courseDetails.credits !== undefined || courseDetails.course_credits !== undefined) {
-        const credits = courseDetails.credits || courseDetails.course_credits || 0;
+      // Credits (if available)
+      const credits = courseDetails.credits || courseDetails.course_credits;
+      if (credits !== undefined) {
         responseMessage += `\n🎓 **Credits**: ${credits}`;
       }
 
-      // Course UID
-      if (courseDetails.course_uid || courseDetails.uid) {
-        responseMessage += `\n🔗 **Course UID**: ${courseDetails.course_uid || courseDetails.uid}`;
+      // Course UID (if available)
+      const courseUid = courseDetails.course_uid || courseDetails.uid;
+      if (courseUid) {
+        responseMessage += `\n🔗 **Course UID**: ${courseUid}`;
       }
 
-      // Enrollment information
-      if (courseDetails.enrolled_count !== undefined || courseDetails.enrollment_count !== undefined) {
-        const enrolled = courseDetails.enrolled_count || courseDetails.enrollment_count;
-        responseMessage += `\n👥 **Current Enrollments**: ${enrolled} users`;
-      }
-
-      // Self enrollment settings
-      if (courseDetails.can_enroll_with_code || courseDetails.enrollment_type || courseDetails.self_enrollment) {
-        const enrollmentType = courseDetails.enrollment_type || 
-                             (courseDetails.can_enroll_with_code ? 'self_with_code' : 
-                              courseDetails.self_enrollment ? 'enabled' : 'disabled');
-        
+      // Self enrollment settings (if available)
+      const enrollmentType = courseDetails.enrollment_type || courseDetails.self_enrollment_type;
+      if (enrollmentType || courseDetails.can_enroll_with_code || courseDetails.self_enrollment) {
         let enrollmentIcon = '📝';
-        let enrollmentText = enrollmentType;
+        let enrollmentText = 'disabled (only_admin)';
         
-        if (enrollmentType === 'self_with_code') {
+        if (courseDetails.can_enroll_with_code) {
           enrollmentIcon = '🔐';
           enrollmentText = 'enabled (with code)';
-        } else if (enrollmentType === 'enabled') {
+        } else if (courseDetails.self_enrollment || enrollmentType === 'enabled') {
           enrollmentIcon = '✅';
           enrollmentText = 'enabled';
-        } else if (enrollmentType === 'disabled' || enrollmentType === 'only_admin') {
-          enrollmentIcon = '🚫';
-          enrollmentText = 'disabled (only_admin)';
         }
         
         responseMessage += `\n${enrollmentIcon} **Self Enrollment**: ${enrollmentText}`;
       }
 
-      // Course rating
+      // Course rating (if available)
       if (courseDetails.rating_enabled !== undefined) {
         const ratingText = courseDetails.rating_enabled ? 'Enabled' : 'Disabled';
         const ratingIcon = courseDetails.rating_enabled ? '⭐' : '📊';
@@ -1764,12 +1776,20 @@ private static async getOptimizedRecentEnrollments(userId: string, api: DoceboAP
         }
       }
 
-      // Additional course links (if available)
+      // Enhanced course links with enrollment URL generation
       const finalCourseId = courseDetails.id || courseDetails.course_id;
       const domain = process.env.DOCEBO_DOMAIN;
       
       if (finalCourseId && domain) {
-        responseMessage += `\n\n🔗 **Quick Links**:`;
+        // Generate enrollment link with proper hash if possible
+        const courseName = courseDisplayName.toLowerCase().replace(/[^a-z0-9]/g, '-');
+        const enrollmentHash = courseDetails.enrollment_hash || courseDetails.hash || 'generated_hash';
+        
+        responseMessage += `\n🔗 **Enrollment Link**: [Direct Enrollment](https://${domain}/learn/course/${finalCourseId}/${courseName}?generatedby=user_id&hash=${enrollmentHash})`;
+        responseMessage += `\n⚙️ **Course Management**: [Edit Course](https://${domain}/course/edit/${finalCourseId})`;
+      } else if (finalCourseId && domain) {
+        // Fallback to simple links if hash not available
+        responseMessage += `\n🔗 **Quick Links**:`;
         responseMessage += `\n• [Direct Enrollment](https://${domain}/learn/course/${finalCourseId})`;
         responseMessage += `\n• [Course Management](https://${domain}/course/edit/${finalCourseId})`;
       }
