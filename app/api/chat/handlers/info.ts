@@ -1765,13 +1765,13 @@ private static async getOptimizedRecentEnrollments(userId: string, api: DoceboAP
       }
 
       // Additional course links (if available)
-      const courseId = courseDetails.id || courseDetails.course_id;
+      const finalCourseId = courseDetails.id || courseDetails.course_id;
       const domain = process.env.DOCEBO_DOMAIN;
       
-      if (courseId && domain) {
+      if (finalCourseId && domain) {
         responseMessage += `\n\n🔗 **Quick Links**:`;
-        responseMessage += `\n• [Direct Enrollment](https://${domain}/learn/course/${courseId})`;
-        responseMessage += `\n• [Course Management](https://${domain}/course/edit/${courseId})`;
+        responseMessage += `\n• [Direct Enrollment](https://${domain}/learn/course/${finalCourseId})`;
+        responseMessage += `\n• [Course Management](https://${domain}/course/edit/${finalCourseId})`;
       }
 
       // Completion information (if available)
@@ -1790,7 +1790,7 @@ private static async getOptimizedRecentEnrollments(userId: string, api: DoceboAP
         data: {
           course: courseDetails,
           courseName: courseDisplayName,
-          courseId: courseId,
+          courseId: finalCourseId,
           courseType: courseDetails.type || courseDetails.course_type,
           status: courseDetails.status || courseDetails.course_status,
           detailsAvailable: true
@@ -1982,13 +1982,13 @@ private static async getOptimizedRecentEnrollments(userId: string, api: DoceboAP
       }
 
       // Additional management links (if available)
-      const lpId = learningPlanDetails.learning_plan_id || learningPlanDetails.id;
+      const finalLpId = learningPlanDetails.learning_plan_id || learningPlanDetails.id;
       const domain = process.env.DOCEBO_DOMAIN;
       
-      if (lpId && domain) {
+      if (finalLpId && domain) {
         responseMessage += `\n\n🔗 **Quick Links**:`;
-        responseMessage += `\n• [Learning Plan Details](https://${domain}/learningplan/view/${lpId})`;
-        responseMessage += `\n• [Manage Enrollments](https://${domain}/learningplan/enrollments/${lpId})`;
+        responseMessage += `\n• [Learning Plan Details](https://${domain}/learningplan/view/${finalLpId})`;
+        responseMessage += `\n• [Manage Enrollments](https://${domain}/learningplan/enrollments/${finalLpId})`;
       }
 
       // Additional statistical information
@@ -2014,7 +2014,7 @@ private static async getOptimizedRecentEnrollments(userId: string, api: DoceboAP
         data: {
           learningPlan: learningPlanDetails,
           learningPlanName: displayName,
-          learningPlanId: lpId,
+          learningPlanId: finalLpId,
           status: status,
           enrollmentCount: enrollmentCount,
           detailsAvailable: true
