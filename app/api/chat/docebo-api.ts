@@ -554,27 +554,32 @@ export class DoceboAPI {
     }
   }
 
-  formatCourseEnrollment(enrollment: any): FormattedEnrollment {
+formatCourseEnrollment(enrollment: any): FormattedEnrollment {
     return {
-      id: enrollment.course_id || enrollment.id,
-      name: enrollment.course_name || enrollment.name || 'Unknown Course',
-      type: 'course',
-      status: enrollment.status || 'enrolled',
+      courseId: (enrollment.course_id || enrollment.id)?.toString(),
+      courseName: enrollment.course_name || enrollment.name || 'Unknown Course',
+      enrollmentStatus: enrollment.status || 'enrolled',
       enrollmentDate: enrollment.enrollment_date || enrollment.date_inscr,
-      completionStatus: enrollment.completion_status || 'not_completed',
-      progress: enrollment.progress || 0
+      completionDate: enrollment.completion_date,
+      progress: enrollment.progress || 0,
+      score: enrollment.score,
+      dueDate: enrollment.due_date,
+      assignmentType: enrollment.assignment_type
     };
   }
 
   formatLearningPlanEnrollment(enrollment: any): FormattedEnrollment {
     return {
-      id: enrollment.learning_plan_id || enrollment.id,
-      name: enrollment.learning_plan_name || enrollment.name || 'Unknown Learning Plan',
-      type: 'learning_plan',
-      status: enrollment.status || 'enrolled',
+      learningPlanId: (enrollment.learning_plan_id || enrollment.id)?.toString(),
+      learningPlanName: enrollment.learning_plan_name || enrollment.name || 'Unknown Learning Plan',
+      enrollmentStatus: enrollment.status || 'enrolled',
       enrollmentDate: enrollment.enrollment_date || enrollment.date_inscr,
-      completionStatus: enrollment.completion_status || 'not_completed',
-      progress: enrollment.progress || 0
+      completionDate: enrollment.completion_date,
+      progress: enrollment.progress || 0,
+      completedCourses: enrollment.completed_courses,
+      totalCourses: enrollment.total_courses,
+      dueDate: enrollment.due_date,
+      assignmentType: enrollment.assignment_type
     };
   }
 
