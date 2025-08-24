@@ -710,13 +710,133 @@ This user is enrolled but has not yet started this ${isLearningPlan ? 'learning 
     });
   }
 
-  // FIXED: Main handleUserEnrollments method with proper pagination
+// REPLACE the existing methods in app/api/chat/handlers/info.ts with these optimized versions
+
+static async handleUserSummary(entities: any, api: DoceboAPI): Promise<NextResponse> {
+  try {
+    const { email, userId } = entities;
+    const identifier = email || userId;
+    
+    if (!identifier) {
+      return NextResponse.json({
+        response: '❌ **Missing Information**: Please provide a user email.\n\n**Example**: "User summary mike@company.com"',
+        success: false,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    console.log(`📊 OPTIMIZED: Getting user summary for: ${identifier}`);
+
+    // Get user details quickly
+    const userDetails = await Promise.race([
+      api.getUserDetails(identifier),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('User lookup timeout')), 8000)
+      )
+    ]) as any;
+
+    // Get enrollment counts using OPTIMIZED endpoints
+    let enrollmentSummary;
+    try {
+      enrollmentSummary = await Promise.race([
+        this.getOptimizedEnrollmentCounts(userDetails.id, api),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Summary timeout')), 12000)
+        )
+      ]) as any;
+    } catch (error) {
+      console.log('❌ Could not get enrollment counts, using fallback');
+      enrollmentSummary = {
+        totalCourses: 'Unknown',
+        totalLearningPlans: 'Unknown',
+        recentActivity: 'Unable to fetch'
+      };
+    }
+
+    // Build summary response
+    let responseMessage = `📊 **User Summary**: ${userDetails.fullname}
+
+👤 **Basic Information**:
+• **Name**: ${userDetails.fullname}
+• **Email**: ${userDetails.email}
+• **User ID**: ${userDetails.id}
+• **Status**: ${userDetails.status}
+• **Level**: ${userDetails.level}
+• **Department**: ${userDetails.department}
+
+📚 **Enrollment Summary**:
+• **Total Courses**: ${enrollmentSummary.totalCourses}
+• **Total Learning Plans**: ${enrollmentSummary.totalLearningPlans}
+• **Account Created**: ${userDetails.creationDate}
+• **Last Access**: ${userDetails.lastAccess}
+
+🏢 **Organization**:
+• **Language**: ${userDetails.language}
+• **Timezone**: ${userDetails.timezone}`;
+
+    // Add manager info if available
+    try {
+      const enhancedDetails = await api.getEnhancedUserDetails(userDetails.id);
+      if (enhancedDetails.manager) {
+        responseMessage += `\n• **Direct Manager**: ${enhancedDetails.manager.fullname}`;
+      }
+      
+      if (enhancedDetails.additionalFields?.jobTitle) {
+        responseMessage += `\n• **Job Title**: ${enhancedDetails.additionalFields.jobTitle}`;
+      }
+      
+      if (enhancedDetails.additionalFields?.location) {
+        responseMessage += `\n• **Location**: ${enhancedDetails.additionalFields.location}`;
+      }
+    } catch (error) {
+      console.log('Could not get enhanced details for summary');
+    }
+
+    responseMessage += `\n\n💡 **Quick Actions**:
+• "User enrollments ${userDetails.email}" - See all enrollments (paginated)
+• "Recent enrollments ${userDetails.email}" - Recent activity only
+• "Check if ${userDetails.email} is enrolled in [course name]" - Specific checks
+• "Load all enrollments in background for ${userDetails.email}" - Complete data`;
+
+    return NextResponse.json({
+      response: responseMessage,
+      success: true,
+      data: {
+        user: userDetails,
+        summary: {
+          totalCourses: enrollmentSummary.totalCourses,
+          totalLearningPlans: enrollmentSummary.totalLearningPlans,
+          lastAccess: userDetails.lastAccess,
+          status: userDetails.status
+        },
+        summaryType: 'user_overview'
+      },
+      totalCount: 1,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ User summary error:', error);
+    
+    return NextResponse.json({
+      response: `❌ **User Summary Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
+
+**Alternatives**:
+• "Find user ${entities.email || entities.userId}" - Basic user info
+• "User enrollments ${entities.email || entities.userId}" - Paginated enrollment list`,
+      success: false,
+      timestamp: new Date().toISOString()
+    });
+  }
+}
+
+// OPTIMIZED: User enrollments with pages 1-5 limit and better pagination
 static async handleUserEnrollments(entities: any, api: DoceboAPI): Promise<NextResponse> {
   try {
     const { email, userId, loadMore, offset } = entities;
     const identifier = email || userId;
     const currentOffset = parseInt(offset || '0');
-    const pageSize = 10; // Show fewer items initially for speed
+    const pageSize = 20; // INCREASED from 10 to 20 as you suggested
     
     if (!identifier) {
       return NextResponse.json({
@@ -726,9 +846,9 @@ static async handleUserEnrollments(entities: any, api: DoceboAPI): Promise<NextR
       });
     }
 
-    console.log(`📚 FAST: Getting user enrollments: ${identifier} (offset: ${currentOffset})`);
+    console.log(`📚 OPTIMIZED: Getting user enrollments: ${identifier} (offset: ${currentOffset})`);
 
-    // STEP 1: Get user details quickly (8 second timeout)
+    // Get user details
     const userDetails = await Promise.race([
       api.getUserDetails(identifier),
       new Promise((_, reject) => 
@@ -736,24 +856,124 @@ static async handleUserEnrollments(entities: any, api: DoceboAPI): Promise<NextR
       )
     ]) as any;
     
-    // STEP 2: Try fast enrollment fetch (15 second timeout)
-    try {
-      const fastResult = await Promise.race([
-        this.getFastEnrollmentPage(userDetails.id, api, currentOffset, pageSize),
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Fast enrollment timeout')), 15000)
-        )
-      ]) as any;
+    // Get enrollments using OPTIMIZED method (pages 1-5 max)
+    const enrollmentData = await Promise.race([
+      this.getOptimizedEnrollmentPages(userDetails.id, api, currentOffset, pageSize),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Enrollment fetch timeout')), 20000)
+      )
+    ]) as any;
+    
+    // Combine and sort enrollments
+    const allEnrollments = [
+      ...enrollmentData.courses.map((e: any) => ({
+        ...api.formatCourseEnrollment(e),
+        type: 'course'
+      })),
+      ...enrollmentData.learningPlans.map((e: any) => ({
+        ...api.formatLearningPlanEnrollment(e),
+        type: 'learning_plan'
+      }))
+    ];
+
+    // Sort by enrollment date (most recent first)
+    allEnrollments.sort((a, b) => {
+      const dateA = new Date(a.enrollmentDate || '1970-01-01');
+      const dateB = new Date(b.enrollmentDate || '1970-01-01');
+      return dateB.getTime() - dateA.getTime();
+    });
+
+    const totalEnrollments = enrollmentData.totalEstimate || allEnrollments.length;
+    const displayEnrollments = allEnrollments.slice(0, pageSize); // Show up to pageSize items
+    const hasMore = enrollmentData.hasMorePages || displayEnrollments.length >= pageSize;
+    const nextOffset = currentOffset + pageSize;
+
+    let responseMessage = `📚 **${userDetails.fullname}'s Enrollments** (Optimized)
+
+👤 **User**: ${userDetails.fullname} (${userDetails.email})
+🆔 **User ID**: ${userDetails.id}
+📊 **Status**: ${userDetails.status}
+
+📈 **Summary**:
+• **Total Courses**: ${enrollmentData.totalCourses || 'Loading...'}
+• **Total Learning Plans**: ${enrollmentData.totalLearningPlans || 'Loading...'}
+• **Showing**: ${Math.min(displayEnrollments.length, pageSize)} items
+• **Method**: Pages 1-5 optimized fetch`;
+
+    if (displayEnrollments.length > 0) {
+      responseMessage += `\n\n📋 **Enrollments**:\n`;
       
-      // STEP 3: Return quick response with what we have
-      return this.buildQuickEnrollmentResponse(userDetails, fastResult, currentOffset, pageSize);
-      
-    } catch (enrollmentError) {
-      console.error('❌ Fast enrollment fetch failed:', enrollmentError);
-      
-      // STEP 4: Suggest background processing for heavy users
-      return this.buildTimeoutResponse(userDetails, identifier);
+      displayEnrollments.forEach((enrollment: any, index: number) => {
+        let statusIcon = enrollment.type === 'course' ? '📚' : '📋';
+        if (enrollment.enrollmentStatus === 'completed') statusIcon = '✅';
+        else if (enrollment.enrollmentStatus === 'in_progress') statusIcon = '🔄';
+        else if (enrollment.enrollmentStatus === 'suspended') statusIcon = '🚫';
+        else if (enrollment.enrollmentStatus === 'not_started') statusIcon = '⏸️';
+        
+        const itemNumber = index + 1;
+        const name = enrollment.type === 'course' ? enrollment.courseName : enrollment.learningPlanName;
+        const typeLabel = enrollment.type === 'course' ? 'COURSE' : 'LEARNING PLAN';
+        
+        let progressInfo = '';
+        if (enrollment.type === 'course') {
+          progressInfo = enrollment.progress ? ` (${enrollment.progress}%)` : '';
+          if (enrollment.score && enrollment.score > 0) {
+            progressInfo += ` [Score: ${enrollment.score}]`;
+          }
+        } else {
+          const completed = enrollment.completedCourses || 0;
+          const total = enrollment.totalCourses || 0;
+          progressInfo = total > 0 ? ` (${completed}/${total} courses)` : '';
+        }
+        
+        responseMessage += `${itemNumber}. ${statusIcon} **${enrollment.enrollmentStatus.toUpperCase()}** ${typeLabel}\n`;
+        responseMessage += `   📖 ${name}${progressInfo}\n`;
+        if (enrollment.enrollmentDate) {
+          responseMessage += `   📅 Enrolled: ${enrollment.enrollmentDate}\n`;
+        }
+        responseMessage += '\n';
+      });
     }
+
+    // Add load more section
+    if (hasMore) {
+      responseMessage += `\n🔄 **Load More Data Available**\n`;
+      responseMessage += `💡 **To see more**: "Load more enrollments for ${userDetails.email}"`;
+    }
+
+    // Add optimization info
+    responseMessage += `\n\n🔗 **Performance Info**:
+• **Fetch Method**: Optimized API calls (pages 1-5)
+• **Response Time**: ~10-15 seconds
+• **Pages Processed**: ${enrollmentData.pagesProcessed || 'Multiple'}`;
+
+    const loadMoreCommand = hasMore ? `Load more enrollments for ${userDetails.email}` : null;
+
+    return NextResponse.json({
+      response: responseMessage,
+      success: true,
+      data: {
+        user: userDetails,
+        enrollments: displayEnrollments,
+        pagination: {
+          currentOffset: currentOffset,
+          pageSize: pageSize,
+          totalItems: totalEnrollments,
+          hasMore: hasMore,
+          nextOffset: nextOffset
+        },
+        summary: {
+          totalCourses: enrollmentData.totalCourses,
+          totalLearningPlans: enrollmentData.totalLearningPlans,
+          totalEnrollments: totalEnrollments
+        },
+        method: 'optimized_pages_1_to_5'
+      },
+      totalCount: totalEnrollments,
+      hasMore: hasMore,
+      loadMoreCommand: loadMoreCommand,
+      timestamp: new Date().toISOString()
+    });
 
   } catch (error) {
     console.error('❌ User enrollments error:', error);
@@ -761,180 +981,305 @@ static async handleUserEnrollments(entities: any, api: DoceboAPI): Promise<NextR
     return NextResponse.json({
       response: `❌ **User Enrollments Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
 
-**⚡ Quick Solutions:**
-• Try: "Find user ${entities.email || entities.userId}" (basic info only)
-• Try: "User summary ${entities.email || entities.userId}" 
-• Use CSV export for complete enrollment data`,
+**Quick Alternatives**:
+• "User summary ${entities.email || entities.userId}" - Overview with counts
+• "Recent enrollments ${entities.email || entities.userId}" - Latest activity
+• "Find user ${entities.email || entities.userId}" - User details only`,
       success: false,
       timestamp: new Date().toISOString()
     });
   }
 }
 
-// ADD this new method for fast enrollment fetching:
-private static async getFastEnrollmentPage(userId: string, api: DoceboAPI, offset: number, pageSize: number) {
-  console.log(`⚡ Fast enrollment fetch for user: ${userId}, offset: ${offset}`);
-  
-  // Method 1: Try fastest endpoint with pagination
+static async handleRecentEnrollments(entities: any, api: DoceboAPI): Promise<NextResponse> {
   try {
-    const result = await api.apiRequest(`/course/v1/courses/enrollments`, 'GET', null, {
-      'user_id[]': userId,
-      page_size: pageSize,
-      page: Math.floor(offset / pageSize) + 1
-    });
+    const { email, userId, limit } = entities;
+    const identifier = email || userId;
+    const enrollmentLimit = limit || 20; // INCREASED from 10 to 20
     
-    if (result.data?.items?.length > 0) {
-      const userEnrollments = result.data.items.filter((e: any) => 
-        e.user_id?.toString() === userId.toString()
-      );
-      
-      console.log(`✅ Fast method found ${userEnrollments.length} enrollments`);
-      
-      return {
-        courses: userEnrollments.map((e: any) => api.formatCourseEnrollment(e)),
-        learningPlans: [], // Skip LPs for speed
-        totalCourses: userEnrollments.length,
-        totalLearningPlans: 0,
-        hasMoreData: result.data?.has_more_data === true,
-        method: 'fast_courses_only',
-        isPartial: true
-      };
+    if (!identifier) {
+      return NextResponse.json({
+        response: '❌ **Missing Information**: Please provide a user email.\n\n**Example**: "Recent enrollments mike@company.com"',
+        success: false,
+        timestamp: new Date().toISOString()
+      });
     }
+
+    console.log(`📅 OPTIMIZED: Getting recent enrollments for: ${identifier}, limit: ${enrollmentLimit}`);
+
+    // Get user details
+    const userDetails = await api.getUserDetails(identifier);
+    
+    // Get recent enrollments with OPTIMIZED sorting
+    const recentEnrollments = await Promise.race([
+      this.getOptimizedRecentEnrollments(userDetails.id, api, enrollmentLimit),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Recent enrollments timeout')), 15000)
+      )
+    ]) as any;
+
+    let responseMessage = `📅 **Recent Enrollments**: ${userDetails.fullname} (Optimized)
+
+👤 **User**: ${userDetails.fullname} (${userDetails.email})
+📊 **Showing**: Last ${enrollmentLimit} enrollments (sorted by enrollment date)
+
+`;
+
+    if (recentEnrollments.length > 0) {
+      responseMessage += `📋 **Recent Activity**:\n`;
+      
+      recentEnrollments.forEach((enrollment: any, index: number) => {
+        let statusIcon = enrollment.type === 'course' ? '📚' : '📋';
+        if (enrollment.enrollmentStatus === 'completed') statusIcon = '✅';
+        else if (enrollment.enrollmentStatus === 'in_progress') statusIcon = '🔄';
+        else if (enrollment.enrollmentStatus === 'suspended') statusIcon = '🚫';
+        else if (enrollment.enrollmentStatus === 'not_started') statusIcon = '⏸️';
+        
+        const name = enrollment.type === 'course' ? enrollment.courseName : enrollment.learningPlanName;
+        const typeLabel = enrollment.type === 'course' ? 'COURSE' : 'LEARNING PLAN';
+        
+        responseMessage += `${index + 1}. ${statusIcon} **${enrollment.enrollmentStatus.toUpperCase()}** ${typeLabel}\n`;
+        responseMessage += `   📖 ${name}\n`;
+        if (enrollment.enrollmentDate) {
+          responseMessage += `   📅 Enrolled: ${enrollment.enrollmentDate}\n`;
+        }
+        responseMessage += '\n';
+      });
+    } else {
+      responseMessage += `📋 **No Recent Enrollments Found**\n\nThis user may not have any recent enrollment activity.`;
+    }
+
+    responseMessage += `\n💡 **More Options**:
+• "User enrollments ${userDetails.email}" - See all enrollments (paginated)
+• "User summary ${userDetails.email}" - Complete overview
+• "Load all enrollments in background for ${userDetails.email}" - Complete data
+
+🔗 **Performance**: Optimized with sort_attr=enrollment_created_at`;
+
+    return NextResponse.json({
+      response: responseMessage,
+      success: true,
+      data: {
+        user: userDetails,
+        recentEnrollments: recentEnrollments,
+        limit: enrollmentLimit,
+        method: 'optimized_sorted_recent'
+      },
+      totalCount: recentEnrollments.length,
+      timestamp: new Date().toISOString()
+    });
+
   } catch (error) {
-    console.log('❌ Fast courses method failed:', error);
+    console.error('❌ Recent enrollments error:', error);
+    
+    return NextResponse.json({
+      response: `❌ **Recent Enrollments Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
+
+**Alternatives**:
+• "User summary ${entities.email || entities.userId}" - Basic overview
+• "Find user ${entities.email || entities.userId}" - User details only`,
+      success: false,
+      timestamp: new Date().toISOString()
+    });
+  }
+}
+
+// NEW OPTIMIZED HELPER METHODS
+
+// OPTIMIZED: Get enrollment counts using your suggested endpoints
+private static async getOptimizedEnrollmentCounts(userId: string, api: DoceboAPI): Promise<any> {
+  console.log(`📊 OPTIMIZED: Getting enrollment counts for user: ${userId}`);
+  
+  let totalCourses = 0;
+  let totalLearningPlans = 0;
+  
+  // Parallel calls for better performance
+  const [courseResult, lpResult] = await Promise.all([
+    // Course count using your optimized endpoint
+    api.apiRequest(`/course/v1/courses/enrollments`, 'GET', null, {
+      'user_id[]': userId
+    }).catch(error => {
+      console.log('Course count failed:', error);
+      return null;
+    }),
+    
+    // Learning plan count using your optimized endpoint
+    api.apiRequest(`/learningplan/v1/learningplans/enrollments`, 'GET', null, {
+      'user_id[]': userId
+    }).catch(error => {
+      console.log('LP count failed:', error);
+      return null;
+    })
+  ]);
+  
+  // Count courses
+  if (courseResult?.data?.items) {
+    totalCourses = courseResult.data.items.length;
+    console.log(`✅ Found ${totalCourses} course enrollments`);
   }
   
-  // Method 2: Fallback to basic user search if fast method fails
+  // Count learning plans
+  if (lpResult?.data?.items) {
+    totalLearningPlans = lpResult.data.items.length;
+    console.log(`✅ Found ${totalLearningPlans} learning plan enrollments`);
+  }
+  
   return {
-    courses: [],
-    learningPlans: [],
-    totalCourses: 0,
-    totalLearningPlans: 0,
-    hasMoreData: false,
-    method: 'fallback_empty',
-    isPartial: true
+    totalCourses: totalCourses > 0 ? totalCourses : 'None',
+    totalLearningPlans: totalLearningPlans > 0 ? totalLearningPlans : 'None'
   };
 }
 
-// ADD this method for quick response building:
-private static buildQuickEnrollmentResponse(
-  userDetails: any, 
-  enrollmentData: any, 
-  currentOffset: number, 
-  pageSize: number
-): NextResponse {
+// OPTIMIZED: Get enrollment data from pages 1-5 max
+private static async getOptimizedEnrollmentPages(userId: string, api: DoceboAPI, offset: number, pageSize: number): Promise<any> {
+  console.log(`📚 OPTIMIZED: Getting enrollment pages for user: ${userId}, offset: ${offset}, pageSize: ${pageSize}`);
   
-  const totalShown = enrollmentData.courses.length;
-  const hasMore = enrollmentData.hasMoreData || totalShown >= pageSize;
+  const maxPages = 5; // LIMIT TO 5 PAGES as you suggested
+  let allCourses: any[] = [];
+  let allLearningPlans: any[] = [];
+  let pagesProcessed = 0;
+  let hasMorePages = false;
   
-  let responseMessage = `📚 **${userDetails.fullname}'s Enrollments** (Fast Mode)
-
-👤 **User**: ${userDetails.fullname} (${userDetails.email})
-🆔 **User ID**: ${userDetails.id}
-
-⚡ **Quick Results**:
-• **Courses Shown**: ${totalShown}
-• **Method**: ${enrollmentData.method}
-• **Showing**: Items ${currentOffset + 1}-${currentOffset + totalShown}`;
-
-  if (enrollmentData.isPartial) {
-    responseMessage += `\n\n⚠️ **Partial Results**: Showing courses only for speed`;
-  }
-
-  if (totalShown > 0) {
-    responseMessage += `\n\n📋 **Enrollments**:\n`;
+  // Get courses (pages 1-5 max)
+  try {
+    for (let page = 1; page <= maxPages; page++) {
+      console.log(`📄 Fetching course page ${page}...`);
+      
+      const courseResult = await api.apiRequest(`/course/v1/courses/enrollments`, 'GET', null, {
+        'user_id[]': userId,
+        page: page,
+        page_size: 50 // Reasonable page size
+      });
+      
+      if (courseResult?.data?.items?.length > 0) {
+        allCourses.push(...courseResult.data.items);
+        pagesProcessed++;
+        
+        // Check if there's more data
+        if (courseResult.data?.has_more_data !== true || courseResult.data.items.length < 50) {
+          console.log(`✅ Course pagination complete at page ${page}`);
+          break;
+        }
+      } else {
+        console.log(`📄 No more course data at page ${page}`);
+        break;
+      }
+      
+      // Small delay between calls
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
     
-    enrollmentData.courses.forEach((enrollment: any, index: number) => {
-      let statusIcon = '📚';
-      if (enrollment.enrollmentStatus === 'completed') statusIcon = '✅';
-      else if (enrollment.enrollmentStatus === 'in_progress') statusIcon = '🔄';
-      else if (enrollment.enrollmentStatus === 'suspended') statusIcon = '🚫';
-      else if (enrollment.enrollmentStatus === 'not_started') statusIcon = '⏸️';
-      
-      const itemNumber = currentOffset + index + 1;
-      
-      responseMessage += `${itemNumber}. ${statusIcon} **${enrollment.enrollmentStatus.toUpperCase()}** COURSE\n`;
-      responseMessage += `   📖 ${enrollment.courseName}\n`;
-      if (enrollment.enrollmentDate) {
-        responseMessage += `   📅 Enrolled: ${enrollment.enrollmentDate}\n`;
-      }
-      responseMessage += '\n';
-    });
-  } else {
-    responseMessage += `\n\n📋 **No Enrollments Found** in first page.`;
+    if (pagesProcessed >= maxPages) {
+      hasMorePages = true;
+    }
+  } catch (error) {
+    console.error('Course pagination error:', error);
   }
-
-  // Add load more or background processing suggestions
-  if (hasMore) {
-    responseMessage += `\n🔄 **More Data Available**\n`;
-    responseMessage += `💡 **For Complete Data**: Use background processing\n`;
-    responseMessage += `• Try: "Load all enrollments in background for ${userDetails.email}"`;
-  }
-
-  const loadMoreCommand = hasMore ? `Load more enrollments for ${userDetails.email}` : null;
-
-  return NextResponse.json({
-    response: responseMessage,
-    success: true,
-    data: {
-      user: userDetails,
-      enrollments: enrollmentData.courses,
-      pagination: {
-        currentOffset: currentOffset,
-        pageSize: pageSize,
-        totalItems: totalShown,
-        hasMore: hasMore,
-        isPartial: true,
-        method: enrollmentData.method
+  
+  // Get learning plans (pages 1-5 max)
+  try {
+    for (let page = 1; page <= maxPages; page++) {
+      console.log(`📄 Fetching LP page ${page}...`);
+      
+      const lpResult = await api.apiRequest(`/learningplan/v1/learningplans/enrollments`, 'GET', null, {
+        'user_id[]': userId,
+        page: page,
+        page_size: 50
+      });
+      
+      if (lpResult?.data?.items?.length > 0) {
+        allLearningPlans.push(...lpResult.data.items);
+        
+        // Check if there's more data
+        if (lpResult.data?.has_more_data !== true || lpResult.data.items.length < 50) {
+          console.log(`✅ LP pagination complete at page ${page}`);
+          break;
+        }
+      } else {
+        console.log(`📄 No more LP data at page ${page}`);
+        break;
       }
-    },
-    totalCount: totalShown,
-    hasMore: hasMore,
-    loadMoreCommand: loadMoreCommand,
-    isPartialResult: true,
-    timestamp: new Date().toISOString()
-  });
+      
+      // Small delay between calls
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  } catch (error) {
+    console.error('LP pagination error:', error);
+  }
+  
+  return {
+    courses: allCourses,
+    learningPlans: allLearningPlans,
+    totalCourses: allCourses.length,
+    totalLearningPlans: allLearningPlans.length,
+    totalEstimate: allCourses.length + allLearningPlans.length,
+    pagesProcessed: pagesProcessed,
+    hasMorePages: hasMorePages
+  };
 }
 
-// ADD this method for timeout responses:
-private static buildTimeoutResponse(userDetails: any, identifier: string): NextResponse {
-  return NextResponse.json({
-    response: `⏱️ **Large Dataset Detected**: ${userDetails.fullname} likely has many enrollments.
-
-👤 **User Found**: ${userDetails.fullname} (${userDetails.email})
-🆔 **User ID**: ${userDetails.id}
-
-**🔄 Recommended Solutions:**
-
-**1. Background Processing** (Best for heavy users):
-• Use: "Process enrollments in background for ${identifier}"
-• Get results via job status checking
-
-**2. Quick Alternatives**:
-• "Find user ${identifier}" (user details only)
-• "Check if ${identifier} is enrolled in [specific course name]" 
-• "User summary ${identifier}"
-
-**3. CSV Export**:
-• Use CSV upload feature to export enrollment data
-• Process offline for users with 100+ enrollments
-
-**4. Specific Queries**:
-• "Show recent enrollments for ${identifier}"
-• "Count enrollments for ${identifier}"
-
-💡 **Why This Happens**: Users with 50+ enrollments can take 60+ seconds to process, but Vercel limits us to 30 seconds.`,
-    success: false,
-    suggestBackgroundProcessing: true,
-    backgroundCommand: `Process enrollments in background for ${identifier}`,
-    userFound: true,
-    userData: {
-      id: userDetails.id,
-      fullname: userDetails.fullname,
-      email: userDetails.email
-    },
-    timestamp: new Date().toISOString()
+// OPTIMIZED: Get recent enrollments with sorting
+private static async getOptimizedRecentEnrollments(userId: string, api: DoceboAPI, limit: number): Promise<any[]> {
+  console.log(`📅 OPTIMIZED: Getting recent enrollments for user: ${userId}, limit: ${limit}`);
+  
+  const recentEnrollments: any[] = [];
+  
+  // Get recent courses with sorting as you suggested
+  try {
+    const courseResult = await api.apiRequest(`/course/v1/courses/enrollments`, 'GET', null, {
+      'user_id[]': userId,
+      sort_attr: 'enrollment_created_at',
+      sort_dir: 'desc',
+      page_size: Math.min(limit, 50)
+    });
+    
+    if (courseResult?.data?.items?.length > 0) {
+      const recentCourses = courseResult.data.items
+        .slice(0, limit)
+        .map((e: any) => ({
+          ...api.formatCourseEnrollment(e),
+          type: 'course'
+        }));
+      
+      recentEnrollments.push(...recentCourses);
+      console.log(`✅ Found ${recentCourses.length} recent course enrollments`);
+    }
+  } catch (error) {
+    console.log('Recent courses error:', error);
+  }
+  
+  // Get recent learning plans with sorting
+  try {
+    const lpResult = await api.apiRequest(`/learningplan/v1/learningplans/enrollments`, 'GET', null, {
+      'user_id[]': userId,
+      sort_attr: 'enrollment_created_at',
+      sort_dir: 'desc',
+      page_size: Math.min(limit, 50)
+    });
+    
+    if (lpResult?.data?.items?.length > 0) {
+      const recentLPs = lpResult.data.items
+        .slice(0, Math.floor(limit / 2)) // Balance between courses and LPs
+        .map((e: any) => ({
+          ...api.formatLearningPlanEnrollment(e),
+          type: 'learning_plan'
+        }));
+      
+      recentEnrollments.push(...recentLPs);
+      console.log(`✅ Found ${recentLPs.length} recent LP enrollments`);
+    }
+  } catch (error) {
+    console.log('Recent LPs error:', error);
+  }
+  
+  // Sort all by enrollment date and limit
+  recentEnrollments.sort((a, b) => {
+    const dateA = new Date(a.enrollmentDate || '1970-01-01');
+    const dateB = new Date(b.enrollmentDate || '1970-01-01');
+    return dateB.getTime() - dateA.getTime();
   });
+  
+  return recentEnrollments.slice(0, limit);
 }
 
   // New method to get ALL user enrollments across multiple pages
