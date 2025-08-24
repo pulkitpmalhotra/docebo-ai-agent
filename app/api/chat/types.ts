@@ -26,6 +26,21 @@ export interface UserDetails {
   timezone: string;
   language: string;
   department: string;
+  isManager?: boolean;
+  subordinatesCount?: number;
+  avatar?: string;
+  expirationDate?: string | null;
+  emailValidationStatus?: string;
+  organizationChart?: string;
+  employeeType?: string;
+  businessUnit?: string;
+  employeeId?: string;
+  directManager?: string;
+  managers?: any[];
+  expired?: boolean;
+  dateFormat?: string;
+  newsletterOptout?: string;
+}
 }
 
 export interface EnhancedUserDetails extends UserDetails {
