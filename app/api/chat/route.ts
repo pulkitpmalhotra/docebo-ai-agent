@@ -127,6 +127,15 @@ switch (analysis.intent) {
     );
     break;
     
+  // ADDED: Recent Enrollments (optimized with sorting)
+  case 'get_recent_enrollments':
+    handlerPromise = withTimeout(
+      handlers.info.handleRecentEnrollments(analysis.entities, api),
+      15000,
+      'Recent enrollments timeout'
+    );
+    break;
+    
   // Bulk Enrollment Management
   case 'bulk_enroll_course':
     handlerPromise = BulkEnrollmentHandlers.handleBulkCourseEnrollment(analysis.entities, api);
