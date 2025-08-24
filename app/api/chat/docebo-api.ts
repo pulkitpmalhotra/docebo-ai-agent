@@ -1,26 +1,21 @@
-
-import { DoceboConfig, UserDetails, EnrollmentData, FormattedEnrollment } from './types';
-
+import { DoceboConfig, UserDetails, EnhancedUserDetails } from './types';
 export class DoceboAPI {
   private config: DoceboConfig;
   private accessToken?: string;
   private tokenExpiry?: Date;
   private baseUrl: string;
-
   constructor(config: DoceboConfig) {
     this.config = config;
     this.baseUrl = `https://${config.domain}`;
   }
-
   private async getAccessToken(): Promise<string> {
     if (this.accessToken && this.tokenExpiry && this.tokenExpiry > new Date()) {
       return this.accessToken;
     }
-
     try {
       const response = await fetch(`${this.baseUrl}/oauth2/token`, {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
           'Accept': 'application/json'
         },
@@ -33,193 +28,76 @@ export class DoceboAPI {
           password: this.config.password,
         }),
       });
-
       if (!response.ok) {
         const errorText = await response.text();
         throw new Error(`Token request failed: ${response.status} - ${errorText}`);
       }
-
-      const contentType = response.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
-        const responseText = await response.text();
-        throw new Error(`Invalid response format. Expected JSON but got: ${contentType}. Response: ${responseText.substring(0, 200)}...`);
-      }
-
-      const tokenData = await response.json();
-      
-      if (!tokenData.access_token) {
-        throw new Error(`No access token in response: ${JSON.stringify(tokenData)}`);
-      }
-
-      this.accessToken = tokenData.access_token;
-      this.tokenExpiry = new Date(Date.now() + (tokenData.expires_in || 3600) * 1000);
-
-      return this.accessToken!;
+      const data = await response.json();
+      this.accessToken = data.access_token;
+      this.tokenExpiry = new Date(Date.now() + data.expires_in * 1000);
+      return this.accessToken;
     } catch (error) {
-      console.error('❌ Token acquisition failed:', error);
-      throw new Error(`Failed to get access token: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  }
-
-  async apiRequest(endpoint: string, method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET', body?: any, params?: any): Promise<any> {
-    try {
-      const token = await this.getAccessToken();
-
-      let url = `${this.baseUrl}${endpoint}`;
-      if (params) {
-        const queryParams = new URLSearchParams();
-        Object.entries(params).forEach(([key, value]) => {
-          if (value !== undefined && value !== null) {
-            queryParams.append(key, value.toString());
-          }
-        });
-        if (queryParams.toString()) {
-          url += `?${queryParams}`;
-        }
-      }
-
-      const headers: Record<string, string> = {
-        'Authorization': `Bearer ${token}`,
-        'Accept': 'application/json',
-      };
-
-      if (method !== 'GET' && body) {
-        headers['Content-Type'] = 'application/json';
-      }
-
-      const response = await fetch(url, {
-        method,
-        headers,
-        body: body ? JSON.stringify(body) : undefined,
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Docebo API error: ${response.status} - ${errorText}`);
-      }
-
-      const contentType = response.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
-        const responseText = await response.text();
-        throw new Error(`API returned non-JSON response. Content-Type: ${contentType}. Response: ${responseText.substring(0, 200)}...`);
-      }
-
-      return await response.json();
-    } catch (error) {
-      console.error(`❌ API request failed for ${endpoint}:`, error);
+      console.error('Error fetching access token:', error);
       throw error;
     }
   }
-
-  // Search Methods
-  async searchUsers(searchText: string, limit: number = 100): Promise<any[]> {
-    try {
-      const result = await this.apiRequest('/manage/v1/user', 'GET', null, {
-        search_text: searchText,
-        page_size: Math.min(limit, 200)
-      });
-      return result.data?.items || [];
-    } catch (error) {
-      console.error(`❌ User search failed:`, error);
-      return [];
+  private formatUserDetails(user: any): UserDetails {
+    console.log('🔍 Raw user data received:', JSON.stringify(user, null, 2));
+    // Handle different possible field names from Docebo API
+    const userId = (user.user_id || user.id || '').toString();
+    const email = user.email || user.emailAddress || user.email_address || '';
+    // Build fullname from available fields
+    let fullname = user.fullname || user.full_name || user.displayName || user.display_name || '';
+    if (!fullname) {
+      const firstName = user.first_name || user.firstName || user.fname || '';
+      const lastName = user.last_name || user.lastName || user.lname || '';
+      fullname = `${firstName} ${lastName}`.trim();
     }
-  }
-
-  async searchCourses(searchText: string, limit: number = 100): Promise<any[]> {
-    console.log(`🔍 Searching courses: "${searchText}"`);
-    
-    try {
-      const result = await this.apiRequest('/learn/v1/courses', 'GET', null, {
-        search_text: searchText,
-        page_size: Math.min(limit, 200),
-        sort_attr: 'name',
-        sort_dir: 'asc'
-      });
-
-      const courses = result.data?.items || [];
-      console.log(`📊 Course search returned ${courses.length} results`);
-      return courses;
-    } catch (error) {
-      console.error(`❌ Course search failed:`, error);
-      return [];
+    console.log(`🔍 Extracted: ID="${userId}", Email="${email}", Name="${fullname}"`);
+    if (!userId) {
+      console.error('❌ No user ID found in user data');
+      throw new Error('Missing user ID in response data');
     }
-  }
-
-  async searchLearningPlans(searchText: string, limit: number = 100): Promise<any[]> {
-    console.log(`🔍 Searching learning plans: "${searchText}"`);
-
-    try {
-      // Try with search_text parameter first
-      const result = await this.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
-        search_text: searchText,
-        page_size: Math.min(limit, 200),
-        sort_attr: 'name',
-        sort_dir: 'asc'
-      });
-
-      let learningPlans = result.data?.items || [];
-
-      if (learningPlans.length > 0) {
-        console.log(`✅ Found ${learningPlans.length} learning plans via search`);
-        return learningPlans;
-      }
-
-      // Fallback: get all and filter manually
-      console.log(`🔄 No results from search, trying manual filtering...`);
-      const allResult = await this.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
-        page_size: Math.min(limit * 2, 200),
-        sort_attr: 'name',
-        sort_dir: 'asc'
-      });
-
-      const allLearningPlans = allResult.data?.items || [];
-
-      if (allLearningPlans.length > 0) {
-        const filteredPlans = allLearningPlans.filter((lp: any) => {
-          const name = this.getLearningPlanName(lp).toLowerCase();
-          const description = (lp.description || '').toLowerCase();
-          return name.includes(searchText.toLowerCase()) ||
-                 description.includes(searchText.toLowerCase());
-        });
-
-        console.log(`✅ Manual filtering returned ${filteredPlans.length} learning plans`);
-        return filteredPlans.slice(0, limit);
-      }
-
-      return [];
-    } catch (error) {
-      console.error(`❌ Learning plan search failed:`, error);
-      return [];
+    if (!email) {
+      console.error('❌ No email found in user data');
+      throw new Error('Missing email in response data');
     }
+    // Format the user details object correctly
+    return {
+      id: userId,
+      fullname: fullname,
+      email: email,
+      username: user.username || '',
+      status: user.status || '',
+      level: user.level || '',
+      creationDate: user.creation_date || '',
+      lastAccess: user.last_access_date || '',
+      timezone: user.timezone || '',
+      language: user.language || '',
+      department: user.department || '',
+      firstName: user.first_name || '',
+      lastName: user.last_name || '',
+      uuid: user.uuid || '',
+      isManager: user.is_manager || false,
+      subordinatesCount: user.subordinates_count || 0,
+      avatar: user.avatar || '',
+      expirationDate: user.expiration_date || null,
+      emailValidationStatus: user.email_validation_status || '',
+    };
   }
-
-  // User Methods
-  async getUserDetails(identifier: string): Promise<UserDetails> {
-    console.log(`🔍 Getting user details for: ${identifier}`);
-
-    try {
-      if (identifier.includes('@')) {
-        console.log(`📧 Email search detected: ${identifier}`);
-
-        const exactEmailUsers = await this.apiRequest('/manage/v1/user', 'GET', null, {
-          search_text: identifier,
-          page_size: 50,
-          sort_attr: 'user_id',
-          sort_dir: 'asc'
-        });
-
-        if (exactEmailUsers.data?.items?.length > 0) {
-          const exactMatch = exactEmailUsers.data.items.find((u: any) => {
-            const userEmail = (u.email || '').toLowerCase();
-            const searchEmail = identifier.toLowerCase();
-            return userEmail === searchEmail;
-          });
-
-          if (exactMatch) {
-            return this.formatUserDetails(exactMatch);
-          }
-        }
-      }
+  async getUserDetails(email: string): Promise<UserDetails> {
+    const token = await this.getAccessToken();
+    const response = await fetch(`${this.baseUrl}/manage/v1/user?search_text=${encodeURIComponent(email)}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to fetch user details: ${response.status} - ${errorText}`);
+    }
+    const userData = await response.json();
 
       throw new Error(`User not found: ${identifier}`);
     } catch (error) {
