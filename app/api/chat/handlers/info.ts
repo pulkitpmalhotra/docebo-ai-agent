@@ -836,7 +836,9 @@ static async handleUserEnrollments(entities: any, api: DoceboAPI): Promise<NextR
     const { email, userId, loadMore, offset } = entities;
     const identifier = email || userId;
     const currentOffset = parseInt(offset || '0');
-    const pageSize = 20; // INCREASED from 10 to 20 as you suggested
+    const pageSize = 20; // Items to display per page
+    
+    console.log(`📚 FIXED PAGINATION: Getting user enrollments: ${identifier} (offset: ${currentOffset}, loadMore: ${loadMore})`);
     
     if (!identifier) {
       return NextResponse.json({
@@ -846,8 +848,6 @@ static async handleUserEnrollments(entities: any, api: DoceboAPI): Promise<NextR
       });
     }
 
-    console.log(`📚 OPTIMIZED: Getting user enrollments: ${identifier} (offset: ${currentOffset})`);
-
     // Get user details
     const userDetails = await Promise.race([
       api.getUserDetails(identifier),
@@ -856,39 +856,36 @@ static async handleUserEnrollments(entities: any, api: DoceboAPI): Promise<NextR
       )
     ]) as any;
     
-    // Get enrollments using OPTIMIZED method (pages 1-5 max)
+    // Get enrollments using FIXED PAGINATION method
     const enrollmentData = await Promise.race([
-      this.getOptimizedEnrollmentPages(userDetails.id, api, currentOffset, pageSize),
+      this.getFixedPaginationEnrollments(userDetails.id, api, currentOffset, pageSize),
       new Promise((_, reject) => 
         setTimeout(() => reject(new Error('Enrollment fetch timeout')), 20000)
       )
     ]) as any;
     
-    // Combine and sort enrollments
-    const allEnrollments = [
-      ...enrollmentData.courses.map((e: any) => ({
-        ...api.formatCourseEnrollment(e),
-        type: 'course'
-      })),
-      ...enrollmentData.learningPlans.map((e: any) => ({
-        ...api.formatLearningPlanEnrollment(e),
-        type: 'learning_plan'
-      }))
-    ];
+    // Process and format results
+    const displayEnrollments = enrollmentData.enrollments.map((e: any) => ({
+      ...e,
+      type: e.type || (e.learningPlanName ? 'learning_plan' : 'course')
+    }));
 
-    // Sort by enrollment date (most recent first)
-    allEnrollments.sort((a, b) => {
+    // Sort by enrollment date (most recent first)  
+    displayEnrollments.sort((a, b) => {
       const dateA = new Date(a.enrollmentDate || '1970-01-01');
       const dateB = new Date(b.enrollmentDate || '1970-01-01');
       return dateB.getTime() - dateA.getTime();
     });
 
-    const totalEnrollments = enrollmentData.totalEstimate || allEnrollments.length;
-    const displayEnrollments = allEnrollments.slice(0, pageSize); // Show up to pageSize items
-    const hasMore = enrollmentData.hasMorePages || displayEnrollments.length >= pageSize;
+    const totalItems = enrollmentData.totalEstimate || displayEnrollments.length;
+    const hasMore = enrollmentData.hasMoreData;
     const nextOffset = currentOffset + pageSize;
+    const showingStart = currentOffset + 1;
+    const showingEnd = Math.min(currentOffset + displayEnrollments.length, totalItems);
 
-    let responseMessage = `📚 **${userDetails.fullname}'s Enrollments** (Optimized)
+    console.log(`📊 PAGINATION INFO: Showing ${showingStart}-${showingEnd} of ${totalItems}, hasMore: ${hasMore}, nextOffset: ${nextOffset}`);
+
+    let responseMessage = `📚 **${userDetails.fullname}'s Enrollments** ${loadMore ? '(Load More)' : '(Optimized)'}
 
 👤 **User**: ${userDetails.fullname} (${userDetails.email})
 🆔 **User ID**: ${userDetails.id}
@@ -897,8 +894,8 @@ static async handleUserEnrollments(entities: any, api: DoceboAPI): Promise<NextR
 📈 **Summary**:
 • **Total Courses**: ${enrollmentData.totalCourses || 'Loading...'}
 • **Total Learning Plans**: ${enrollmentData.totalLearningPlans || 'Loading...'}
-• **Showing**: ${Math.min(displayEnrollments.length, pageSize)} items
-• **Method**: Pages 1-5 optimized fetch`;
+• **Showing**: Items ${showingStart}-${showingEnd} of ${totalItems}
+• **Method**: ${loadMore ? 'Load More Pagination' : 'Pages 1-5 optimized fetch'}`;
 
     if (displayEnrollments.length > 0) {
       responseMessage += `\n\n📋 **Enrollments**:\n`;
@@ -910,7 +907,7 @@ static async handleUserEnrollments(entities: any, api: DoceboAPI): Promise<NextR
         else if (enrollment.enrollmentStatus === 'suspended') statusIcon = '🚫';
         else if (enrollment.enrollmentStatus === 'not_started') statusIcon = '⏸️';
         
-        const itemNumber = index + 1;
+        const absoluteIndex = currentOffset + index + 1;
         const name = enrollment.type === 'course' ? enrollment.courseName : enrollment.learningPlanName;
         const typeLabel = enrollment.type === 'course' ? 'COURSE' : 'LEARNING PLAN';
         
@@ -926,7 +923,7 @@ static async handleUserEnrollments(entities: any, api: DoceboAPI): Promise<NextR
           progressInfo = total > 0 ? ` (${completed}/${total} courses)` : '';
         }
         
-        responseMessage += `${itemNumber}. ${statusIcon} **${enrollment.enrollmentStatus.toUpperCase()}** ${typeLabel}\n`;
+        responseMessage += `${absoluteIndex}. ${statusIcon} **${enrollment.enrollmentStatus.toUpperCase()}** ${typeLabel}\n`;
         responseMessage += `   📖 ${name}${progressInfo}\n`;
         if (enrollment.enrollmentDate) {
           responseMessage += `   📅 Enrolled: ${enrollment.enrollmentDate}\n`;
@@ -939,13 +936,17 @@ static async handleUserEnrollments(entities: any, api: DoceboAPI): Promise<NextR
     if (hasMore) {
       responseMessage += `\n🔄 **Load More Data Available**\n`;
       responseMessage += `💡 **To see more**: "Load more enrollments for ${userDetails.email}"`;
+    } else {
+      responseMessage += `\n✅ **All Enrollments Shown**\n`;
+      responseMessage += `📊 **Total**: ${totalItems} enrollments displayed`;
     }
 
     // Add optimization info
     responseMessage += `\n\n🔗 **Performance Info**:
-• **Fetch Method**: Optimized API calls (pages 1-5)
+• **Fetch Method**: ${loadMore ? 'Offset-based pagination' : 'Optimized API calls (pages 1-5)'}
 • **Response Time**: ~10-15 seconds
-• **Pages Processed**: ${enrollmentData.pagesProcessed || 'Multiple'}`;
+• **Items Displayed**: ${displayEnrollments.length}
+• **Current Range**: ${showingStart}-${showingEnd}`;
 
     const loadMoreCommand = hasMore ? `Load more enrollments for ${userDetails.email}` : null;
 
@@ -958,18 +959,20 @@ static async handleUserEnrollments(entities: any, api: DoceboAPI): Promise<NextR
         pagination: {
           currentOffset: currentOffset,
           pageSize: pageSize,
-          totalItems: totalEnrollments,
+          totalItems: totalItems,
           hasMore: hasMore,
-          nextOffset: nextOffset
+          nextOffset: nextOffset,
+          showingStart: showingStart,
+          showingEnd: showingEnd
         },
         summary: {
           totalCourses: enrollmentData.totalCourses,
           totalLearningPlans: enrollmentData.totalLearningPlans,
-          totalEnrollments: totalEnrollments
+          totalEnrollments: totalItems
         },
-        method: 'optimized_pages_1_to_5'
+        method: loadMore ? 'load_more_pagination' : 'optimized_pages_1_to_5'
       },
-      totalCount: totalEnrollments,
+      totalCount: totalItems,
       hasMore: hasMore,
       loadMoreCommand: loadMoreCommand,
       timestamp: new Date().toISOString()
@@ -989,6 +992,110 @@ static async handleUserEnrollments(entities: any, api: DoceboAPI): Promise<NextR
       timestamp: new Date().toISOString()
     });
   }
+}
+
+// FIXED: New method for proper offset-based pagination
+private static async getFixedPaginationEnrollments(userId: string, api: DoceboAPI, offset: number, pageSize: number): Promise<any> {
+  console.log(`📚 FIXED PAGINATION: Getting enrollment data for user: ${userId}, offset: ${offset}, pageSize: ${pageSize}`);
+  
+  // Calculate which API pages we need based on offset
+  const apiPageSize = 50; // Items per API call
+  const startApiPage = Math.floor(offset / apiPageSize) + 1;
+  const endApiPage = Math.floor((offset + pageSize - 1) / apiPageSize) + 1;
+  
+  console.log(`📄 API Pages needed: ${startApiPage} to ${endApiPage} (offset ${offset}, pageSize ${pageSize})`);
+  
+  let allCourses: any[] = [];
+  let allLearningPlans: any[] = [];
+  let hasMoreData = false;
+  let totalCourses = 0;
+  let totalLearningPlans = 0;
+  
+  try {
+    // Get courses from required pages
+    for (let page = startApiPage; page <= Math.min(endApiPage, 5); page++) { // Max 5 pages
+      console.log(`📄 Fetching course page ${page}...`);
+      
+      const courseResult = await api.apiRequest(`/course/v1/courses/enrollments`, 'GET', null, {
+        'user_id[]': userId,
+        page: page,
+        page_size: apiPageSize
+      });
+      
+      if (courseResult?.data?.items?.length > 0) {
+        const userEnrollments = courseResult.data.items.filter((e: any) => 
+          e.user_id?.toString() === userId.toString()
+        );
+        allCourses.push(...userEnrollments);
+        
+        console.log(`📄 Course page ${page}: Found ${userEnrollments.length} enrollments`);
+        
+        if (courseResult.data?.has_more_data === true) {
+          hasMoreData = true;
+        }
+      }
+    }
+    
+    // Get learning plans from required pages  
+    for (let page = startApiPage; page <= Math.min(endApiPage, 5); page++) { // Max 5 pages
+      console.log(`📄 Fetching LP page ${page}...`);
+      
+      const lpResult = await api.apiRequest(`/learningplan/v1/learningplans/enrollments`, 'GET', null, {
+        'user_id[]': userId,
+        page: page,
+        page_size: apiPageSize
+      });
+      
+      if (lpResult?.data?.items?.length > 0) {
+        const userEnrollments = lpResult.data.items.filter((e: any) => 
+          (e.user_id || e.id_user)?.toString() === userId.toString()
+        );
+        allLearningPlans.push(...userEnrollments);
+        
+        console.log(`📄 LP page ${page}: Found ${userEnrollments.length} enrollments`);
+      }
+    }
+    
+    totalCourses = allCourses.length;
+    totalLearningPlans = allLearningPlans.length;
+    
+  } catch (error) {
+    console.error('❌ Fixed pagination error:', error);
+  }
+  
+  // Format enrollments
+  const formattedCourses = allCourses.map(e => ({
+    ...api.formatCourseEnrollment(e),
+    type: 'course'
+  }));
+  
+  const formattedLPs = allLearningPlans.map(e => ({
+    ...api.formatLearningPlanEnrollment(e),
+    type: 'learning_plan'
+  }));
+  
+  // Combine and sort all enrollments by date
+  const allEnrollments = [...formattedCourses, ...formattedLPs];
+  allEnrollments.sort((a, b) => {
+    const dateA = new Date(a.enrollmentDate || '1970-01-01');
+    const dateB = new Date(b.enrollmentDate || '1970-01-01');
+    return dateB.getTime() - dateA.getTime();
+  });
+  
+  // Extract the requested slice
+  const requestedEnrollments = allEnrollments.slice(offset, offset + pageSize);
+  const hasMore = allEnrollments.length > (offset + pageSize) || hasMoreData;
+  
+  console.log(`📊 FIXED PAGINATION RESULT: Total fetched: ${allEnrollments.length}, Requested slice: ${offset}-${offset + pageSize}, Returned: ${requestedEnrollments.length}, HasMore: ${hasMore}`);
+  
+  return {
+    enrollments: requestedEnrollments,
+    totalCourses: totalCourses,
+    totalLearningPlans: totalLearningPlans,
+    totalEstimate: allEnrollments.length,
+    hasMoreData: hasMore,
+    pagesProcessed: endApiPage - startApiPage + 1
+  };
 }
 
 static async handleRecentEnrollments(entities: any, api: DoceboAPI): Promise<NextResponse> {
