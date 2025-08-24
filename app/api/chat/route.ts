@@ -1,4 +1,4 @@
-// app/api/chat/route.ts - Fixed imports and error handling
+// app/api/chat/route.ts - FIXED with proper Load More handling and no syntax errors
 import { NextRequest, NextResponse } from 'next/server';
 import { withSecurity } from '../middleware/security';
 import { IntentAnalyzer } from './intent-analyzer';
@@ -99,106 +99,6 @@ async function chatHandler(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json({
         response: '❌ Please provide a valid message',
         success: false,
-        timeout: true,
-        timestamp: new Date().toISOString()
-      });
-    }
-
-  } catch (error) {
-    console.error('❌ Chat error:', error);
-    
-    return NextResponse.json({
-      response: `❌ **System Error**: ${error instanceof Error ? error.message : 'Unknown error'}
-
-**Possible Causes:**
-• Network timeout or connection issue
-• Server overload
-• Invalid request format
-
-**Please try again** or use a simpler request format.`,
-      success: false,
-      timestamp: new Date().toISOString()
-    }, { status: 500 });
-  }
-}
-
-// Apply security middleware to POST requests with extended timeout
-export const POST = withSecurity(chatHandler, {
-  rateLimit: {
-    maxRequests: 30,
-    windowMs: 60 * 1000
-  },
-  validateInput: true,
-  sanitizeOutput: true
-});
-
-// GET endpoint for API info (with lighter security)
-export const GET = withSecurity(async (request: NextRequest) => {
-  return NextResponse.json({
-    status: 'Enhanced Docebo Chat API with FIXED Load More Support',
-    version: '4.3.0',
-    timestamp: new Date().toISOString(),
-    features: [
-      'FIXED: Load more enrollments command support',
-      'Background processing for heavy enrollment data',
-      'Complete enrollment management (enroll/unenroll)',
-      'Course and Learning Plan enrollment',
-      'Enrollment status checking and verification',
-      'User search and details',
-      'Course and learning plan search',
-      'Natural language processing',
-      'Timeout protection and error handling',
-      'Pagination with load more functionality',
-      'Optimized for serverless deployment'
-    ],
-    load_more_commands: [
-      'Load more enrollments for [email]',
-      'Show more enrollments for [email]',
-      'More enrollments for [email]',
-      'Continue enrollments for [email]',
-      'Get more enrollments [email]'
-    ],
-    timeout_settings: {
-      'background_processing': 'No timeout limits',
-      'user_enrollments': '25 seconds',
-      'load_more_enrollments': '25 seconds',
-      'enrollment_check': '20 seconds',
-      'search_operations': '15 seconds',
-      'info_operations': '10 seconds'
-    },
-    background_processing: {
-      'commands': [
-        'Load all enrollments in background for [email]',
-        'Process enrollments in background for [email]',
-        'Background enrollment processing for [email]'
-      ],
-      'use_cases': [
-        'Users with 50+ enrollments',
-        'Complete data export needs', 
-        'Timeout prevention'
-      ]
-    },
-    pagination_support: {
-      'load_more_button': 'enabled',
-      'load_more_commands': 'FIXED and working',
-      'page_size': 20,
-      'max_items_per_request': 1000
-    },
-    api_endpoints_used: {
-      'users': '/manage/v1/user',
-      'courses': '/course/v1/courses',
-      'learning_plans': '/learningplan/v1/learningplans',
-      'course_enrollments': '/learn/v1/enrollments',
-      'lp_enrollments': '/learningplan/v1/learningplans/enrollments'
-    }
-  });
-}, {
-  rateLimit: {
-    maxRequests: 100,
-    windowMs: 60 * 1000
-  },
-  validateInput: false
-});
         timestamp: new Date().toISOString()
       }, { status: 400 });
     }
@@ -458,10 +358,11 @@ export const POST = withSecurity(chatHandler, {
 // GET endpoint for API info (with lighter security)
 export const GET = withSecurity(async (request: NextRequest) => {
   return NextResponse.json({
-    status: 'Enhanced Docebo Chat API with Background Processing',
-    version: '4.2.0',
+    status: 'Enhanced Docebo Chat API with FIXED Load More Support',
+    version: '4.3.0',
     timestamp: new Date().toISOString(),
     features: [
+      'FIXED: Load more enrollments command support',
       'Background processing for heavy enrollment data',
       'Complete enrollment management (enroll/unenroll)',
       'Course and Learning Plan enrollment',
@@ -470,12 +371,20 @@ export const GET = withSecurity(async (request: NextRequest) => {
       'Course and learning plan search',
       'Natural language processing',
       'Timeout protection and error handling',
-      'Load more pagination support',
+      'Pagination with load more functionality',
       'Optimized for serverless deployment'
+    ],
+    load_more_commands: [
+      'Load more enrollments for [email]',
+      'Show more enrollments for [email]',
+      'More enrollments for [email]',
+      'Continue enrollments for [email]',
+      'Get more enrollments [email]'
     ],
     timeout_settings: {
       'background_processing': 'No timeout limits',
       'user_enrollments': '25 seconds',
+      'load_more_enrollments': '25 seconds',
       'enrollment_check': '20 seconds',
       'search_operations': '15 seconds',
       'info_operations': '10 seconds'
@@ -494,7 +403,8 @@ export const GET = withSecurity(async (request: NextRequest) => {
     },
     pagination_support: {
       'load_more_button': 'enabled',
-      'page_size': 10,
+      'load_more_commands': 'FIXED and working',
+      'page_size': 20,
       'max_items_per_request': 1000
     },
     api_endpoints_used: {
