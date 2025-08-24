@@ -225,7 +225,7 @@ ${users.length > 10 ? `\n... and ${users.length - 10} more users` : ''}
     }
   }
 
-  static async handleCourseSearch(entities: any, api: DoceboAPI): Promise<NextResponse> {
+ static async handleCourseSearch(entities: any, api: DoceboAPI): Promise<NextResponse> {
     try {
       const { searchTerm } = entities;
       
@@ -237,11 +237,19 @@ ${users.length > 10 ? `\n... and ${users.length - 10} more users` : ''}
         });
       }
 
-      console.log(`🔍 Searching courses: "${searchTerm}"`);
+      console.log(`🔍 FIXED: Searching courses: "${searchTerm}"`);
 
-      const courses = await api.searchCourses(searchTerm, 25);
+      // FIXED: Use correct endpoint with search_text parameter
+      const courses = await api.apiRequest('/learn/v1/courses', 'GET', null, {
+        search_text: searchTerm,
+        page_size: Math.min(25, 200),
+        sort_attr: 'name',
+        sort_dir: 'asc'
+      });
       
-      if (courses.length === 0) {
+      const courseItems = courses.data?.items || [];
+      
+      if (courseItems.length === 0) {
         return NextResponse.json({
           response: `❌ **No Courses Found**: "${searchTerm}"\n\nNo courses found matching your search criteria.\n\n💡 **Try**: \n• Different keywords\n• Broader search terms\n• Check spelling`,
           success: false,
@@ -249,72 +257,72 @@ ${users.length > 10 ? `\n... and ${users.length - 10} more users` : ''}
         });
       }
 
-      // Enhanced course list with enrollment data
-      const courseListPromises = courses.slice(0, 20).map(async (course: any, index: number) => {
-        const name = api.getCourseName(course);
+      // FIXED: Enhanced course list with correct field mappings
+      const courseListPromises = courseItems.slice(0, 20).map(async (course: any, index: number) => {
+        const name = course.name || course.title || course.course_name || 'Unknown Course';
         const courseId = course.id || course.course_id || course.idCourse || 'Unknown';
-        const type = course.course_type || course.type || 'Course';
         
-        // FIXED: Proper status mapping
-        let status = 'Unknown';
-        const courseStatus = course.status || course.course_status;
-        if (courseStatus === 'published' || courseStatus === 'active' || courseStatus === '2') {
-          status = 'Published';
-        } else if (courseStatus === 'unpublished' || courseStatus === 'inactive' || courseStatus === '0') {
-          status = 'Draft';
-        } else if (courseStatus === 'suspended' || courseStatus === '1') {
-          status = 'Suspended';
-        } else if (courseStatus) {
-          status = courseStatus;
-        }
-        
-        // FIXED: Get enrollment count from enrolled_count field
-        let enrollments = 'Unknown';
-        if (course.enrolled_count !== undefined) {
-          enrollments = course.enrolled_count;
-        } else if (course.enrollment_count !== undefined) {
-          enrollments = course.enrollment_count;
-        } else if (course.enrollments !== undefined) {
-          enrollments = course.enrollments;
-        } else {
-          // Try to get detailed course info for enrollment count
-          try {
-            const detailedCourse = await api.getCourseDetails(courseId.toString());
-            enrollments = detailedCourse.enrolled_count || detailedCourse.enrollment_count || detailedCourse.enrollments || 'Unknown';
-          } catch (detailError) {
-            console.log(`Could not get enrollment details for course ${courseId}`);
-            enrollments = 'Unknown';
+        // FIXED: Correct course type mapping
+        let type = 'Course';
+        if (course.course_type) {
+          switch(course.course_type) {
+            case 'elearning': type = 'E-Learning'; break;
+            case 'classroom': type = 'Classroom'; break;
+            case 'webinar': type = 'Webinar'; break;
+            case 'learning_object': type = 'Learning Object'; break;
+            default: type = course.course_type; break;
           }
         }
         
+        // FIXED: Proper status mapping based on Docebo API
+        let status = 'Unknown';
         let statusIcon = '📚';
-        if (status === 'Published') statusIcon = '🟢';
-        else if (status === 'Draft') statusIcon = '🟡';
-        else if (status === 'Suspended') statusIcon = '🔴';
+        
+        if (course.status === 2 || course.status === 'active' || course.can_subscribe === 1) {
+          status = 'Published';
+          statusIcon = '🟢';
+        } else if (course.status === 0 || course.status === 'inactive' || course.can_subscribe === 0) {
+          status = 'Unpublished';
+          statusIcon = '🟡';
+        } else if (course.status === 1 || course.status === 'suspended') {
+          status = 'Suspended';
+          statusIcon = '🔴';
+        }
+        
+        // FIXED: Get enrollment count from correct fields
+        let enrollments = 'Unknown';
+        if (course.enrolled_users_count !== undefined) {
+          enrollments = course.enrolled_users_count;
+        } else if (course.enrolled_users !== undefined) {
+          enrollments = course.enrolled_users;
+        } else if (course.subscription_count !== undefined) {
+          enrollments = course.subscription_count;
+        }
         
         return `${index + 1}. ${statusIcon} **${name}**\n   Type: ${type} • ID: ${courseId} • Status: ${status} • Enrollments: ${enrollments}`;
       });
 
-      // Wait for all course details to be fetched
+      // Wait for all course details to be processed
       const courseList = await Promise.all(courseListPromises);
 
       return NextResponse.json({
-        response: `📚 **Course Search Results**: "${searchTerm}" (${courses.length} found)
+        response: `📚 **Course Search Results**: "${searchTerm}" (${courseItems.length} found)
 
 ${courseList.join('\n\n')}
 
-${courses.length > 20 ? `\n... and ${courses.length - 20} more courses` : ''}
+${courseItems.length > 20 ? `\n... and ${courseItems.length - 20} more courses` : ''}
 
 💡 **Next Steps**: 
 • "Course info [course name]" for details
-• "Who is enrolled in [course name]" for enrollments`,
+• "Enroll [user] in course [course name]" to enroll users`,
         success: true,
         data: {
-          courses: courses,
-          totalCount: courses.length,
-          query: searchTerm
+          courses: courseItems,
+          totalCount: courseItems.length,
+          query: searchTerm,
+          endpoint_used: '/learn/v1/courses'
         },
-        totalCount: courses.length,
+        totalCount: courseItems.length,
         timestamp: new Date().toISOString()
       });
 
@@ -322,7 +330,9 @@ ${courses.length > 20 ? `\n... and ${courses.length - 20} more courses` : ''}
       console.error('❌ Course search error:', error);
       
       return NextResponse.json({
-        response: `❌ **Course Search Failed**: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        response: `❌ **Course Search Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
+
+**Using endpoint**: /learn/v1/courses with search_text parameter`,
         success: false,
         timestamp: new Date().toISOString()
       });
@@ -341,56 +351,88 @@ ${courses.length > 20 ? `\n... and ${courses.length - 20} more courses` : ''}
         });
       }
 
-      console.log(`🔍 Searching learning plans: "${searchTerm}"`);
+      console.log(`🔍 FIXED: Searching learning plans: "${searchTerm}"`);
 
-      const learningPlans = await api.searchLearningPlans(searchTerm, 25);
+      // FIXED: Use correct endpoint with proper parameters
+      const learningPlans = await api.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
+        search_text: searchTerm,
+        page_size: Math.min(25, 200),
+        sort_attr: 'name',
+        sort_dir: 'asc'
+      });
       
-      if (learningPlans.length === 0) {
-        return NextResponse.json({
-          response: `❌ **No Learning Plans Found**: "${searchTerm}"\n\nNo learning plans found matching your search criteria.\n\n💡 **Try**: \n• Different keywords\n• Broader search terms\n• Check spelling`,
-          success: false,
-          timestamp: new Date().toISOString()
+      const lpItems = learningPlans.data?.items || [];
+      
+      if (lpItems.length === 0) {
+        // FIXED: Try alternate search strategy
+        console.log(`🔍 Trying alternate learning plan search method...`);
+        
+        const allLearningPlans = await api.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
+          page_size: Math.min(100, 200),
+          sort_attr: 'name',
+          sort_dir: 'asc'
         });
+        
+        const allLpItems = allLearningPlans.data?.items || [];
+        const filteredPlans = allLpItems.filter((lp: any) => {
+          const name = api.getLearningPlanName(lp).toLowerCase();
+          const description = (lp.description || '').toLowerCase();
+          return name.includes(searchTerm.toLowerCase()) || 
+                 description.includes(searchTerm.toLowerCase());
+        });
+        
+        if (filteredPlans.length === 0) {
+          return NextResponse.json({
+            response: `❌ **No Learning Plans Found**: "${searchTerm}"\n\nNo learning plans found matching your search criteria.\n\n💡 **Try**: \n• Different keywords\n• Broader search terms\n• Check spelling`,
+            success: false,
+            timestamp: new Date().toISOString()
+          });
+        }
+        
+        // Use filtered results
+        lpItems.push(...filteredPlans.slice(0, 25));
       }
 
-      const planList = learningPlans.slice(0, 20).map((plan: any, index: number) => {
+      const planList = lpItems.slice(0, 20).map((plan: any, index: number) => {
         const name = api.getLearningPlanName(plan);
         const planId = plan.learning_plan_id || plan.id || 'Unknown';
         
-        // FIXED: Proper status mapping based on is_published field
+        // FIXED: Proper status mapping for learning plans
         let status = 'Unknown';
-        if (plan.is_published === true || plan.is_published === 1 || plan.is_published === '1') {
+        let statusIcon = '📋';
+        
+        if (plan.is_active === true || plan.is_active === 1 || plan.status === 2) {
           status = 'Published';
-        } else if (plan.is_published === false || plan.is_published === 0 || plan.is_published === '0') {
+          statusIcon = '🟢';
+        } else if (plan.is_active === false || plan.is_active === 0 || plan.status === 0) {
           status = 'Draft';
-        } else if (plan.status === 'active' || plan.status === '2' || plan.status === 2) {
-          status = 'Published';
-        } else if (plan.status === 'inactive' || plan.status === '0' || plan.status === 0) {
-          status = 'Draft';
+          statusIcon = '🟡';
+        } else if (plan.status === 1) {
+          status = 'Suspended';
+          statusIcon = '🔴';
         }
         
-        // FIXED: Proper enrollment count from assigned_enrollments_count
-        const enrollments = plan.assigned_enrollments_count !== undefined ? 
-                           plan.assigned_enrollments_count :
-                           plan.enrollment_count || 
-                           plan.enrolled_users || 
-                           plan.total_enrollments || 
-                           plan.user_count || 
-                           'Unknown';
-        
-        let statusIcon = '📋';
-        if (status === 'Published') statusIcon = '🟢';
-        else if (status === 'Draft') statusIcon = '🟡';
+        // FIXED: Get enrollment count from correct fields
+        let enrollments = 'Unknown';
+        if (plan.enrolled_users_count !== undefined) {
+          enrollments = plan.enrolled_users_count;
+        } else if (plan.enrolled_users !== undefined) {
+          enrollments = plan.enrolled_users;
+        } else if (plan.total_users !== undefined) {
+          enrollments = plan.total_users;
+        } else if (plan.user_count !== undefined) {
+          enrollments = plan.user_count;
+        }
         
         return `${index + 1}. ${statusIcon} **${name}**\n   ID: ${planId} • Status: ${status} • Enrollments: ${enrollments}`;
       }).join('\n\n');
 
       return NextResponse.json({
-        response: `📋 **Learning Plan Search Results**: "${searchTerm}" (${learningPlans.length} found)
+        response: `📋 **Learning Plan Search Results**: "${searchTerm}" (${lpItems.length} found)
 
 ${planList}
 
-${learningPlans.length > 20 ? `\n... and ${learningPlans.length - 20} more learning plans` : ''}
+${lpItems.length > 20 ? `\n... and ${lpItems.length - 20} more learning plans` : ''}
 
 💡 **Next Steps**: 
 • "Learning plan info [plan name]" for details
@@ -399,11 +441,12 @@ ${learningPlans.length > 20 ? `\n... and ${learningPlans.length - 20} more learn
 *Using endpoint: /learningplan/v1/learningplans*`,
         success: true,
         data: {
-          learningPlans: learningPlans,
-          totalCount: learningPlans.length,
-          query: searchTerm
+          learningPlans: lpItems,
+          totalCount: lpItems.length,
+          query: searchTerm,
+          endpoint_used: '/learningplan/v1/learningplans'
         },
-        totalCount: learningPlans.length,
+        totalCount: lpItems.length,
         timestamp: new Date().toISOString()
       });
 
@@ -413,10 +456,9 @@ ${learningPlans.length > 20 ? `\n... and ${learningPlans.length - 20} more learn
       return NextResponse.json({
         response: `❌ **Learning Plan Search Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
 
-**Note**: Learning plan search uses endpoint: /learningplan/v1/learningplans`,
+**Using endpoint**: /learningplan/v1/learningplans with search_text parameter`,
         success: false,
         timestamp: new Date().toISOString()
       });
     }
   }
-}
