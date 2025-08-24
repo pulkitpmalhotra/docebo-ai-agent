@@ -229,14 +229,39 @@ export class DoceboAPI {
   }
 
   private formatUserDetails(user: any): UserDetails {
+  console.log('🔍 Raw user data received:', JSON.stringify(user, null, 2));
     const userId = (user.user_id || user.id || '').toString();
-    const email = user.email || '';
-    const fullname = user.fullname || `${user.first_name || ''} ${user.last_name || ''}`.trim() || '';
+  const email = user.email || '';
+  const fullname = user.fullname || `${user.first_name || ''} ${user.last_name || ''}`.trim() || '';
+  console.log(`🔍 Extracted: ID="${userId}", Email="${email}", Name="${fullname}"`);
 
     if (!userId || !email) {
       throw new Error('Missing required user data');
     }
-
+// Create and return the UserDetails object
+  return {
+    id: userId,
+    fullname: fullname,
+    email: email,
+    username: user.username || '',
+    status: user.status || '',
+    level: user.level || '',
+    creationDate: user.creation_date || '',
+    lastAccess: user.last_access_date || '',
+    timezone: user.timezone || '',
+    language: user.language || '',
+    department: user.department || '',
+    isManager: user.is_manager || false,
+    subordinatesCount: user.subordinates_count || 0,
+    avatar: user.avatar || '',
+    expirationDate: user.expiration_date || null,
+    emailValidationStatus: user.email_validation_status || '',
+    directManager: managerInfo,
+      managers: user.managers || [],
+      expired: user.expired || false,
+    // Add other necessary fields here
+  };
+}
     // Handle status - Docebo uses "1" for active, "0" for inactive
     let status = 'Unknown';
     const statusField = user.status || user.valid || user.is_active || user.active;
