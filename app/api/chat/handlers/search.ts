@@ -5,11 +5,11 @@ import { APIResponse } from '../types';
 
 export class SearchHandlers {
   
-  static async handleUserSearch(entities: any, api: DoceboAPI): Promise<NextResponse> {
+    static async handleUserSearch(entities: any, api: DoceboAPI): Promise<NextResponse> {
     try {
       const { email, searchTerm } = entities;
       const query = email || searchTerm;
-      
+
       if (!query) {
         return NextResponse.json({
           response: '❌ **Missing Search Term**: Please provide an email or search term.\n\n**Examples**: \n• "Find user mike@company.com"\n• "Find user john smith"',
@@ -23,33 +23,33 @@ export class SearchHandlers {
       // If searching by email, get detailed user info directly
       if (email && email.includes('@')) {
         console.log(`📧 Email search detected: ${email}`);
-        
+
         try {
           // Use getUserDetails which has improved exact email matching
           const userDetails = await api.getUserDetails(email);
-          
+
           console.log(`👤 Found user via getUserDetails:`, {
             id: userDetails.id,
             email: userDetails.email,
             fullname: userDetails.fullname
           });
-          
+
           // Check if userDetails has valid data before trying to get enhanced details
           if (!userDetails.id || userDetails.id === 'Unknown' || !userDetails.email || userDetails.email === 'Not available') {
             console.log(`❌ Invalid user details returned, user not found: ${email}`);
-            
+
             return NextResponse.json({
               response: `❌ **User Not Found**: "${email}"\n\nNo user found with that exact email address.\n\n💡 **Please check:**\n• Email spelling is correct\n• User exists in the system\n• Email domain is correct`,
               success: false,
               timestamp: new Date().toISOString()
             });
           }
-          
+
           // Get enhanced user details including manager info
           console.log(`🔍 Attempting to get enhanced details for user ID: ${userDetails.id}`);
           try {
             const enhancedUserDetails = await api.getEnhancedUserDetails(userDetails.id);
-            
+
             let responseMessage = `👤 **User Details**: ${enhancedUserDetails.fullname}
 
 🆔 **User ID**: ${enhancedUserDetails.id}
@@ -97,10 +97,10 @@ export class SearchHandlers {
               totalCount: 1,
               timestamp: new Date().toISOString()
             });
-            
+
           } catch (enhancedError) {
             console.error('❌ Error getting enhanced user details:', enhancedError);
-            
+
             // Fall back to basic user details
             if (userDetails.email === 'Not available' || userDetails.fullname === 'Not available') {
               return NextResponse.json({
@@ -109,7 +109,7 @@ export class SearchHandlers {
                 timestamp: new Date().toISOString()
               });
             }
-            
+
             let basicResponse = `👤 **User Details**: ${userDetails.fullname}
 
 🆔 **User ID**: ${userDetails.id}
@@ -142,10 +142,10 @@ export class SearchHandlers {
               timestamp: new Date().toISOString()
             });
           }
-          
+
         } catch (userNotFoundError) {
           console.error(`❌ User not found: ${email}`, userNotFoundError);
-          
+
           return NextResponse.json({
             response: `❌ **User Not Found**: "${email}"\n\nNo user found with that exact email address.\n\n💡 **Please check:**\n• Email spelling is correct\n• User exists in the system\n• Email domain is correct`,
             success: false,
@@ -158,7 +158,7 @@ export class SearchHandlers {
       try {
         const users = await api.searchUsers(query, 25);
         console.log(`📊 Search returned ${users.length} users`);
-        
+
         if (users.length === 0) {
           return NextResponse.json({
             response: `❌ **No Users Found**: "${query}"\n\nNo users found matching your search criteria.\n\n💡 **Possible reasons:**\n• User doesn't exist in the system\n• Search term is too specific\n• User might be in a different domain`,
@@ -173,7 +173,7 @@ export class SearchHandlers {
           const email = user.email || 'No email';
           const status = user.status === '1' ? '🟢 Active' : user.status === '0' ? '🔴 Inactive' : '⚪ Unknown';
           const level = user.level === 'godadmin' ? '👑 Admin' : user.level || 'User';
-          
+
           return `${index + 1}. **${name}** (${email})\n   🆔 ID: ${user.user_id || user.id} • ${status} • ${level}`;
         }).join('\n\n');
 
@@ -198,7 +198,7 @@ ${users.length > 10 ? `\n... and ${users.length - 10} more users` : ''}
 
       } catch (searchError) {
         console.error('❌ User search API error:', searchError);
-        
+
         return NextResponse.json({
           response: `❌ **Search Failed**: Unable to search for users.
 
@@ -215,7 +215,7 @@ ${users.length > 10 ? `\n... and ${users.length - 10} more users` : ''}
 
     } catch (error) {
       console.error('❌ User search handler error:', error);
-      
+
       return NextResponse.json({
         response: `❌ **User Search Failed**: ${error instanceof Error ? error.message : 'Unknown error'}`,
         success: false,
@@ -227,7 +227,7 @@ ${users.length > 10 ? `\n... and ${users.length - 10} more users` : ''}
   static async handleCourseSearch(entities: any, api: DoceboAPI): Promise<NextResponse> {
     try {
       const { searchTerm } = entities;
-      
+
       if (!searchTerm) {
         return NextResponse.json({
           response: '❌ **Missing Search Term**: Please provide a course name or keyword.\n\n**Examples**: \n• "Find Python courses"\n• "Search Excel training"',
@@ -245,9 +245,9 @@ ${users.length > 10 ? `\n... and ${users.length - 10} more users` : ''}
         sort_attr: 'name',
         sort_dir: 'asc'
       });
-      
+
       const courseItems = courses.data?.items || [];
-      
+
       if (courseItems.length === 0) {
         return NextResponse.json({
           response: `❌ **No Courses Found**: "${searchTerm}"\n\nNo courses found matching your search criteria.\n\n💡 **Try**: \n• Different keywords\n• Broader search terms\n• Check spelling`,
@@ -260,7 +260,7 @@ ${users.length > 10 ? `\n... and ${users.length - 10} more users` : ''}
       const courseListPromises = courseItems.slice(0, 20).map(async (course: any, index: number) => {
         const name = course.name || course.title || course.course_name || 'Unknown Course';
         const courseId = course.id || course.course_id || course.idCourse || 'Unknown';
-        
+
         // FIXED: Correct course type mapping
         let type = 'Course';
         if (course.course_type) {
@@ -272,11 +272,11 @@ ${users.length > 10 ? `\n... and ${users.length - 10} more users` : ''}
             default: type = course.course_type; break;
           }
         }
-        
+
         // FIXED: Proper status mapping based on Docebo API
         let status = 'Unknown';
         let statusIcon = '📚';
-        
+
         if (course.status === 2 || course.status === 'active' || course.can_subscribe === 1) {
           status = 'Published';
           statusIcon = '🟢';
@@ -287,7 +287,7 @@ ${users.length > 10 ? `\n... and ${users.length - 10} more users` : ''}
           status = 'Suspended';
           statusIcon = '🔴';
         }
-        
+
         // FIXED: Get enrollment count from correct fields
         let enrollments = 'Unknown';
         if (course.enrolled_users_count !== undefined) {
@@ -297,7 +297,7 @@ ${users.length > 10 ? `\n... and ${users.length - 10} more users` : ''}
         } else if (course.subscription_count !== undefined) {
           enrollments = course.subscription_count;
         }
-        
+
         return `${index + 1}. ${statusIcon} **${name}**\n   Type: ${type} • ID: ${courseId} • Status: ${status} • Enrollments: ${enrollments}`;
       });
 
@@ -327,7 +327,7 @@ ${courseItems.length > 20 ? `\n... and ${courseItems.length - 20} more courses` 
 
     } catch (error) {
       console.error('❌ Course search error:', error);
-      
+
       return NextResponse.json({
         response: `❌ **Course Search Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
 
@@ -341,7 +341,7 @@ ${courseItems.length > 20 ? `\n... and ${courseItems.length - 20} more courses` 
   static async handleLearningPlanSearch(entities: any, api: DoceboAPI): Promise<NextResponse> {
     try {
       const { searchTerm } = entities;
-      
+
       if (!searchTerm) {
         return NextResponse.json({
           response: '❌ **Missing Search Term**: Please provide a learning plan name or keyword.\n\n**Examples**: \n• "Find Python learning plans"\n• "Search leadership programs"',
@@ -359,19 +359,19 @@ ${courseItems.length > 20 ? `\n... and ${courseItems.length - 20} more courses` 
         sort_attr: 'name',
         sort_dir: 'asc'
       });
-      
+
       const lpItems = learningPlans.data?.items || [];
-      
+
       if (lpItems.length === 0) {
         // FIXED: Try alternate search strategy
         console.log(`🔍 Trying alternate learning plan search method...`);
-        
+
         const allLearningPlans = await api.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
           page_size: Math.min(100, 200),
           sort_attr: 'name',
           sort_dir: 'asc'
         });
-        
+
         const allLpItems = allLearningPlans.data?.items || [];
         const filteredPlans = allLpItems.filter((lp: any) => {
           const name = api.getLearningPlanName(lp).toLowerCase();
@@ -379,7 +379,7 @@ ${courseItems.length > 20 ? `\n... and ${courseItems.length - 20} more courses` 
           return name.includes(searchTerm.toLowerCase()) || 
                  description.includes(searchTerm.toLowerCase());
         });
-        
+
         if (filteredPlans.length === 0) {
           return NextResponse.json({
             response: `❌ **No Learning Plans Found**: "${searchTerm}"\n\nNo learning plans found matching your search criteria.\n\n💡 **Try**: \n• Different keywords\n• Broader search terms\n• Check spelling`,
@@ -387,7 +387,7 @@ ${courseItems.length > 20 ? `\n... and ${courseItems.length - 20} more courses` 
             timestamp: new Date().toISOString()
           });
         }
-        
+
         // Use filtered results
         lpItems.push(...filteredPlans.slice(0, 25));
       }
@@ -395,11 +395,11 @@ ${courseItems.length > 20 ? `\n... and ${courseItems.length - 20} more courses` 
       const planList = lpItems.slice(0, 20).map((plan: any, index: number) => {
         const name = api.getLearningPlanName(plan);
         const planId = plan.learning_plan_id || plan.id || 'Unknown';
-        
+
         // FIXED: Proper status mapping for learning plans
         let status = 'Unknown';
         let statusIcon = '📋';
-        
+
         if (plan.is_active === true || plan.is_active === 1 || plan.status === 2) {
           status = 'Published';
           statusIcon = '🟢';
@@ -410,7 +410,7 @@ ${courseItems.length > 20 ? `\n... and ${courseItems.length - 20} more courses` 
           status = 'Suspended';
           statusIcon = '🔴';
         }
-        
+
         // FIXED: Get enrollment count from correct fields
         let enrollments = 'Unknown';
         if (plan.enrolled_users_count !== undefined) {
@@ -422,7 +422,7 @@ ${courseItems.length > 20 ? `\n... and ${courseItems.length - 20} more courses` 
         } else if (plan.user_count !== undefined) {
           enrollments = plan.user_count;
         }
-        
+
         return `${index + 1}. ${statusIcon} **${name}**\n   ID: ${planId} • Status: ${status} • Enrollments: ${enrollments}`;
       }).join('\n\n');
 
@@ -451,7 +451,7 @@ ${lpItems.length > 20 ? `\n... and ${lpItems.length - 20} more learning plans` :
 
     } catch (error) {
       console.error('❌ Learning plan search error:', error);
-      
+
       return NextResponse.json({
         response: `❌ **Learning Plan Search Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
 
