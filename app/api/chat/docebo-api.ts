@@ -514,35 +514,133 @@ export class DoceboAPI {
 
   // Keep all other existing methods unchanged...
   async getEnhancedUserDetails(userId: string): Promise<any> {
-    // Keep existing implementation
+    console.log(`📋 Getting enhanced user details for: ${userId}`);
+    
+    try {
+      const result = await this.apiRequest(`/manage/v1/user/${userId}`, 'GET');
+      return result.data || result;
+    } catch (error) {
+      console.error(`❌ Error getting enhanced user details:`, error);
+      throw error;
+    }
   }
 
   async getUserAllEnrollments(userId: string): Promise<EnrollmentData> {
-    // Keep existing implementation
+    console.log(`📚 Getting all enrollments for user: ${userId}`);
+    
+    try {
+      // Get course enrollments
+      const courseEnrollments = await this.apiRequest('/course/v1/courses/enrollments', 'GET', null, {
+        'user_id[]': userId,
+        page_size: 200
+      });
+      
+      // Get learning plan enrollments
+      const lpEnrollments = await this.apiRequest('/learningplan/v1/learningplans/enrollments', 'GET', null, {
+        'user_id[]': userId,
+        page_size: 200
+      });
+      
+      const courses = courseEnrollments.data?.items || [];
+      const learningPlans = lpEnrollments.data?.items || [];
+      
+      return {
+        courses: courses.map((enrollment: any) => this.formatCourseEnrollment(enrollment)),
+        learningPlans: learningPlans.map((enrollment: any) => this.formatLearningPlanEnrollment(enrollment)),
+        totalCourses: courses.length,
+        totalLearningPlans: learningPlans.length
+      };
+    } catch (error) {
+      console.error(`❌ Error getting all enrollments:`, error);
+      return {
+        courses: [],
+        learningPlans: [],
+        totalCourses: 0,
+        totalLearningPlans: 0
+      };
+    }
   }
 
   formatCourseEnrollment(enrollment: any): FormattedEnrollment {
-    // Keep existing implementation
+    return {
+      id: enrollment.course_id || enrollment.id,
+      name: enrollment.course_name || enrollment.name || 'Unknown Course',
+      type: 'course',
+      status: enrollment.status || 'enrolled',
+      enrollmentDate: enrollment.enrollment_date || enrollment.date_inscr,
+      completionStatus: enrollment.completion_status || 'not_completed',
+      progress: enrollment.progress || 0
+    };
   }
 
   formatLearningPlanEnrollment(enrollment: any): FormattedEnrollment {
-    // Keep existing implementation  
+    return {
+      id: enrollment.learning_plan_id || enrollment.id,
+      name: enrollment.learning_plan_name || enrollment.name || 'Unknown Learning Plan',
+      type: 'learning_plan',
+      status: enrollment.status || 'enrolled',
+      enrollmentDate: enrollment.enrollment_date || enrollment.date_inscr,
+      completionStatus: enrollment.completion_status || 'not_completed',
+      progress: enrollment.progress || 0
+    };
   }
 
   async enrollUserInCourse(userId: string, courseId: string, options: any = {}): Promise<any> {
-    // Keep existing implementation
+    console.log(`📚 Enrolling user ${userId} in course ${courseId}`);
+    
+    try {
+      const result = await this.apiRequest('/course/v1/courses/enrollments', 'POST', {
+        user_ids: [userId],
+        course_id: courseId,
+        ...options
+      });
+      
+      return result;
+    } catch (error) {
+      console.error(`❌ Error enrolling user in course:`, error);
+      throw error;
+    }
   }
 
   async enrollUserInLearningPlan(userId: string, learningPlanId: string, options: any = {}): Promise<any> {
-    // Keep existing implementation
+    console.log(`📋 Enrolling user ${userId} in learning plan ${learningPlanId}`);
+    
+    try {
+      const result = await this.apiRequest('/learningplan/v1/learningplans/enrollments', 'POST', {
+        user_ids: [userId],
+        learning_plan_id: learningPlanId,
+        ...options
+      });
+      
+      return result;
+    } catch (error) {
+      console.error(`❌ Error enrolling user in learning plan:`, error);
+      throw error;
+    }
   }
 
   async unenrollUserFromCourse(userId: string, courseId: string): Promise<any> {
-    // Keep existing implementation
+    console.log(`📚 Unenrolling user ${userId} from course ${courseId}`);
+    
+    try {
+      const result = await this.apiRequest(`/course/v1/courses/${courseId}/enrollments/${userId}`, 'DELETE');
+      return result;
+    } catch (error) {
+      console.error(`❌ Error unenrolling user from course:`, error);
+      throw error;
+    }
   }
 
   async unenrollUserFromLearningPlan(userId: string, learningPlanId: string): Promise<any> {
-    // Keep existing implementation
+    console.log(`📋 Unenrolling user ${userId} from learning plan ${learningPlanId}`);
+    
+    try {
+      const result = await this.apiRequest(`/learningplan/v1/learningplans/${learningPlanId}/enrollments/${userId}`, 'DELETE');
+      return result;
+    } catch (error) {
+      console.error(`❌ Error unenrolling user from learning plan:`, error);
+      throw error;
+    }
   }
 
   async findCourseByIdentifier(identifier: string): Promise<any> {
