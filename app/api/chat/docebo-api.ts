@@ -54,7 +54,7 @@ export class DoceboAPI {
       this.accessToken = tokenData.access_token;
       this.tokenExpiry = new Date(Date.now() + (tokenData.expires_in || 3600) * 1000);
 
-      return this.accessToken;
+      return this.accessToken!;
     } catch (error) {
       console.error('❌ Token acquisition failed:', error);
       throw new Error(`Failed to get access token: ${error instanceof Error ? error.message : 'Unknown error'}`);
