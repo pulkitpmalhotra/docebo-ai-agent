@@ -1614,21 +1614,174 @@ private static async getOptimizedRecentEnrollments(userId: string, api: DoceboAP
         });
       }
 
+      console.log(`📚 Getting detailed course info for: ${identifier}`);
+      
       const courseDetails = await api.getCourseDetails(identifier);
       const courseDisplayName = api.getCourseName(courseDetails);
       
+      // ENHANCED: Rich course information formatting
       let responseMessage = `📚 **Course Information**: ${courseDisplayName}
 
 🆔 **Course ID**: ${courseDetails.id || courseDetails.course_id || 'Not available'}
-📂 **Type**: ${courseDetails.type || courseDetails.course_type || 'Not specified'}
-📊 **Status**: ${courseDetails.status || courseDetails.course_status || 'Not specified'}`;
+📝 **Name**: ${courseDisplayName}`;
 
+      // Course Type with icon
+      if (courseDetails.type || courseDetails.course_type) {
+        const courseType = courseDetails.type || courseDetails.course_type;
+        let typeIcon = '📂';
+        if (courseType === 'elearning') typeIcon = '💻';
+        else if (courseType === 'classroom') typeIcon = '🏫';
+        else if (courseType === 'webinar') typeIcon = '📹';
+        else if (courseType === 'learning_plan') typeIcon = '📋';
+        
+        responseMessage += `\n${typeIcon} **Type**: ${courseType}`;
+      }
+
+      // Status with icon
+      if (courseDetails.status || courseDetails.course_status) {
+        const status = courseDetails.status || courseDetails.course_status;
+        let statusIcon = '📊';
+        if (status === 'published' || status === 'active') statusIcon = '🟢';
+        else if (status === 'unpublished' || status === 'inactive') statusIcon = '🟡';
+        else if (status === 'suspended') statusIcon = '🔴';
+        
+        responseMessage += `\n${statusIcon} **Status**: ${status}`;
+      }
+
+      // Course Code
+      if (courseDetails.code || courseDetails.course_code) {
+        responseMessage += `\n🏷️ **Code**: ${courseDetails.code || courseDetails.course_code}`;
+      }
+
+      // Language
+      if (courseDetails.language || courseDetails.lang_code) {
+        responseMessage += `\n🌍 **Language**: ${courseDetails.language || courseDetails.lang_code}`;
+      }
+
+      // Description (cleaned and truncated)
       if (courseDetails.description) {
         const cleanDescription = courseDetails.description
           .replace(/<[^>]*>/g, ' ')
           .replace(/\s+/g, ' ')
           .trim();
-        responseMessage += `\n📄 **Description**: ${cleanDescription.length > 200 ? cleanDescription.substring(0, 200) + '...' : cleanDescription}`;
+        const truncatedDescription = cleanDescription.length > 150 
+          ? cleanDescription.substring(0, 150) + '...' 
+          : cleanDescription;
+        responseMessage += `\n📄 **Description**: ${truncatedDescription}`;
+      }
+
+      // Creation and update dates
+      if (courseDetails.creation_date || courseDetails.created_at || courseDetails.date_created) {
+        const creationDate = courseDetails.creation_date || courseDetails.created_at || courseDetails.date_created;
+        responseMessage += `\n📅 **Created**: ${creationDate}`;
+      }
+
+      if (courseDetails.last_update || courseDetails.updated_at || courseDetails.date_modified) {
+        const updateDate = courseDetails.last_update || courseDetails.updated_at || courseDetails.date_modified;
+        responseMessage += `\n🔄 **Last Updated**: ${updateDate}`;
+      }
+
+      // Duration
+      if (courseDetails.duration || courseDetails.estimated_duration || courseDetails.course_duration) {
+        const duration = courseDetails.duration || courseDetails.estimated_duration || courseDetails.course_duration;
+        responseMessage += `\n⏱️ **Average Duration**: ${duration > 0 ? `${duration} minutes` : 'Not set (0 minutes)'}`;
+      }
+
+      // Created by / Updated by
+      if (courseDetails.created_by || courseDetails.author_name) {
+        responseMessage += `\n👤 **Created By**: ${courseDetails.created_by || courseDetails.author_name}`;
+      }
+
+      if (courseDetails.updated_by || courseDetails.last_updated_by) {
+        responseMessage += `\n✏️ **Updated By**: ${courseDetails.updated_by || courseDetails.last_updated_by}`;
+      }
+
+      // Skills/Competencies
+      if (courseDetails.skills || courseDetails.competencies || courseDetails.tags) {
+        const skills = courseDetails.skills || courseDetails.competencies || courseDetails.tags;
+        if (Array.isArray(skills)) {
+          responseMessage += `\n🎯 **Skills**: ${skills.join(', ')}`;
+        } else if (typeof skills === 'string' && skills.length > 0) {
+          responseMessage += `\n🎯 **Skills**: ${skills}`;
+        }
+      }
+
+      // Category/Path
+      if (courseDetails.category_name || courseDetails.category || courseDetails.course_path) {
+        const category = courseDetails.category_name || courseDetails.category || courseDetails.course_path;
+        responseMessage += `\n📁 **Category**: ${category}`;
+      }
+
+      // Credits
+      if (courseDetails.credits !== undefined || courseDetails.course_credits !== undefined) {
+        const credits = courseDetails.credits || courseDetails.course_credits || 0;
+        responseMessage += `\n🎓 **Credits**: ${credits}`;
+      }
+
+      // Course UID
+      if (courseDetails.course_uid || courseDetails.uid) {
+        responseMessage += `\n🔗 **Course UID**: ${courseDetails.course_uid || courseDetails.uid}`;
+      }
+
+      // Enrollment information
+      if (courseDetails.enrolled_count !== undefined || courseDetails.enrollment_count !== undefined) {
+        const enrolled = courseDetails.enrolled_count || courseDetails.enrollment_count;
+        responseMessage += `\n👥 **Current Enrollments**: ${enrolled} users`;
+      }
+
+      // Self enrollment settings
+      if (courseDetails.can_enroll_with_code || courseDetails.enrollment_type || courseDetails.self_enrollment) {
+        const enrollmentType = courseDetails.enrollment_type || 
+                             (courseDetails.can_enroll_with_code ? 'self_with_code' : 
+                              courseDetails.self_enrollment ? 'enabled' : 'disabled');
+        
+        let enrollmentIcon = '📝';
+        let enrollmentText = enrollmentType;
+        
+        if (enrollmentType === 'self_with_code') {
+          enrollmentIcon = '🔐';
+          enrollmentText = 'enabled (with code)';
+        } else if (enrollmentType === 'enabled') {
+          enrollmentIcon = '✅';
+          enrollmentText = 'enabled';
+        } else if (enrollmentType === 'disabled' || enrollmentType === 'only_admin') {
+          enrollmentIcon = '🚫';
+          enrollmentText = 'disabled (only_admin)';
+        }
+        
+        responseMessage += `\n${enrollmentIcon} **Self Enrollment**: ${enrollmentText}`;
+      }
+
+      // Course rating
+      if (courseDetails.rating_enabled !== undefined) {
+        const ratingText = courseDetails.rating_enabled ? 'Enabled' : 'Disabled';
+        const ratingIcon = courseDetails.rating_enabled ? '⭐' : '📊';
+        responseMessage += `\n${ratingIcon} **Rating**: ${ratingText}`;
+        
+        if (courseDetails.rating_enabled && (courseDetails.average_rating || courseDetails.rating)) {
+          const rating = courseDetails.average_rating || courseDetails.rating;
+          responseMessage += ` (Average: ${rating}/5)`;
+        }
+      }
+
+      // Additional course links (if available)
+      const courseId = courseDetails.id || courseDetails.course_id;
+      const domain = process.env.DOCEBO_DOMAIN;
+      
+      if (courseId && domain) {
+        responseMessage += `\n\n🔗 **Quick Links**:`;
+        responseMessage += `\n• [Direct Enrollment](https://${domain}/learn/course/${courseId})`;
+        responseMessage += `\n• [Course Management](https://${domain}/course/edit/${courseId})`;
+      }
+
+      // Completion information (if available)
+      if (courseDetails.completion_tracking || courseDetails.tracking_type) {
+        responseMessage += `\n\n📊 **Completion Tracking**:`;
+        responseMessage += `\n• **Method**: ${courseDetails.completion_tracking || courseDetails.tracking_type}`;
+        
+        if (courseDetails.completion_time_required) {
+          responseMessage += `\n• **Required Time**: ${courseDetails.completion_time_required} minutes`;
+        }
       }
 
       return NextResponse.json({
@@ -1636,7 +1789,11 @@ private static async getOptimizedRecentEnrollments(userId: string, api: DoceboAP
         success: true,
         data: {
           course: courseDetails,
-          courseName: courseDisplayName
+          courseName: courseDisplayName,
+          courseId: courseId,
+          courseType: courseDetails.type || courseDetails.course_type,
+          status: courseDetails.status || courseDetails.course_status,
+          detailsAvailable: true
         },
         timestamp: new Date().toISOString()
       });
@@ -1645,7 +1802,15 @@ private static async getOptimizedRecentEnrollments(userId: string, api: DoceboAP
       console.error('❌ Course info error:', error);
       
       return NextResponse.json({
-        response: `❌ **Course Information Failed**: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        response: `❌ **Course Information Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
+
+**Common Issues**:
+• Course name might not exist
+• Course might be in draft status
+• Access permissions might be limited
+• Try using the exact course name from Docebo
+
+**Try**: "Find Python courses" to see available courses first`,
         success: false,
         timestamp: new Date().toISOString()
       });
@@ -1658,33 +1823,189 @@ private static async getOptimizedRecentEnrollments(userId: string, api: DoceboAP
       
       if (!learningPlanName) {
         return NextResponse.json({
-          response: '❌ **Missing Information**: Please provide a learning plan name.\n\n**Example**: "Learning plan info Data Science Program"',
+          response: '❌ **Missing Information**: Please provide a learning plan name or ID.\n\n**Example**: "Learning plan info Data Science Program"',
           success: false,
           timestamp: new Date().toISOString()
         });
       }
 
+      console.log(`📋 Getting detailed learning plan info for: ${learningPlanName}`);
+
       const learningPlanDetails = await api.getLearningPlanDetails(learningPlanName);
       const displayName = api.getLearningPlanName(learningPlanDetails);
       
+      // ENHANCED: Rich learning plan information formatting
       let responseMessage = `📋 **Learning Plan Information**: ${displayName}
 
-🆔 **Learning Plan ID**: ${learningPlanDetails.learning_plan_id || learningPlanDetails.id || 'Not available'}`;
+🆔 **Learning Plan ID**: ${learningPlanDetails.learning_plan_id || learningPlanDetails.id || 'Not available'}
+📝 **Name**: ${displayName}`;
 
+      // Status with enhanced mapping
       let status = 'Not specified';
-      if (learningPlanDetails.is_published === true || learningPlanDetails.is_published === 1) {
+      let statusIcon = '📊';
+      
+      if (learningPlanDetails.is_published === true || learningPlanDetails.is_published === 1 || learningPlanDetails.is_published === '1') {
         status = 'Published';
-      } else if (learningPlanDetails.is_published === false || learningPlanDetails.is_published === 0) {
+        statusIcon = '🟢';
+      } else if (learningPlanDetails.is_published === false || learningPlanDetails.is_published === 0 || learningPlanDetails.is_published === '0') {
         status = 'Draft';
+        statusIcon = '🟡';
+      } else if (learningPlanDetails.status === 'active' || learningPlanDetails.status === '2' || learningPlanDetails.status === 2) {
+        status = 'Published';
+        statusIcon = '🟢';
+      } else if (learningPlanDetails.status === 'inactive' || learningPlanDetails.status === '0' || learningPlanDetails.status === 0) {
+        status = 'Draft';
+        statusIcon = '🟡';
+      } else if (learningPlanDetails.status) {
+        status = `Status: ${learningPlanDetails.status}`;
+        statusIcon = '⚪';
       }
-      responseMessage += `\n📊 **Status**: ${status}`;
+      
+      responseMessage += `\n${statusIcon} **Status**: ${status}`;
 
+      // Learning plan type/category
+      if (learningPlanDetails.type || learningPlanDetails.learning_plan_type) {
+        responseMessage += `\n📂 **Type**: ${learningPlanDetails.type || learningPlanDetails.learning_plan_type}`;
+      }
+
+      // Code/UUID
+      if (learningPlanDetails.code) {
+        responseMessage += `\n🏷️ **Code**: ${learningPlanDetails.code}`;
+      }
+      
+      if (learningPlanDetails.uuid) {
+        responseMessage += `\n🔗 **UUID**: ${learningPlanDetails.uuid}`;
+      }
+
+      // Description (cleaned and formatted)
       if (learningPlanDetails.description) {
         const cleanDescription = learningPlanDetails.description
           .replace(/<[^>]*>/g, ' ')
           .replace(/\s+/g, ' ')
           .trim();
-        responseMessage += `\n📄 **Description**: ${cleanDescription.length > 200 ? cleanDescription.substring(0, 200) + '...' : cleanDescription}`;
+        const truncatedDescription = cleanDescription.length > 200 
+          ? cleanDescription.substring(0, 200) + '...' 
+          : cleanDescription;
+        responseMessage += `\n📄 **Description**: ${truncatedDescription}`;
+      }
+
+      // Creation and update information
+      if (learningPlanDetails.creation_date || learningPlanDetails.created_at) {
+        const creationDate = learningPlanDetails.creation_date || learningPlanDetails.created_at;
+        responseMessage += `\n📅 **Created**: ${creationDate}`;
+      }
+
+      if (learningPlanDetails.last_update || learningPlanDetails.updated_at) {
+        const updateDate = learningPlanDetails.last_update || learningPlanDetails.updated_at;
+        responseMessage += `\n🔄 **Last Updated**: ${updateDate}`;
+      }
+
+      // Duration/Time estimates
+      if (learningPlanDetails.duration || learningPlanDetails.estimated_duration) {
+        const duration = learningPlanDetails.duration || learningPlanDetails.estimated_duration;
+        responseMessage += `\n⏱️ **Estimated Duration**: ${duration > 0 ? `${duration} minutes` : 'Not set'}`;
+      }
+
+      // Creator information
+      if (learningPlanDetails.created_by || learningPlanDetails.author_name) {
+        responseMessage += `\n👤 **Created By**: ${learningPlanDetails.created_by || learningPlanDetails.author_name}`;
+      }
+
+      // Enrollment information
+      const enrollmentCount = learningPlanDetails.assigned_enrollments_count || 
+                             learningPlanDetails.enrollment_count || 
+                             learningPlanDetails.enrolled_users || 
+                             learningPlanDetails.total_enrollments || 
+                             learningPlanDetails.user_count;
+                             
+      if (enrollmentCount !== undefined) {
+        responseMessage += `\n👥 **Current Enrollments**: ${enrollmentCount} users`;
+      }
+
+      // Course information within the learning plan
+      if (learningPlanDetails.courses_count || learningPlanDetails.total_courses) {
+        const coursesCount = learningPlanDetails.courses_count || learningPlanDetails.total_courses;
+        responseMessage += `\n📚 **Total Courses**: ${coursesCount} courses`;
+      }
+
+      // Prerequisites
+      if (learningPlanDetails.prerequisites || learningPlanDetails.requirements) {
+        const prereqs = learningPlanDetails.prerequisites || learningPlanDetails.requirements;
+        if (Array.isArray(prereqs) && prereqs.length > 0) {
+          responseMessage += `\n📋 **Prerequisites**: ${prereqs.join(', ')}`;
+        } else if (typeof prereqs === 'string' && prereqs.length > 0) {
+          responseMessage += `\n📋 **Prerequisites**: ${prereqs}`;
+        }
+      }
+
+      // Skills/Competencies
+      if (learningPlanDetails.skills || learningPlanDetails.competencies) {
+        const skills = learningPlanDetails.skills || learningPlanDetails.competencies;
+        if (Array.isArray(skills) && skills.length > 0) {
+          responseMessage += `\n🎯 **Skills Covered**: ${skills.join(', ')}`;
+        } else if (typeof skills === 'string' && skills.length > 0) {
+          responseMessage += `\n🎯 **Skills Covered**: ${skills}`;
+        }
+      }
+
+      // Category/Path
+      if (learningPlanDetails.category_name || learningPlanDetails.category) {
+        responseMessage += `\n📁 **Category**: ${learningPlanDetails.category_name || learningPlanDetails.category}`;
+      }
+
+      // Certification information
+      if (learningPlanDetails.has_certificate || learningPlanDetails.certificate_enabled) {
+        const certStatus = learningPlanDetails.has_certificate || learningPlanDetails.certificate_enabled;
+        responseMessage += `\n🏆 **Certificate**: ${certStatus ? 'Available upon completion' : 'Not available'}`;
+      }
+
+      // Credits
+      if (learningPlanDetails.credits || learningPlanDetails.credit_hours) {
+        const credits = learningPlanDetails.credits || learningPlanDetails.credit_hours;
+        responseMessage += `\n🎓 **Credits**: ${credits}`;
+      }
+
+      // Difficulty level
+      if (learningPlanDetails.difficulty_level || learningPlanDetails.level) {
+        responseMessage += `\n📊 **Difficulty Level**: ${learningPlanDetails.difficulty_level || learningPlanDetails.level}`;
+      }
+
+      // Language
+      if (learningPlanDetails.language || learningPlanDetails.lang_code) {
+        responseMessage += `\n🌍 **Language**: ${learningPlanDetails.language || learningPlanDetails.lang_code}`;
+      }
+
+      // Validity/Expiration
+      if (learningPlanDetails.validity_days || learningPlanDetails.expiration_days) {
+        const validityDays = learningPlanDetails.validity_days || learningPlanDetails.expiration_days;
+        responseMessage += `\n📅 **Validity Period**: ${validityDays} days`;
+      }
+
+      // Additional management links (if available)
+      const lpId = learningPlanDetails.learning_plan_id || learningPlanDetails.id;
+      const domain = process.env.DOCEBO_DOMAIN;
+      
+      if (lpId && domain) {
+        responseMessage += `\n\n🔗 **Quick Links**:`;
+        responseMessage += `\n• [Learning Plan Details](https://${domain}/learningplan/view/${lpId})`;
+        responseMessage += `\n• [Manage Enrollments](https://${domain}/learningplan/enrollments/${lpId})`;
+      }
+
+      // Additional statistical information
+      if (enrollmentCount > 0) {
+        responseMessage += `\n\n📈 **Engagement Stats**:`;
+        
+        if (learningPlanDetails.completion_rate) {
+          responseMessage += `\n• **Completion Rate**: ${learningPlanDetails.completion_rate}%`;
+        }
+        
+        if (learningPlanDetails.average_progress) {
+          responseMessage += `\n• **Average Progress**: ${learningPlanDetails.average_progress}%`;
+        }
+        
+        if (learningPlanDetails.active_users) {
+          responseMessage += `\n• **Active Users**: ${learningPlanDetails.active_users}`;
+        }
       }
 
       return NextResponse.json({
@@ -1692,7 +2013,11 @@ private static async getOptimizedRecentEnrollments(userId: string, api: DoceboAP
         success: true,
         data: {
           learningPlan: learningPlanDetails,
-          learningPlanName: displayName
+          learningPlanName: displayName,
+          learningPlanId: lpId,
+          status: status,
+          enrollmentCount: enrollmentCount,
+          detailsAvailable: true
         },
         timestamp: new Date().toISOString()
       });
@@ -1701,7 +2026,17 @@ private static async getOptimizedRecentEnrollments(userId: string, api: DoceboAP
       console.error('❌ Learning plan info error:', error);
       
       return NextResponse.json({
-        response: `❌ **Learning Plan Information Failed**: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        response: `❌ **Learning Plan Information Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
+
+**Common Issues**:
+• Learning plan name might not exist  
+• Learning plan might be in draft status
+• Access permissions might be limited
+• Try using the exact learning plan name from Docebo
+
+**Try**: "Find Python learning plans" to see available learning plans first
+
+*Note: Using endpoint /learningplan/v1/learningplans*`,
         success: false,
         timestamp: new Date().toISOString()
       });
