@@ -871,7 +871,7 @@ static async handleUserEnrollments(entities: any, api: DoceboAPI): Promise<NextR
     }));
 
     // Sort by enrollment date (most recent first)  
-    displayEnrollments.sort((a, b) => {
+    displayEnrollments.sort((a: any, b: any) => {
       const dateA = new Date(a.enrollmentDate || '1970-01-01');
       const dateB = new Date(b.enrollmentDate || '1970-01-01');
       return dateB.getTime() - dateA.getTime();
@@ -1076,7 +1076,7 @@ private static async getFixedPaginationEnrollments(userId: string, api: DoceboAP
   
   // Combine and sort all enrollments by date
   const allEnrollments = [...formattedCourses, ...formattedLPs];
-  allEnrollments.sort((a, b) => {
+  allEnrollments.sort((a: any, b: any) => {
     const dateA = new Date(a.enrollmentDate || '1970-01-01');
     const dateB = new Date(b.enrollmentDate || '1970-01-01');
     return dateB.getTime() - dateA.getTime();
