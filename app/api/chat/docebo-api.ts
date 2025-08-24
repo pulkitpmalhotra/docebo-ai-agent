@@ -1,4 +1,4 @@
-import { DoceboConfig, UserDetails, EnhancedUserDetails } from './types';
+import { DoceboConfig, UserDetails } from './types';
 export class DoceboAPI {
   private config: DoceboConfig;
   private accessToken?: string;
@@ -12,34 +12,23 @@ export class DoceboAPI {
     if (this.accessToken && this.tokenExpiry && this.tokenExpiry > new Date()) {
       return this.accessToken;
     }
-    try {
-      const response = await fetch(`${this.baseUrl}/oauth2/token`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Accept': 'application/json'
-        },
-        body: new URLSearchParams({
-          grant_type: 'password',
-          client_id: this.config.clientId,
-          client_secret: this.config.clientSecret,
-          scope: 'api',
-          username: this.config.username,
-          password: this.config.password,
-        }),
-      });
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Token request failed: ${response.status} - ${errorText}`);
-      }
-      const data = await response.json();
-      this.accessToken = data.access_token;
-      this.tokenExpiry = new Date(Date.now() + data.expires_in * 1000);
-      return this.accessToken;
-    } catch (error) {
-      console.error('Error fetching access token:', error);
-      throw error;
-    }
+    const response = await fetch(`${this.baseUrl}/oauth2/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'password',
+        client_id: this.config.clientId,
+        client_secret: this.config.clientSecret,
+        scope: 'api',
+        username: this.config.username,
+        password: this.config.password,
+      }),
+    });
+    const tokenData = await response.json();
+    this.accessToken = tokenData.access_token;
+    this.tokenExpiry = new Date(Date.now() + (tokenData.expires_in || 3600) * 1000);
+    
+    return this.accessToken!;
   }
   private formatUserDetails(user: any): UserDetails {
     console.log('🔍 Raw user data received:', JSON.stringify(user, null, 2));
@@ -85,7 +74,7 @@ export class DoceboAPI {
       emailValidationStatus: user.email_validation_status || '',
     };
   }
-  async getUserDetails(email: string): Promise<UserDetails> {
+async getUserDetails(email: string): Promise<UserDetails> {
     const token = await this.getAccessToken();
     const response = await fetch(`${this.baseUrl}/manage/v1/user?search_text=${encodeURIComponent(email)}`, {
       method: 'GET',
@@ -98,12 +87,7 @@ export class DoceboAPI {
       throw new Error(`Failed to fetch user details: ${response.status} - ${errorText}`);
     }
     const userData = await response.json();
-
-      throw new Error(`User not found: ${identifier}`);
-    } catch (error) {
-      console.error(`❌ Error getting user details for ${identifier}:`, error);
-      throw error;
-    }
+    return this.formatUserDetails(userData);
   }
 
   private formatUserDetails(user: any): UserDetails {
