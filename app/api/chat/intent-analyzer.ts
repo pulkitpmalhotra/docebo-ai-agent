@@ -1,7 +1,7 @@
-// app/api/chat/intent-analyzer-fixed.ts - Fixed with better command recognition
+// app/api/chat/intent-analyzer.ts - Fixed export name and TypeScript errors
 import { IntentAnalysis } from './types';
 
-export class FixedIntentAnalyzer {
+export class IntentAnalyzer {
   static analyzeIntent(message: string): IntentAnalysis {
     const lower = message.toLowerCase().trim();
     console.log(`🎯 FIXED: Analyzing intent for: "${message}"`);
@@ -38,7 +38,7 @@ export class FixedIntentAnalyzer {
           const userIdentifier = userMatch ? userMatch[1].trim() : email;
           
           return {
-            email: this.extractEmailFromText(userIdentifier) || userIdentifier,
+            email: userIdentifier ? this.extractEmailFromText(userIdentifier) || userIdentifier : null,
             userId: userIdentifier,
             loadMore: true,
             offset: '20' // Default offset for load more
@@ -83,7 +83,7 @@ export class FixedIntentAnalyzer {
           const userIdentifier = userMatch ? userMatch[1].trim() : email || userId;
           
           return {
-            email: this.extractEmailFromText(userIdentifier) || userIdentifier,
+            email: userIdentifier ? this.extractEmailFromText(userIdentifier) || userIdentifier : null,
             userId: userIdentifier,
             processingType: 'background',
             requestType: 'all_enrollments'
@@ -130,7 +130,7 @@ export class FixedIntentAnalyzer {
           }
           
           return {
-            email: this.extractEmailFromText(userIdentifier) || userIdentifier,
+            email: userIdentifier ? this.extractEmailFromText(userIdentifier) || userIdentifier : null,
             userId: userIdentifier,
             loadMore: false,
             offset: '0'
