@@ -545,18 +545,41 @@ export class DoceboAPI {
       const learningPlans = lpEnrollments.data?.items || [];
       
       return {
-        courses: courses.map((enrollment: any) => this.formatCourseEnrollment(enrollment)),
-        learningPlans: learningPlans.map((enrollment: any) => this.formatLearningPlanEnrollment(enrollment)),
+      return {
+        courses: {
+          enrollments: courses.map((enrollment: any) => this.formatCourseEnrollment(enrollment)),
+          totalCount: courses.length,
+          endpoint: '/course/v1/courses/enrollments',
+          success: true
+        },
+        learningPlans: {
+          enrollments: learningPlans.map((enrollment: any) => this.formatLearningPlanEnrollment(enrollment)),
+          totalCount: learningPlans.length,
+          endpoint: '/learningplan/v1/learningplans/enrollments',
+          success: true
+        },
         totalCourses: courses.length,
-        totalLearningPlans: learningPlans.length
+        totalLearningPlans: learningPlans.length,
+        success: true
       };
     } catch (error) {
       console.error(`❌ Error getting all enrollments:`, error);
-      return {
-        courses: [],
-        learningPlans: [],
+              courses: {
+          enrollments: [],
+          totalCount: 0,
+          endpoint: '/course/v1/courses/enrollments',
+          success: false
+        },
+        learningPlans: {
+          enrollments: [],
+          totalCount: 0,
+          endpoint: '/learningplan/v1/learningplans/enrollments',
+          success: false
+        },
         totalCourses: 0,
-        totalLearningPlans: 0
+        totalLearningPlans: 0,
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
       };
     }
   }
