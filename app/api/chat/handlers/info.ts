@@ -1618,40 +1618,67 @@ static async handleCourseInfo(entities: any, api: DoceboAPI): Promise<NextRespon
       
       const courseDetails = await api.getCourseDetails(identifier);
       const courseDisplayName = api.getCourseName(courseDetails);
+      const finalCourseId = courseDetails.id;
       
-      // ENHANCED: Rich course information formatting with ALL fields
+      // ADDED: Fetch enrollment count
+      let enrollmentCount = 'Loading...';
+      try {
+        console.log(`📊 Fetching enrollment count for course: ${finalCourseId}`);
+        const enrollmentResult = await api.apiRequest(`/course/v1/courses/${finalCourseId}/enrollments`, 'GET', null, {
+          page_size: 1 // Just get count, not actual data
+        });
+        enrollmentCount = enrollmentResult.data?.total || enrollmentResult.data?.items?.length || 0;
+        console.log(`✅ Course enrollment count: ${enrollmentCount}`);
+      } catch (enrollmentError) {
+        console.log(`⚠️ Could not fetch enrollment count for course ${finalCourseId}:`, enrollmentError);
+        enrollmentCount = 'Unable to fetch';
+      }
+      
+      // FIXED: Use correct field names from API response
       let responseMessage = `📚 **Course Information**: ${courseDisplayName}
-🆔 **Course ID**: ${courseDetails.id || courseDetails.course_id || 'Not available'}
-📝 **Name**: ${courseDisplayName}`;
+🆔 **Course ID**: ${courseDetails.id || 'Not available'}
+📝 **Name**: ${courseDetails.name || courseDisplayName}`;
 
       // Course Type with icon
-      const courseType = courseDetails.type || courseDetails.course_type || 'elearning';
+      const courseType = courseDetails.type || 'elearning';
       let typeIcon = '📂';
       if (courseType === 'elearning') typeIcon = '💻';
       else if (courseType === 'classroom') typeIcon = '🏫';
       else if (courseType === 'webinar') typeIcon = '📹';
-      else if (courseType === 'learning_plan') typeIcon = '📋';
       
       responseMessage += `\n📂 **Type**: ${courseType}`;
 
-      // Status with icon (ALWAYS show)
-      const status = courseDetails.status || courseDetails.course_status || 'unknown';
+      // Status with icon (FIXED: use correct field)
+      const status = courseDetails.status || 'unknown';
       let statusIcon = '📊';
-      if (status === 'published' || status === 'active' || status === '2') statusIcon = '🟢';
-      else if (status === 'unpublished' || status === 'inactive' || status === '0') statusIcon = '🟡';
-      else if (status === 'suspended' || status === '1') statusIcon = '🔴';
+      if (status === 'published' || status === 'active') statusIcon = '🟢';
+      else if (status === 'unpublished' || status === 'inactive') statusIcon = '🟡';
+      else if (status === 'suspended') statusIcon = '🔴';
       
       responseMessage += `\n📊 **Status**: ${status}`;
 
-      // Course Code (ALWAYS show, even if not available)
-      const courseCode = courseDetails.code || courseDetails.course_code || 'Not assigned';
+      // Course Code
+      const courseCode = courseDetails.code || 'Not assigned';
       responseMessage += `\n🏷️ **Code**: ${courseCode}`;
 
-      // Language (ALWAYS show)
-      const language = courseDetails.language || courseDetails.lang_code || 'English';
+      // Course UID
+      if (courseDetails.uid) {
+        responseMessage += `\n🔗 **Course UID**: ${courseDetails.uid}`;
+      }
+
+      // Slug name (if available)
+      if (courseDetails.slug_name) {
+        responseMessage += `\n🔖 **Slug**: ${courseDetails.slug_name}`;
+      }
+
+      // Language
+      const language = courseDetails.language?.name || courseDetails.language?.browser_code || 'English';
       responseMessage += `\n🌍 **Language**: ${language}`;
 
-      // Description (cleaned and truncated) - ALWAYS show
+      // ADDED: Enrollment count with fetched data
+      responseMessage += `\n👥 **Current Enrollments**: ${enrollmentCount}`;
+
+      // Description (cleaned and truncated)
       let description = 'No description available';
       if (courseDetails.description) {
         const cleanDescription = courseDetails.description
@@ -1664,11 +1691,10 @@ static async handleCourseInfo(entities: any, api: DoceboAPI): Promise<NextRespon
       }
       responseMessage += `\n📄 **Description**: ${description}`;
 
-      // Creation date (ALWAYS show)
-      const creationDate = courseDetails.creation_date || courseDetails.created_at || courseDetails.date_created || 'Not available';
+      // Creation date
+      const creationDate = courseDetails.created_on || 'Not available';
       let displayCreationDate = creationDate;
       if (creationDate && creationDate !== 'Not available') {
-        // Format date to show just YYYY-MM-DD
         try {
           const date = new Date(creationDate);
           displayCreationDate = date.toISOString().split('T')[0];
@@ -1678,8 +1704,8 @@ static async handleCourseInfo(entities: any, api: DoceboAPI): Promise<NextRespon
       }
       responseMessage += `\n📅 **Created**: ${displayCreationDate}`;
 
-      // Last update date (ALWAYS show)
-      const updateDate = courseDetails.last_update || courseDetails.updated_at || courseDetails.date_modified || 'Not available';
+      // Last update date
+      const updateDate = courseDetails.updated_on || 'Not available';
       let displayUpdateDate = updateDate;
       if (updateDate && updateDate !== 'Not available') {
         try {
@@ -1691,8 +1717,8 @@ static async handleCourseInfo(entities: any, api: DoceboAPI): Promise<NextRespon
       }
       responseMessage += `\n🔄 **Last Updated**: ${displayUpdateDate}`;
 
-      // Duration (ALWAYS show with better formatting)
-      const duration = courseDetails.duration || courseDetails.estimated_duration || courseDetails.course_duration || 0;
+      // Duration
+      const duration = courseDetails.average_completion_time || 0;
       let durationText = 'Not set';
       if (duration > 0) {
         const hours = Math.floor(duration / 60);
@@ -1705,103 +1731,60 @@ static async handleCourseInfo(entities: any, api: DoceboAPI): Promise<NextRespon
       }
       responseMessage += `\n⏱️ **Average Duration**: ${durationText}`;
 
-      // Created by (ALWAYS show)
-      const createdBy = courseDetails.created_by || courseDetails.author_name || courseDetails.creator || 'System';
+      // Created by
+      const createdBy = courseDetails.created_by?.fullname || 'System';
       responseMessage += `\n👤 **Created By**: ${createdBy}`;
 
-      // Updated by (ALWAYS show)
-      const updatedBy = courseDetails.updated_by || courseDetails.last_updated_by || courseDetails.modifier || 'System/Automated';
-      responseMessage += `\n✏️ **Updated By**: ${updatedBy}`;
-
-      // Skills/Competencies (ALWAYS show)
+      // Skills/Competencies
       let skillsText = 'Not specified';
-      const skills = courseDetails.skills || courseDetails.competencies || courseDetails.tags;
-      if (skills) {
-        if (Array.isArray(skills) && skills.length > 0) {
-          skillsText = skills.join(', ');
-        } else if (typeof skills === 'string' && skills.length > 0) {
-          skillsText = skills;
-        }
+      const skills = courseDetails.skills;
+      if (skills && Array.isArray(skills) && skills.length > 0) {
+        skillsText = skills.map(skill => skill.name).join(', ');
       }
       responseMessage += `\n🎯 **Skills**: ${skillsText}`;
 
-      // Enrollments (ALWAYS show)
-      const enrollmentCount = courseDetails.enrolled_count || courseDetails.enrollment_count || courseDetails.enrollments || 0;
-      responseMessage += `\n👥 **Enrollments**: ${enrollmentCount}`;
-
-      // Category/Path (if available)
-      const category = courseDetails.category_name || courseDetails.category || courseDetails.course_path;
-      if (category) {
-        responseMessage += `\n📁 **Category**: ${category}`;
+      // Category
+      if (courseDetails.category) {
+        const categoryPath = courseDetails.category.path ? courseDetails.category.path.join(' → ') : courseDetails.category.name;
+        responseMessage += `\n📁 **Category**: ${categoryPath}`;
       }
 
-      // Credits (if available)
-      const credits = courseDetails.credits || courseDetails.course_credits;
-      if (credits !== undefined) {
+      // Credits
+      const credits = courseDetails.credits;
+      if (credits !== undefined && credits !== null && credits > 0) {
         responseMessage += `\n🎓 **Credits**: ${credits}`;
       }
 
-      // Course UID (if available)
-      const courseUid = courseDetails.course_uid || courseDetails.uid;
-      if (courseUid) {
-        responseMessage += `\n🔗 **Course UID**: ${courseUid}`;
-      }
+      // Enrollment options
+      if (courseDetails.enrollment_options) {
+        const selfEnroll = courseDetails.enrollment_options.quick_enrollment_enabled;
+        const enrollIcon = selfEnroll ? '✅' : '📝';
+        const enrollText = selfEnroll ? 'enabled' : 'admin only';
+        responseMessage += `\n${enrollIcon} **Self Enrollment**: ${enrollText}`;
 
-      // Self enrollment settings (if available)
-      const enrollmentType = courseDetails.enrollment_type || courseDetails.self_enrollment_type;
-      if (enrollmentType || courseDetails.can_enroll_with_code || courseDetails.self_enrollment) {
-        let enrollmentIcon = '📝';
-        let enrollmentText = 'disabled (only_admin)';
-        
-        if (courseDetails.can_enroll_with_code) {
-          enrollmentIcon = '🔐';
-          enrollmentText = 'enabled (with code)';
-        } else if (courseDetails.self_enrollment || enrollmentType === 'enabled') {
-          enrollmentIcon = '✅';
-          enrollmentText = 'enabled';
-        }
-        
-        responseMessage += `\n${enrollmentIcon} **Self Enrollment**: ${enrollmentText}`;
-      }
-
-      // Course rating (if available)
-      if (courseDetails.rating_enabled !== undefined) {
-        const ratingText = courseDetails.rating_enabled ? 'Enabled' : 'Disabled';
-        const ratingIcon = courseDetails.rating_enabled ? '⭐' : '📊';
-        responseMessage += `\n${ratingIcon} **Rating**: ${ratingText}`;
-        
-        if (courseDetails.rating_enabled && (courseDetails.average_rating || courseDetails.rating)) {
-          const rating = courseDetails.average_rating || courseDetails.rating;
-          responseMessage += ` (Average: ${rating}/5)`;
+        if (courseDetails.enrollment_options.deeplink?.enabled) {
+          responseMessage += `\n🔗 **Deep Link**: enabled`;
         }
       }
 
-      // Enhanced course links with enrollment URL generation
-      const finalCourseId = courseDetails.id || courseDetails.course_id;
+      // Certificate
+      if (courseDetails.certificate) {
+        responseMessage += `\n🏆 **Certificate**: Available upon completion`;
+      }
+
+      // Rating
+      if (courseDetails.rating?.enabled) {
+        responseMessage += `\n⭐ **Rating**: Enabled`;
+      }
+
+      // Enhanced course links
       const domain = process.env.DOCEBO_DOMAIN;
       
       if (finalCourseId && domain) {
-        // Generate enrollment link with proper hash if possible
-        const courseName = courseDisplayName.toLowerCase().replace(/[^a-z0-9]/g, '-');
-        const enrollmentHash = courseDetails.enrollment_hash || courseDetails.hash || 'generated_hash';
-        
-        responseMessage += `\n🔗 **Enrollment Link**: [Direct Enrollment](https://${domain}/learn/course/${finalCourseId}/${courseName}?generatedby=user_id&hash=${enrollmentHash})`;
-        responseMessage += `\n⚙️ **Course Management**: [Edit Course](https://${domain}/course/edit/${finalCourseId})`;
-      } else if (finalCourseId && domain) {
-        // Fallback to simple links if hash not available
-        responseMessage += `\n🔗 **Quick Links**:`;
-        responseMessage += `\n• [Direct Enrollment](https://${domain}/learn/course/${finalCourseId})`;
+        const slug = courseDetails.slug_name || courseDisplayName.toLowerCase().replace(/[^a-z0-9]/g, '-');
+        responseMessage += `\n\n🔗 **Quick Links**:`;
+        responseMessage += `\n• [View Course](https://${domain}/learn/course/${finalCourseId}/${slug})`;
         responseMessage += `\n• [Course Management](https://${domain}/course/edit/${finalCourseId})`;
-      }
-
-      // Completion information (if available)
-      if (courseDetails.completion_tracking || courseDetails.tracking_type) {
-        responseMessage += `\n\n📊 **Completion Tracking**:`;
-        responseMessage += `\n• **Method**: ${courseDetails.completion_tracking || courseDetails.tracking_type}`;
-        
-        if (courseDetails.completion_time_required) {
-          responseMessage += `\n• **Required Time**: ${courseDetails.completion_time_required} minutes`;
-        }
       }
 
       return NextResponse.json({
@@ -1811,8 +1794,9 @@ static async handleCourseInfo(entities: any, api: DoceboAPI): Promise<NextRespon
           course: courseDetails,
           courseName: courseDisplayName,
           courseId: finalCourseId,
-          courseType: courseDetails.type || courseDetails.course_type,
-          status: courseDetails.status || courseDetails.course_status,
+          courseType: courseDetails.type,
+          status: courseDetails.status,
+          enrollmentCount: enrollmentCount,
           detailsAvailable: true
         },
         timestamp: new Date().toISOString()
@@ -1836,7 +1820,7 @@ static async handleCourseInfo(entities: any, api: DoceboAPI): Promise<NextRespon
       });
     }
   }
-
+  
   static async handleLearningPlanInfo(entities: any, api: DoceboAPI): Promise<NextResponse> {
     try {
       const { learningPlanName } = entities;
