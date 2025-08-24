@@ -112,69 +112,77 @@ async function chatHandler(request: NextRequest): Promise<NextResponse> {
     // Route to appropriate handler with timeout protection
     try {
       let handlerPromise: Promise<NextResponse>;
-
-      switch (analysis.intent) {
-        // Background Processing - NEW
-        case 'background_user_enrollments':
-          handlerPromise = handleBackgroundEnrollmentRequest(analysis.entities);
-          break;
-          
-        // Bulk Enrollment Management
-        case 'bulk_enroll_course':
-          handlerPromise = BulkEnrollmentHandlers.handleBulkCourseEnrollment(analysis.entities, api);
-          break;
-          
-        case 'bulk_enroll_learning_plan':
-          handlerPromise = BulkEnrollmentHandlers.handleBulkLearningPlanEnrollment(analysis.entities, api);
-          break;
-          
-        case 'bulk_unenroll_course':
-        case 'bulk_unenroll_learning_plan':
-          handlerPromise = BulkEnrollmentHandlers.handleBulkUnenrollment(analysis.entities, api);
-          break;
-        
-        // Individual Enrollment Management
-        case 'enroll_user_in_course':
-          handlerPromise = handlers.enrollment.handleEnrollUserInCourse(analysis.entities, api);
-          break;
-          
-        case 'enroll_user_in_learning_plan':
-          handlerPromise = handlers.enrollment.handleEnrollUserInLearningPlan(analysis.entities, api);
-          break;
-          
-        case 'unenroll_user_from_course':
-          handlerPromise = handlers.enrollment.handleUnenrollUserFromCourse(analysis.entities, api);
-          break;
-          
-        case 'unenroll_user_from_learning_plan':
-          handlerPromise = handlers.enrollment.handleUnenrollUserFromLearningPlan(analysis.entities, api);
-          break;
-          
-       // Enrollment Checking with timeout
-        case 'check_specific_enrollment':
-          handlerPromise = withTimeout(
-            handlers.info.handleSpecificEnrollmentCheck(analysis.entities, api),
-            20000,
-            'Enrollment check timeout - please try with a simpler query'
-          );
-          break;
-          
-        case 'get_user_enrollments':
-          handlerPromise = withTimeout(
-            handlers.info.handleUserEnrollments(analysis.entities, api),
-            25000,
-            'User enrollments timeout - user may have too many enrollments'
-          );
-          break;
-          
-        // Search Functions
-        case 'search_users':
-          handlerPromise = withTimeout(
-            handlers.search.handleUserSearch(analysis.entities, api),
-            15000,
-            'User search timeout'
-          );
-          break;
+switch (analysis.intent) {
+  // Background Processing - NEW
+  case 'background_user_enrollments':
+    handlerPromise = handleBackgroundEnrollmentRequest(analysis.entities);
+    break;
+    
+  // ADDED: User Summary (optimized with enrollment counts)
+  case 'get_user_summary':
+    handlerPromise = withTimeout(
+      handlers.info.handleUserSummary(analysis.entities, api),
+      15000,
+      'User summary timeout'
+    );
+    break;
+    
+  // Bulk Enrollment Management
+  case 'bulk_enroll_course':
+    handlerPromise = BulkEnrollmentHandlers.handleBulkCourseEnrollment(analysis.entities, api);
+    break;
+    
+  case 'bulk_enroll_learning_plan':
+    handlerPromise = BulkEnrollmentHandlers.handleBulkLearningPlanEnrollment(analysis.entities, api);
+    break;
+    
+  case 'bulk_unenroll_course':
+  case 'bulk_unenroll_learning_plan':
+    handlerPromise = BulkEnrollmentHandlers.handleBulkUnenrollment(analysis.entities, api);
+    break;
+  
+  // Individual Enrollment Management
+  case 'enroll_user_in_course':
+    handlerPromise = handlers.enrollment.handleEnrollUserInCourse(analysis.entities, api);
+    break;
+    
+  case 'enroll_user_in_learning_plan':
+    handlerPromise = handlers.enrollment.handleEnrollUserInLearningPlan(analysis.entities, api);
+    break;
+    
+  case 'unenroll_user_from_course':
+    handlerPromise = handlers.enrollment.handleUnenrollUserFromCourse(analysis.entities, api);
+    break;
+    
+  case 'unenroll_user_from_learning_plan':
+    handlerPromise = handlers.enrollment.handleUnenrollUserFromLearningPlan(analysis.entities, api);
+    break;
+    
+ // Enrollment Checking with timeout
+  case 'check_specific_enrollment':
+    handlerPromise = withTimeout(
+      handlers.info.handleSpecificEnrollmentCheck(analysis.entities, api),
+      20000,
+      'Enrollment check timeout - please try with a simpler query'
+    );
+    break;
+    
+  case 'get_user_enrollments':
+    handlerPromise = withTimeout(
+      handlers.info.handleUserEnrollments(analysis.entities, api),
+      25000,
+      'User enrollments timeout - user may have too many enrollments'
+    );
+    break;
+    
+  // Search Functions
+  case 'search_users':
+    handlerPromise = withTimeout(
+      handlers.search.handleUserSearch(analysis.entities, api),
+      15000,
+      'User search timeout'
+    );
+    break;
           
         case 'search_courses':
           handlerPromise = withTimeout(
