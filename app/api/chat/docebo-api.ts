@@ -237,34 +237,79 @@ export class DoceboAPI {
       throw new Error('Missing required user data');
     }
 
+    // Handle status - Docebo uses "1" for active, "0" for inactive
     let status = 'Unknown';
-    if (user.valid === '1' || user.valid === 1) {
+    const statusField = user.status || user.valid || user.is_active || user.active;
+    if (statusField === '1' || statusField === 1 || statusField === true || statusField === 'active') {
       status = 'Active';
-    } else if (user.valid === '0' || user.valid === 0) {
+    } else if (statusField === '0' || statusField === 0 || statusField === false || statusField === 'inactive') {
       status = 'Inactive';
+    } else if (statusField === 'suspended') {
+      status = 'Suspended';
     }
 
+    // Handle user level - Docebo specific levels
     let level = 'User';
-    if (user.level === 'godadmin' || user.level === '1') {
-      level = 'Superadmin';
-    } else if (user.level === 'powUser' || user.level === '2') {
+    const levelField = user.level || user.user_level || user.role || user.user_role || '';
+    if (levelField === 'godadmin') {
+      level = 'God Admin';
+    } else if (levelField === 'powUser' || levelField === 'power_user') {
       level = 'Power User';
+    } else if (levelField === 'admin' || levelField === 'administrator') {
+      level = 'Admin';
+    } else if (levelField === 'user' || levelField === '4') {
+      level = 'User';
     }
 
-    return {
+    // Extract manager information
+    let managerInfo = 'Not assigned or not available';
+    if (user.managers && user.managers.length > 0) {
+      const directManager = user.managers.find((m: any) => m.manager_title === 'Direct Manager' || m.manager_type_id === 1);
+      if (directManager) {
+        managerInfo = `${directManager.manager_name} (${directManager.manager_username})`;
+      } else {
+        const firstManager = user.managers[0];
+        managerInfo = `${firstManager.manager_name} (${firstManager.manager_title})`;
+      }
+    }
+
+    // Extract organizational information from custom fields
+    const orgChart = user.field_1 || user.orgchart_desc || user.org_chart || user.organization || 'Not specified';
+    const employeeType = user.field_2 || 'Not specified';
+    const businessUnit = user.field_4 || 'Not specified';
+    const department = user.field_5 || orgChart;
+
+    const formattedUser = {
       id: userId,
       fullname: fullname || `User ${userId}`,
       email: email,
-      username: user.username || user.userid || email,
+      username: user.username || user.encoded_username || user.userid || user.user_name || email,
       status: status,
       level: level,
-      creationDate: user.creation_date || user.register_date || '2023-11-22 20:00:04',
-      lastAccess: user.last_update || user.last_access_date || '2025-08-09 01:59:53',
-      timezone: user.timezone || user.time_zone || 'America/New_York',
-      language: user.language === 'english' ? 'English' : user.language || 'English',
-      department: user.department || user.orgchart_desc || 'Not specified'
+      creationDate: user.creation_date || user.register_date || user.date_created || user.created_at || 'Not available',
+      lastAccess: user.last_access_date || user.last_update || user.last_access || user.updated_at || 'Not available',
+      timezone: user.timezone || user.time_zone || user.tz || 'America/New_York',
+      language: user.language || user.lang || user.lang_code || 'English',
+      department: department,
+      // Additional fields from Docebo API
+      firstName: user.first_name || '',
+      lastName: user.last_name || '',
+      uuid: user.uuid || '',
+      isManager: user.is_manager || false,
+      subordinatesCount: user.active_subordinates_count || 0,
+      avatar: user.avatar || '',
+      expirationDate: user.expiration_date || null,
+      emailValidationStatus: user.email_validation_status === '1' ? 'Validated' : 'Not Validated',
+      organizationChart: orgChart,
+      employeeType: employeeType,
+      businessUnit: businessUnit,
+      employeeId: user.field_6 || userId,
+      directManager: managerInfo,
+      managers: user.managers || [],
+      expired: user.expired || false,
+      dateFormat: user.date_format || 'Not specified',
+      newsletterOptout: user.newsletter_optout === '1' ? 'Yes' : 'No'
     };
-  }
 
   async getEnhancedUserDetails(userId: string): Promise<any> {
     console.log(`📋 Getting enhanced user details for: ${userId}`);
