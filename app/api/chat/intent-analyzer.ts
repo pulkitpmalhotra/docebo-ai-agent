@@ -1,4 +1,4 @@
-// app/api/chat/intent-analyzer.ts - Fixed export name and TypeScript errors
+// app/api/chat/intent-analyzer.ts - Added User Summary Intent Pattern
 import { IntentAnalysis } from './types';
 
 export class IntentAnalyzer {
@@ -24,6 +24,27 @@ export class IntentAnalyzer {
     
     // Intent patterns with improved matching - PRIORITY ORDER MATTERS
     const patterns = [
+      // ADDED: User Summary Commands (high priority)
+      {
+        intent: 'get_user_summary',
+        patterns: [
+          /(?:user summary|summary for user|user overview)\s+(.+)/i,
+          /get summary for\s+(.+)/i,
+          /show summary\s+(.+)/i
+        ],
+        extractEntities: () => {
+          const summaryMatch = message.match(/(?:user summary|summary for user|user overview|get summary for|show summary)\s+(.+?)(?:\s|$)/i);
+          const userIdentifier = summaryMatch ? summaryMatch[1].trim() : email || userId;
+          
+          return {
+            email: userIdentifier ? this.extractEmailFromText(userIdentifier) || userIdentifier : null,
+            userId: userIdentifier,
+            requestType: 'user_summary'
+          };
+        },
+        confidence: 0.98
+      },
+
       // FIXED: Load More Commands (highest priority)
       {
         intent: 'load_more_enrollments',
@@ -237,7 +258,7 @@ export class IntentAnalyzer {
         confidence: 0.95
       },
 
-      // FIXED: User search (specific to email lookup)
+      // FIXED: User search (specific to email lookup) - LOWER priority now
       {
         intent: 'search_users',
         patterns: [
@@ -254,7 +275,7 @@ export class IntentAnalyzer {
             userId: /^\d+$/.test(searchTerm) ? searchTerm : null
           };
         },
-        confidence: email ? 0.95 : 0.8
+        confidence: email ? 0.85 : 0.7 // REDUCED priority so user summary takes precedence
       },
 
       // FIXED: Course and Learning Plan searches
@@ -388,6 +409,9 @@ export class IntentAnalyzer {
   // FIXED: Enhanced entity validation
   private static validateEntities(entities: any, intent: string): boolean {
     switch (intent) {
+      case 'get_user_summary':
+        return !!(entities.email || entities.userId);
+        
       case 'load_more_enrollments':
         return !!(entities.email || entities.userId);
       
