@@ -132,30 +132,24 @@ async enrollUserInCourse(
     console.log(`🔄 FIXED: Attempting to enroll user ${userId} in course ${courseId}`);
 
     // Convert level to the correct numeric value based on your documentation
-    let levelValue = 3; // default to student
+    let levelValue: string | number = 3;
     if (options.level === 'tutor') levelValue = 4;
     else if (options.level === 'instructor') levelValue = 6;
     else levelValue = 3; // student
 
-    // Using the correct endpoint from your Enrollments.docx: POST /learn/v1/enrollments
-    const enrollmentBody = {
+    // Based on your Enrollments.docx, try the main enrollment endpoint format
+    const enrollmentData = {
       course_ids: [parseInt(courseId)],
       user_ids: [parseInt(userId)],
-      level: levelValue.toString(), // Your documentation shows this as string
-      assignment_type: options.assignmentType || 'required'
+      level: levelValue.toString(),
+      assignment_type: options.assignmentType || 'mandatory',
+      ...(options.startValidity && { date_begin_validity: options.startValidity }),
+      ...(options.endValidity && { date_expire_validity: options.endValidity })
     };
 
-    // Add validity dates if provided
-    if (options.startValidity) {
-      enrollmentBody.date_begin_validity = options.startValidity;
-    }
-    if (options.endValidity) {
-      enrollmentBody.date_expire_validity = options.endValidity;
-    }
-
-    console.log(`📋 FIXED: Using POST /learn/v1/enrollments with body:`, enrollmentBody);
+    console.log(`📋 FIXED: Course enrollment data:`, enrollmentData);
     
-    const result = await this.apiRequest('/learn/v1/enrollments', 'POST', enrollmentBody);
+    const result = await this.apiRequest('/learn/v1/enrollments', 'POST', enrollmentData);
     console.log(`✅ FIXED: Course enrollment successful:`, result);
     return result;
 
@@ -178,24 +172,19 @@ async enrollUserInLearningPlan(
   try {
     console.log(`🔄 FIXED: Attempting to enroll user ${userId} in learning plan ${learningPlanId}`);
 
-    // Using the correct endpoint from your documentation
-    const enrollmentBody = {
+    // Using the format from your Enrollments.docx documentation
+    const enrollmentData = {
       user_ids: [parseInt(userId)],
       learningplan_ids: [parseInt(learningPlanId)],
-      assignment_type: options.assignmentType || 'required'
+      assignment_type: options.assignmentType || 'mandatory',
+      ...(options.startValidity && { date_begin_validity: options.startValidity }),
+      ...(options.endValidity && { date_expire_validity: options.endValidity })
     };
 
-    // Add validity dates if provided
-    if (options.startValidity) {
-      enrollmentBody.date_begin_validity = options.startValidity;
-    }
-    if (options.endValidity) {
-      enrollmentBody.date_expire_validity = options.endValidity;
-    }
-
-    console.log(`📋 FIXED: Using POST /learningplan/v1/learningplans/enrollments with body:`, enrollmentBody);
+    console.log(`📋 FIXED: LP enrollment data:`, enrollmentData);
     
-    const result = await this.apiRequest('/learningplan/v1/learningplans/enrollments', 'POST', enrollmentBody);
+    // Try the correct learning plan enrollment endpoint
+    const result = await this.apiRequest('/learn/v1/enrollments', 'POST', enrollmentData);
     console.log(`✅ FIXED: Learning plan enrollment successful:`, result);
     return result;
 
@@ -204,6 +193,7 @@ async enrollUserInLearningPlan(
     throw error;
   }
 }
+
 
   // FIXED: Helper method to map enrollment levels
   private mapEnrollmentLevel(level: string): number {
