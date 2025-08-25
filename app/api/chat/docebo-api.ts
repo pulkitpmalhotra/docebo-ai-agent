@@ -38,6 +38,12 @@ export class DoceboAPI {
       }
 
       const tokenData = await response.json();
+      
+      // Ensure access_token exists
+      if (!tokenData.access_token) {
+        throw new Error('No access token received');
+      }
+
       this.accessToken = tokenData.access_token;
       this.tokenExpiry = new Date(Date.now() + (tokenData.expires_in || 3600) * 1000);
       
