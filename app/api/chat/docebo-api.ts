@@ -1,9 +1,10 @@
+
 import { DoceboConfig, UserDetails, EnrollmentData, FormattedEnrollment } from './types';
 
 export class DoceboAPI {
   private config: DoceboConfig;
-  private accessToken: string = ''; // Initialize with empty string
-  private tokenExpiry?: Date;
+  private _accessToken: string = ''; // Private field with default empty string
+  private _tokenExpiry: Date | null = null;
   private baseUrl: string;
 
   constructor(config: DoceboConfig) {
@@ -11,11 +12,13 @@ export class DoceboAPI {
     this.baseUrl = `https://${config.domain}`;
   }
 
-  // Obtain access token
+  // Obtain access token with improved type safety
   private async getAccessToken(): Promise<string> {
     // Check if current token is valid
-    if (this.accessToken && this.tokenExpiry && this.tokenExpiry > new Date()) {
-      return this.accessToken;
+    if (this._accessToken && 
+        this._tokenExpiry && 
+        this._tokenExpiry > new Date()) {
+      return this._accessToken;
     }
 
     // Request new token
@@ -39,20 +42,21 @@ export class DoceboAPI {
 
       const tokenData = await response.json();
       
-      // Validate access token
-      if (!tokenData.access_token) {
+      // Validate access token explicitly
+      const accessToken = tokenData.access_token;
+      if (!accessToken) {
         throw new Error('No access token received');
       }
 
       // Update access token and expiry
-      this.accessToken = tokenData.access_token;
-      this.tokenExpiry = new Date(Date.now() + (tokenData.expires_in || 3600) * 1000);
+      this._accessToken = accessToken;
+      this._tokenExpiry = new Date(Date.now() + (tokenData.expires_in || 3600) * 1000);
       
-      return this.accessToken;
+      return this._accessToken;
     } catch (error) {
-      // Reset access token to empty string in case of error
-      this.accessToken = '';
-      this.tokenExpiry = undefined;
+      // Reset access token and expiry in case of error
+      this._accessToken = '';
+      this._tokenExpiry = null;
       
       console.error('Token acquisition failed:', error);
       throw error;
@@ -110,6 +114,91 @@ export class DoceboAPI {
       return await response.json();
     } catch (error) {
       console.error(`API request to ${endpoint} failed:`, error);
+      throw error;
+    }
+  }
+
+  // Enroll user in a course
+  async enrollUserInCourse(
+    userId: string, 
+    courseId: string, 
+    options: {
+      level?: string;
+      assignmentType?: string;
+      startValidity?: string;
+      endValidity?: string;
+    } = {}
+  ): Promise<any> {
+    try {
+      const enrollmentBody = {
+        users: [userId],
+        courses: [courseId],
+        priority: options.level || 'medium',
+        due_date: options.endValidity,
+        enrollment_type: 'immediate',
+        assignment_type: options.assignmentType || 'required'
+      };
+
+      return await this.apiRequest('/learn/v1/enrollments', 'POST', enrollmentBody);
+    } catch (error) {
+      console.error(`❌ Error enrolling user in course:`, error);
+      throw error;
+    }
+  }
+
+  // Enroll user in a learning plan
+  async enrollUserInLearningPlan(
+    userId: string, 
+    learningPlanId: string, 
+    options: {
+      assignmentType?: string;
+      startValidity?: string;
+      endValidity?: string;
+    } = {}
+  ): Promise<any> {
+    try {
+      const enrollmentBody = {
+        users: [userId],
+        learning_plans: [learningPlanId],
+        due_date: options.endValidity,
+        assignment_type: options.assignmentType || 'required'
+      };
+
+      return await this.apiRequest('/learningplan/v1/enrollments', 'POST', enrollmentBody);
+    } catch (error) {
+      console.error(`❌ Error enrolling user in learning plan:`, error);
+      throw error;
+    }
+  }
+
+  // Unenroll user from a course
+  async unenrollUserFromCourse(
+    userId: string, 
+    courseId: string
+  ): Promise<any> {
+    try {
+      return await this.apiRequest(
+        `/learn/v1/enrollments/courses/${courseId}/users/${userId}`, 
+        'DELETE'
+      );
+    } catch (error) {
+      console.error(`❌ Error unenrolling user from course:`, error);
+      throw error;
+    }
+  }
+
+  // Unenroll user from a learning plan
+  async unenrollUserFromLearningPlan(
+    userId: string, 
+    learningPlanId: string
+  ): Promise<any> {
+    try {
+      return await this.apiRequest(
+        `/learn/v1/enrollments/learning-plans/${learningPlanId}/users/${userId}`, 
+        'DELETE'
+      );
+    } catch (error) {
+      console.error(`❌ Error unenrolling user from learning plan:`, error);
       throw error;
     }
   }
