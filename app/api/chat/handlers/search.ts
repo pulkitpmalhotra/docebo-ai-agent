@@ -221,7 +221,7 @@ ${users.length > 10 ? `\n... and ${users.length - 10} more users` : ''}
       // FIXED: Use correct endpoint and properly map response fields
       const result = await api.apiRequest('/course/v1/courses', 'GET', null, {
         search_text: searchTerm,
-        page_size: 25,
+        page_size: 100,
         sort_attr: 'name',
         sort_dir: 'asc'
       });
@@ -238,7 +238,7 @@ ${users.length > 10 ? `\n... and ${users.length - 10} more users` : ''}
       }
 
       // FIXED: Enhanced course list with proper field mappings from your API response
-      const courseList = courseItems.slice(0, 20).map((course: any, index: number) => {
+      const courseList = courseItems.slice(0, 100).map((course: any, index: number) => {
         const name = course.title || course.name || 'Unknown Course';
         const courseId = course.id?.toString() || 'Unknown';
 
@@ -326,7 +326,7 @@ static async handleLearningPlanSearch(entities: any, api: DoceboAPI): Promise<Ne
     try {
       result = await api.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
         search_text: searchTerm,
-        page_size: 50
+        page_size: 100
         // REMOVED: sort_attr and sort_dir parameters that cause 400 error
       });
     } catch (searchError) {
@@ -367,7 +367,7 @@ static async handleLearningPlanSearch(entities: any, api: DoceboAPI): Promise<Ne
     }
 
     // Enhanced learning plan list with proper field mappings
-    const planList = lpItems.slice(0, 20).map((plan: any, index: number) => {
+    const planList = lpItems.slice(0, 100).map((plan: any, index: number) => {
       const name = plan.title || plan.name || 'Unknown Learning Plan';
       const planId = (plan.learning_plan_id || plan.id || 'Unknown').toString();
 
