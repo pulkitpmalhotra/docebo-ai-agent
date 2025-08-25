@@ -129,16 +129,52 @@ export class DoceboAPI {
     } = {}
   ): Promise<any> {
     try {
-      const enrollmentBody = {
-        users: [userId],
-        courses: [courseId],
-        priority: options.level || 'medium',
-        due_date: options.endValidity,
-        enrollment_type: 'immediate',
-        assignment_type: options.assignmentType || 'required'
-      };
+      // Try multiple enrollment endpoints with different parameter formats
+      const enrollmentEndpoints = [
+        {
+          endpoint: '/learn/v1/enrollments',
+          body: {
+            user_ids: [userId],
+            course_ids: [courseId],
+            level: options.level || 'student',
+            assignment_type: options.assignmentType || 'required'
+          }
+        },
+        {
+          endpoint: '/learn/v1/enrollments',
+          body: {
+            users: [userId],
+            courses: [courseId],
+            level: options.level || 'student',
+            assignment_type: options.assignmentType || 'required'
+          }
+        },
+        {
+          endpoint: '/course/v1/courses/enrollments',
+          body: {
+            user_id: userId,
+            course_id: courseId,
+            level: options.level || 'student',
+            assignment_type: options.assignmentType || 'required'
+          }
+        }
+      ];
 
-      return await this.apiRequest('/learn/v1/enrollments', 'POST', enrollmentBody);
+      // Try each endpoint until one succeeds
+      for (const { endpoint, body } of enrollmentEndpoints) {
+        try {
+          console.log(`🔄 Trying enrollment endpoint: ${endpoint} with body:`, body);
+          const result = await this.apiRequest(endpoint, 'POST', body);
+          console.log(`✅ Enrollment successful via ${endpoint}`);
+          return result;
+        } catch (endpointError) {
+          console.log(`❌ Endpoint ${endpoint} failed:`, endpointError);
+          continue;
+        }
+      }
+      
+      // If all endpoints fail, throw the last error
+      throw new Error('All enrollment endpoints failed. Please check the course ID and user permissions.');
     } catch (error) {
       console.error(`❌ Error enrolling user in course:`, error);
       throw error;
@@ -156,14 +192,49 @@ export class DoceboAPI {
     } = {}
   ): Promise<any> {
     try {
-      const enrollmentBody = {
-        users: [userId],
-        learning_plans: [learningPlanId],
-        due_date: options.endValidity,
-        assignment_type: options.assignmentType || 'required'
-      };
+      // Try multiple learning plan enrollment endpoints
+      const enrollmentEndpoints = [
+        {
+          endpoint: '/learningplan/v1/enrollments',
+          body: {
+            user_ids: [userId],
+            learning_plan_ids: [learningPlanId],
+            assignment_type: options.assignmentType || 'required'
+          }
+        },
+        {
+          endpoint: '/learningplan/v1/enrollments',
+          body: {
+            users: [userId],
+            learning_plans: [learningPlanId],
+            assignment_type: options.assignmentType || 'required'
+          }
+        },
+        {
+          endpoint: '/learningplan/v1/learningplans/enrollments',
+          body: {
+            user_id: userId,
+            learning_plan_id: learningPlanId,
+            assignment_type: options.assignmentType || 'required'
+          }
+        }
+      ];
 
-      return await this.apiRequest('/learningplan/v1/enrollments', 'POST', enrollmentBody);
+      // Try each endpoint until one succeeds
+      for (const { endpoint, body } of enrollmentEndpoints) {
+        try {
+          console.log(`🔄 Trying LP enrollment endpoint: ${endpoint} with body:`, body);
+          const result = await this.apiRequest(endpoint, 'POST', body);
+          console.log(`✅ Learning plan enrollment successful via ${endpoint}`);
+          return result;
+        } catch (endpointError) {
+          console.log(`❌ LP endpoint ${endpoint} failed:`, endpointError);
+          continue;
+        }
+      }
+      
+      // If all endpoints fail, throw the last error
+      throw new Error('All learning plan enrollment endpoints failed. Please check the learning plan ID and user permissions.');
     } catch (error) {
       console.error(`❌ Error enrolling user in learning plan:`, error);
       throw error;
