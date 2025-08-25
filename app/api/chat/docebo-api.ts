@@ -117,12 +117,8 @@ export class DoceboAPI {
     }
   }
 
-// app/api/chat/docebo-api.ts - FIXED enrollment methods
-
-// Replace the existing enrollment methods with these corrected versions:
-
   // FIXED: Enroll user in a course using correct API endpoints and parameters
-async enrollUserInCourse(
+  async enrollUserInCourse(
     userId: string, 
     courseId: string, 
     options: {
@@ -263,16 +259,16 @@ async enrollUserInCourse(
   // FIXED: Enhanced user search with better email matching
   async findUserByEmail(email: string): Promise<any> {
     try {
-      console.log(`🔍 Enhanced user search for: ${email}`);
+      console.log(`🔍 FIXED: Enhanced user search for: ${email}`);
       
       // Try exact email search first
       const exactSearch = await this.apiRequest('/manage/v1/user', 'GET', null, {
         search_text: email,
-        page_size: 50
+        page_size: 10
       });
       
       const users = exactSearch.data?.items || [];
-      console.log(`📊 Found ${users.length} users from search`);
+      console.log(`📊 FIXED: Found ${users.length} users from search`);
       
       // Find exact email match (case-insensitive)
       const exactMatch = users.find((u: any) => 
@@ -280,7 +276,7 @@ async enrollUserInCourse(
       );
       
       if (exactMatch) {
-        console.log(`✅ Found exact email match: ${exactMatch.fullname} (${exactMatch.email})`);
+        console.log(`✅ FIXED: Found exact email match: ${exactMatch.fullname || 'No name'} (${exactMatch.email})`);
         return exactMatch;
       }
       
@@ -290,16 +286,16 @@ async enrollUserInCourse(
       );
       
       if (partialMatch) {
-        console.log(`⚠️ Found partial email match: ${partialMatch.fullname} (${partialMatch.email})`);
+        console.log(`⚠️ FIXED: Found partial email match: ${partialMatch.fullname || 'No name'} (${partialMatch.email})`);
         return partialMatch;
       }
       
       // No match found
-      console.log(`❌ No user found with email: ${email}`);
+      console.log(`❌ FIXED: No user found with email: ${email}`);
       return null;
       
     } catch (error) {
-      console.error(`❌ Error in findUserByEmail for ${email}:`, error);
+      console.error(`❌ FIXED: Error in findUserByEmail for ${email}:`, error);
       throw error;
     }
   }
@@ -339,38 +335,30 @@ async enrollUserInCourse(
         throw new Error(`Course not found: ${identifier}`);
       }
 
-      // Helper function to extract course name
-      const getCourseName = (course: any): string => {
-        return course.name || 
-               course.title || 
-               course.course_name || 
-               'Unknown Course';
-      };
-
       // Find best match (exact name match first, then partial)
       const exactMatch = courses.find((course: any) => {
-        const courseName = getCourseName(course);
+        const courseName = this.getCourseName(course);
         return courseName.toLowerCase() === identifier.toLowerCase();
       });
 
       if (exactMatch) {
-        console.log(`✅ Found exact course match: ${getCourseName(exactMatch)}`);
+        console.log(`✅ Found exact course match: ${this.getCourseName(exactMatch)}`);
         return this.enrichCourseData(exactMatch);
       }
 
       // Try partial match
       const partialMatch = courses.find((course: any) => {
-        const courseName = getCourseName(course);
+        const courseName = this.getCourseName(course);
         return courseName.toLowerCase().includes(identifier.toLowerCase());
       });
 
       if (partialMatch) {
-        console.log(`⚠️ Found partial course match: ${getCourseName(partialMatch)}`);
+        console.log(`⚠️ Found partial course match: ${this.getCourseName(partialMatch)}`);
         return this.enrichCourseData(partialMatch);
       }
 
       // Return first result as fallback
-      console.log(`🔄 Using first result as fallback: ${getCourseName(courses[0])}`);
+      console.log(`🔄 Using first result as fallback: ${this.getCourseName(courses[0])}`);
       return this.enrichCourseData(courses[0]);
 
     } catch (error) {
@@ -378,7 +366,8 @@ async enrollUserInCourse(
       throw error;
     }
   }
-// Helper method to get course name from various possible fields
+
+  // Helper method to get course name from various possible fields
   getCourseName(course: any): string {
     return course.name || 
            course.title || 
@@ -422,9 +411,7 @@ async enrollUserInCourse(
       console.log(`🔍 Searching learning plans by name: ${identifier}`);
       const searchResult = await this.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
         search_text: identifier,
-        page_size: 100,
-        sort_attr: 'name',
-        sort_dir: 'asc'
+        page_size: 100
       });
       
       const learningPlans = searchResult.data?.items || [];
@@ -536,10 +523,10 @@ async enrollUserInCourse(
     }
   }
 
-  // Helper method to get user details by email
+  // FIXED: Helper method to get user details by email
   async getUserDetails(email: string): Promise<any> {
     try {
-      console.log(`🔍 Getting user details for: ${email}`);
+      console.log(`🔍 FIXED: Getting user details for: ${email}`);
       
       const user = await this.findUserByEmail(email);
       if (!user) {
@@ -548,35 +535,54 @@ async enrollUserInCourse(
 
       return this.formatUserDetails(user);
     } catch (error) {
-      console.error(`❌ Error getting user details for ${email}:`, error);
+      console.error(`❌ FIXED: Error getting user details for ${email}:`, error);
       throw error;
     }
   }
 
-  // Helper method to format user details consistently
+  // FIXED: Helper method to format user details consistently
   formatUserDetails(userData: any): any {
+    console.log(`🔧 FIXED: Formatting user details for:`, userData.email || userData.user_id);
+    
     return {
-      id: (userData.user_id || userData.id)?.toString() || 'Unknown',
+      id: (userData.user_id || userData.id || 'Unknown').toString(),
       fullname: userData.fullname || `${userData.first_name || ''} ${userData.last_name || ''}`.trim() || 'Not available',
       email: userData.email || 'Not available',
-      username: userData.username || userData.userid || 'Not available',
+      username: userData.username || userData.encoded_username || 'Not available',
       status: this.mapUserStatus(userData.status),
       level: this.mapUserLevel(userData.level),
-      creationDate: userData.date_creation ? new Date(userData.date_creation * 1000).toLocaleDateString() : 'Not available',
-      lastAccess: userData.date_last_update ? new Date(userData.date_last_update * 1000).toLocaleDateString() : 'Not available',
+      creationDate: userData.creation_date ? new Date(userData.creation_date).toLocaleDateString() : 'Not available',
+      lastAccess: userData.last_access_date ? new Date(userData.last_access_date).toLocaleDateString() : 'Not available',
       timezone: userData.timezone || 'Not set',
-      language: userData.lang_code || 'en',
-      department: userData.field_5 || userData.department || 'Not assigned',
+      language: userData.language || userData.lang_code || 'en',
+      department: userData.field_1 || userData.field_5 || 'Not assigned',
       
-      // Additional fields
+      // Additional fields from API response
       firstName: userData.first_name,
       lastName: userData.last_name,
-      directManager: userData.direct_manager,
-      isManager: userData.is_manager || false
+      uuid: userData.uuid,
+      isManager: userData.is_manager || false,
+      directManager: userData.manager_first_name && userData.manager_last_name 
+        ? `${userData.manager_first_name} ${userData.manager_last_name}` 
+        : null,
+      managerUsername: userData.manager_username,
+      managerId: userData.manager_id,
+      
+      // Custom fields from API response
+      jobRole: userData.field_1, // Job Role
+      googlerType: userData.field_2, // Googler Type
+      organizationName: userData.field_4, // Organization Name
+      team: userData.field_5, // Team
+      personId: userData.field_6, // Person ID
+      
+      // Manager information
+      managers: userData.managers || [],
+      managerNames: userData.manager_names || {},
+      activeSubordinatesCount: userData.active_subordinates_count || 0
     };
   }
 
-  // Helper method to map user status
+  // FIXED: Helper method to map user status
   private mapUserStatus(status: any): string {
     if (status === 1 || status === '1' || status === 'active') return 'Active';
     if (status === 0 || status === '0' || status === 'inactive') return 'Inactive';
@@ -584,14 +590,15 @@ async enrollUserInCourse(
     return status?.toString() || 'Unknown';
   }
 
-  // Helper method to map user level
+  // FIXED: Helper method to map user level
   private mapUserLevel(level: any): string {
     if (level === 'godadmin') return 'Super Admin';
     if (level === 'power_user') return 'Power User';
     if (level === 'course_creator') return 'Course Creator';
-    if (level === 'student') return 'Student';
+    if (level === '3' || level === 3) return 'Student';
     return level?.toString() || 'User';
   }
+
   // Enrich course data with normalized fields
   private enrichCourseData(courseData: any): any {
     return {
@@ -620,213 +627,95 @@ async enrollUserInCourse(
     };
   }
 
-async searchUsers(searchText: string, limit: number = 25): Promise<any[]> {
-  try {
-    console.log(`🔍 FIXED: Searching users with: "${searchText}"`);
-    
-    const result = await this.apiRequest('/manage/v1/user', 'GET', null, {
-      search_text: searchText,
-      page_size: limit
-    });
-    
-    const users = result.data?.items || [];
-    console.log(`📊 FIXED: Found ${users.length} users from API`);
-    
-    return users;
-  } catch (error) {
-    console.error('FIXED: User search failed:', error);
-    return [];
-  }
-}
-
-// FIXED: Search courses with proper endpoint and mapping
-async searchCourses(searchText: string, limit: number = 25): Promise<any[]> {
-  try {
-    console.log(`🔍 FIXED: Searching courses with: "${searchText}"`);
-    
-    const result = await this.apiRequest('/course/v1/courses', 'GET', null, {
-      search_text: searchText,
-      page_size: limit,
-      sort_attr: 'name',
-      sort_dir: 'asc'
-    });
-    
-    const courses = result.data?.items || [];
-    console.log(`📊 FIXED: Found ${courses.length} courses from API`);
-    
-    return courses;
-  } catch (error) {
-    console.error('FIXED: Course search failed:', error);
-    return [];
-  }
-}
-
-// FIXED: Search learning plans without problematic sort_attr
-async searchLearningPlans(searchText: string, limit: number = 25): Promise<any[]> {
-  try {
-    console.log(`🔍 FIXED: Searching learning plans: "${searchText}"`);
-    
-    // First try with search_text (might not work)
-    let result;
+  // FIXED: Search users with proper field mapping
+  async searchUsers(searchText: string, limit: number = 25): Promise<any[]> {
     try {
-      result = await this.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
+      console.log(`🔍 FIXED: Searching users with: "${searchText}"`);
+      
+      const result = await this.apiRequest('/manage/v1/user', 'GET', null, {
         search_text: searchText,
-        page_size: Math.min(limit, 200)
-        // Removed sort_attr which was causing 400 error
+        page_size: limit
       });
       
-      if (result.data?.items?.length > 0) {
-        console.log(`📊 FIXED: Found ${result.data.items.length} learning plans via search_text`);
-        return result.data.items;
+      const users = result.data?.items || [];
+      console.log(`📊 FIXED: Found ${users.length} users from API`);
+      
+      return users;
+    } catch (error) {
+      console.error('FIXED: User search failed:', error);
+      return [];
+    }
+  }
+
+  // FIXED: Search courses with proper endpoint and mapping
+  async searchCourses(searchText: string, limit: number = 25): Promise<any[]> {
+    try {
+      console.log(`🔍 FIXED: Searching courses with: "${searchText}"`);
+      
+      const result = await this.apiRequest('/course/v1/courses', 'GET', null, {
+        search_text: searchText,
+        page_size: limit,
+        sort_attr: 'name',
+        sort_dir: 'asc'
+      });
+      
+      const courses = result.data?.items || [];
+      console.log(`📊 FIXED: Found ${courses.length} courses from API`);
+      
+      return courses;
+    } catch (error) {
+      console.error('FIXED: Course search failed:', error);
+      return [];
+    }
+  }
+
+  // FIXED: Search learning plans without problematic sort_attr
+  async searchLearningPlans(searchText: string, limit: number = 25): Promise<any[]> {
+    try {
+      console.log(`🔍 FIXED: Searching learning plans: "${searchText}"`);
+      
+      // First try with search_text (might not work)
+      let result;
+      try {
+        result = await this.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
+          search_text: searchText,
+          page_size: Math.min(limit, 200)
+          // Removed sort_attr which was causing 400 error
+        });
+        
+        if (result.data?.items?.length > 0) {
+          console.log(`📊 FIXED: Found ${result.data.items.length} learning plans via search_text`);
+          return result.data.items;
+        }
+      } catch (searchError) {
+        console.log(`🔍 FIXED: search_text failed, trying manual filter...`);
       }
-    } catch (searchError) {
-      console.log(`🔍 FIXED: search_text failed, trying manual filter...`);
-    }
-    
-    // Fallback: get all and filter manually
-    const allResult = await this.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
-      page_size: Math.min(limit * 2, 200)
-      // No sort_attr to avoid 400 error
-    });
-    
-    if (allResult.data?.items?.length > 0) {
-      const filteredPlans = allResult.data.items.filter((lp: any) => {
-        const name = this.getLearningPlanName(lp).toLowerCase();
-        const description = (lp.description || '').toLowerCase();
-        return name.includes(searchText.toLowerCase()) || 
-               description.includes(searchText.toLowerCase());
+      
+      // Fallback: get all and filter manually
+      const allResult = await this.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
+        page_size: Math.min(limit * 2, 200)
+        // No sort_attr to avoid 400 error
       });
       
-      console.log(`📊 FIXED: Found ${filteredPlans.length} learning plans via manual filter`);
-      return filteredPlans.slice(0, limit);
+      if (allResult.data?.items?.length > 0) {
+        const filteredPlans = allResult.data.items.filter((lp: any) => {
+          const name = this.getLearningPlanName(lp).toLowerCase();
+          const description = (lp.description || '').toLowerCase();
+          return name.includes(searchText.toLowerCase()) || 
+                 description.includes(searchText.toLowerCase());
+        });
+        
+        console.log(`📊 FIXED: Found ${filteredPlans.length} learning plans via manual filter`);
+        return filteredPlans.slice(0, limit);
+      }
+      
+      return [];
+    } catch (error) {
+      console.error('FIXED: Learning plan search failed:', error);
+      return [];
     }
-    
-    return [];
-  } catch (error) {
-    console.error('FIXED: Learning plan search failed:', error);
-    return [];
   }
-}
 
-// FIXED: Find user by email with proper error handling and field mapping
-async findUserByEmail(email: string): Promise<any> {
-  try {
-    console.log(`🔍 FIXED: Enhanced user search for: ${email}`);
-    
-    // Search for users with the email
-    const exactSearch = await this.apiRequest('/manage/v1/user', 'GET', null, {
-      search_text: email,
-      page_size: 10
-    });
-    
-    const users = exactSearch.data?.items || [];
-    console.log(`📊 FIXED: Found ${users.length} users from search`);
-    
-    // Find exact email match (case-insensitive)
-    const exactMatch = users.find((u: any) => 
-      u.email && u.email.toLowerCase() === email.toLowerCase()
-    );
-    
-    if (exactMatch) {
-      console.log(`✅ FIXED: Found exact email match: ${exactMatch.fullname || 'No name'} (${exactMatch.email})`);
-      return exactMatch;
-    }
-    
-    // If no exact match found, try partial matching
-    const partialMatch = users.find((u: any) => 
-      u.email && u.email.toLowerCase().includes(email.toLowerCase())
-    );
-    
-    if (partialMatch) {
-      console.log(`⚠️ FIXED: Found partial email match: ${partialMatch.fullname || 'No name'} (${partialMatch.email})`);
-      return partialMatch;
-    }
-    
-    // No match found
-    console.log(`❌ FIXED: No user found with email: ${email}`);
-    return null;
-    
-  } catch (error) {
-    console.error(`❌ FIXED: Error in findUserByEmail for ${email}:`, error);
-    throw error;
-  }
-}
-
-// FIXED: Get user details method that properly handles the API response format
-async getUserDetails(email: string): Promise<any> {
-  try {
-    console.log(`🔍 FIXED: Getting user details for: ${email}`);
-    
-    const user = await this.findUserByEmail(email);
-    if (!user) {
-      throw new Error(`User not found: ${email}`);
-    }
-
-    return this.formatUserDetailsFixed(user);
-  } catch (error) {
-    console.error(`❌ FIXED: Error getting user details for ${email}:`, error);
-    throw error;
-  }
-}
-
-// FIXED: Format user details with proper field mapping based on your API response
-private formatUserDetailsFixed(userData: any): any {
-  console.log(`🔧 FIXED: Formatting user details for:`, userData.email);
-  
-  return {
-    id: (userData.user_id || userData.id || 'Unknown').toString(),
-    fullname: userData.fullname || `${userData.first_name || ''} ${userData.last_name || ''}`.trim() || 'Not available',
-    email: userData.email || 'Not available',
-    username: userData.username || userData.encoded_username || 'Not available',
-    status: this.mapUserStatusFixed(userData.status),
-    level: this.mapUserLevelFixed(userData.level),
-    creationDate: userData.creation_date ? new Date(userData.creation_date).toLocaleDateString() : 'Not available',
-    lastAccess: userData.last_access_date ? new Date(userData.last_access_date).toLocaleDateString() : 'Not available',
-    timezone: userData.timezone || 'Not set',
-    language: userData.language || userData.lang_code || 'en',
-    department: userData.field_1 || userData.field_5 || 'Not assigned',
-    
-    // Additional fields from your API response
-    firstName: userData.first_name,
-    lastName: userData.last_name,
-    uuid: userData.uuid,
-    isManager: userData.is_manager || false,
-    directManager: userData.manager_first_name && userData.manager_last_name 
-      ? `${userData.manager_first_name} ${userData.manager_last_name}` 
-      : null,
-    managerUsername: userData.manager_username,
-    managerId: userData.manager_id,
-    
-    // Custom fields from your API response
-    jobRole: userData.field_1, // "Commercial Strategy and Operations > Commercial Strategy and Operations"
-    googlerType: userData.field_2, // "Employee"
-    organizationName: userData.field_4, // "GBO"
-    team: userData.field_5, // "Go to Market Operations"
-    personId: userData.field_6, // "614609"
-    
-    // Manager information
-    managers: userData.managers || [],
-    managerNames: userData.manager_names || {},
-    activeSubordinatesCount: userData.active_subordinates_count || 0
-  };
-}
-
-// FIXED: Helper method to map user status based on your API response
-private mapUserStatusFixed(status: any): string {
-  if (status === 1 || status === '1' || status === 'active') return 'Active';
-  if (status === 0 || status === '0' || status === 'inactive') return 'Inactive';
-  if (status === 2 || status === '2' || status === 'suspended') return 'Suspended';
-  return status?.toString() || 'Unknown';
-}
-
-// FIXED: Helper method to map user level based on your API response
-private mapUserLevelFixed(level: any): string {
-  if (level === 'godadmin') return 'Super Admin';
-  if (level === 'power_user') return 'Power User';
-  if (level === 'course_creator') return 'Course Creator';
-  if (level === '3' || level === 3) return 'Student';
-  return level?.toString() || 'User';
-}
   // Get user enrollments
   async getUserAllEnrollments(userId: string): Promise<EnrollmentData> {
     try {
