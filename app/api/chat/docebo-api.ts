@@ -2,7 +2,7 @@ import { DoceboConfig, UserDetails, EnrollmentData, FormattedEnrollment } from '
 
 export class DoceboAPI {
   private config: DoceboConfig;
-  private accessToken?: string;
+  private accessToken: string = ''; // Initialize with empty string
   private tokenExpiry?: Date;
   private baseUrl: string;
 
@@ -39,16 +39,21 @@ export class DoceboAPI {
 
       const tokenData = await response.json();
       
-      // Ensure access_token exists
+      // Validate access token
       if (!tokenData.access_token) {
         throw new Error('No access token received');
       }
 
+      // Update access token and expiry
       this.accessToken = tokenData.access_token;
       this.tokenExpiry = new Date(Date.now() + (tokenData.expires_in || 3600) * 1000);
       
       return this.accessToken;
     } catch (error) {
+      // Reset access token to empty string in case of error
+      this.accessToken = '';
+      this.tokenExpiry = undefined;
+      
       console.error('Token acquisition failed:', error);
       throw error;
     }
