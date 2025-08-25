@@ -594,11 +594,7 @@ async findLearningPlanByIdentifier(identifier: string): Promise<any> {
     console.error(`❌ Error finding learning plan: ${identifier}`, error);
     throw error;
   }
-}plan_name || 
-         learningPlan.lp_name || 
-         learningPlan.learningplan_name ||
-         learningPlan.plan_name ||
-         'Unknown Learning Plan';
+}
 }
 
 // Helper method to enrich course data with normalized fields
