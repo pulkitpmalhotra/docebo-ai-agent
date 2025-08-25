@@ -4,14 +4,17 @@ export class DoceboAPI {
   private accessToken?: string;
   private tokenExpiry?: Date;
   private baseUrl: string;
+  
   constructor(config: DoceboConfig) {
     this.config = config;
     this.baseUrl = `https://${config.domain}`;
   }
+  
   private async getAccessToken(): Promise<string> {
     if (this.accessToken && this.tokenExpiry && this.tokenExpiry > new Date()) {
       return this.accessToken;
     }
+
     const response = await fetch(`${this.baseUrl}/oauth2/token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -30,51 +33,97 @@ export class DoceboAPI {
     
     return this.accessToken!;
   }
+
   private formatUserDetails(user: any): UserDetails {
     console.log('🔍 Raw user data received:', JSON.stringify(user, null, 2));
-    // Handle different possible field names from Docebo API
+    
+    // Extract key user details
     const userId = (user.user_id || user.id || '').toString();
-    const email = user.email || user.emailAddress || user.email_address || '';
-    // Build fullname from available fields
-    let fullname = user.fullname || user.full_name || user.displayName || user.display_name || '';
-    if (!fullname) {
-      const firstName = user.first_name || user.firstName || user.fname || '';
-      const lastName = user.last_name || user.lastName || user.lname || '';
-      fullname = `${firstName} ${lastName}`.trim();
-    }
+    const email = user.email || '';
+    const fullname = user.fullname || `${user.first_name || ''} ${user.last_name || ''}`.trim() || '';
+    
     console.log(`🔍 Extracted: ID="${userId}", Email="${email}", Name="${fullname}"`);
-    if (!userId) {
-      console.error('❌ No user ID found in user data');
-      throw new Error('Missing user ID in response data');
+
+    if (!userId || !email) {
+      throw new Error('Missing required user data');
     }
-    if (!email) {
-      console.error('❌ No email found in user data');
-      throw new Error('Missing email in response data');
+
+    // Handle status - Docebo uses "1" for active, "0" for inactive
+    let status = 'Unknown';
+    const statusField = user.status || user.valid || user.is_active || user.active;
+    if (statusField === '1' || statusField === 1 || statusField === true || statusField === 'active') {
+      status = 'Active';
+    } else if (statusField === '0' || statusField === 0 || statusField === false || statusField === 'inactive') {
+      status = 'Inactive';
+    } else if (statusField === 'suspended') {
+      status = 'Suspended';
     }
-    // Format the user details object correctly
+
+    // Handle user level - Docebo specific levels
+    let level = 'User';
+    const levelField = user.level || user.user_level || user.role || user.user_role || '';
+    if (levelField === 'godadmin') {
+      level = 'God Admin';
+    } else if (levelField === 'powUser' || levelField === 'power_user') {
+      level = 'Power User';
+    } else if (levelField === 'admin' || levelField === 'administrator') {
+      level = 'Admin';
+    } else if (levelField === 'user' || levelField === '4') {
+      level = 'User';
+    }
+
+    // Extract manager information
+    let managerInfo = 'Not assigned or not available';
+    if (user.managers && user.managers.length > 0) {
+      const directManager = user.managers.find((m: any) => m.manager_title === 'Direct Manager' || m.manager_type_id === 1);
+      if (directManager) {
+        managerInfo = `${directManager.manager_name} (${directManager.manager_username})`;
+      } else {
+        const firstManager = user.managers[0];
+        managerInfo = `${firstManager.manager_name} (${firstManager.manager_title})`;
+      }
+    }
+
+    // Extract organizational information from custom fields
+    const orgChart = user.field_1 || user.orgchart_desc || user.org_chart || user.organization || 'Not specified';
+    const employeeType = user.field_2 || 'Not specified';
+    const businessUnit = user.field_4 || 'Not specified';
+    const department = user.field_5 || orgChart;
+
     return {
       id: userId,
-      fullname: fullname,
+      fullname: fullname || `User ${userId}`,
       email: email,
-      username: user.username || '',
-      status: user.status || '',
-      level: user.level || '',
-      creationDate: user.creation_date || '',
-      lastAccess: user.last_access_date || '',
-      timezone: user.timezone || '',
-      language: user.language || '',
-      department: user.department || '',
+      username: user.username || user.encoded_username || user.userid || user.user_name || email,
+      status: status,
+      level: level,
+      creationDate: user.creation_date || user.register_date || user.date_created || user.created_at || 'Not available',
+      lastAccess: user.last_access_date || user.last_update || user.last_access || user.updated_at || 'Not available',
+      timezone: user.timezone || user.time_zone || user.tz || 'America/New_York',
+      language: user.language || user.lang || user.lang_code || 'English',
+      department: department,
+      // Additional fields from Docebo API
       firstName: user.first_name || '',
       lastName: user.last_name || '',
       uuid: user.uuid || '',
       isManager: user.is_manager || false,
-      subordinatesCount: user.subordinates_count || 0,
+      subordinatesCount: user.active_subordinates_count || 0,
       avatar: user.avatar || '',
       expirationDate: user.expiration_date || null,
-      emailValidationStatus: user.email_validation_status || '',
+      emailValidationStatus: user.email_validation_status === '1' ? 'Validated' : 'Not Validated',
+      organizationChart: orgChart,
+      employeeType: employeeType,
+      businessUnit: businessUnit,
+      employeeId: user.field_6 || userId,
+      directManager: managerInfo,
+      managers: user.managers || [],
+      expired: user.expired || false,
+      dateFormat: user.date_format || 'Not specified',
+      newsletterOptout: user.newsletter_optout === '1' ? 'Yes' : 'No',
     };
   }
-async getUserDetails(email: string): Promise<UserDetails> {
+
+  async getUserDetails(email: string): Promise<UserDetails> {
     const token = await this.getAccessToken();
     const response = await fetch(`${this.baseUrl}/manage/v1/user?search_text=${encodeURIComponent(email)}`, {
       method: 'GET',
@@ -87,7 +136,14 @@ async getUserDetails(email: string): Promise<UserDetails> {
       throw new Error(`Failed to fetch user details: ${response.status} - ${errorText}`);
     }
     const userData = await response.json();
-    return this.formatUserDetails(userData);
+    const users = userData.data?.items || [];
+    const user = users.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
+    
+    if (!user) {
+      throw new Error(`No user found with email: ${email}`);
+    }
+    
+    return this.formatUserDetails(user);
   }
 
   private formatUserDetails(user: any): UserDetails {
