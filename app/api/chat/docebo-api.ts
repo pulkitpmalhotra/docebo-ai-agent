@@ -637,7 +637,45 @@ async enrollUserInCourse(
     });
     return result.data?.items || [];
   }
-
+async searchLearningPlans(searchText: string, limit: number = 25): Promise<any[]> {
+    try {
+      console.log(`🔍 Searching learning plans: "${searchText}"`);
+      
+      const result = await this.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
+        search_text: searchText,
+        page_size: Math.min(limit, 200),
+        sort_attr: 'title',
+        sort_dir: 'asc'
+      });
+      
+      if (result.data?.items?.length > 0) {
+        return result.data.items;
+      }
+      
+      // Fallback: get all and filter manually
+      const allResult = await this.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
+        page_size: Math.min(limit * 2, 200),
+        sort_attr: 'title',
+        sort_dir: 'asc'
+      });
+      
+      if (allResult.data?.items?.length > 0) {
+        const filteredPlans = allResult.data.items.filter((lp: any) => {
+          const name = this.getLearningPlanName(lp).toLowerCase();
+          const description = (lp.description || '').toLowerCase();
+          return name.includes(searchText.toLowerCase()) || 
+                 description.includes(searchText.toLowerCase());
+        });
+        
+        return filteredPlans.slice(0, limit);
+      }
+      
+    } catch (error) {
+      console.error('Learning plan search failed:', error);
+    }
+    
+    return [];
+  }
   // Get user enrollments
   async getUserAllEnrollments(userId: string): Promise<EnrollmentData> {
     try {
