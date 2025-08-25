@@ -1,4 +1,5 @@
 import { DoceboConfig, UserDetails } from './types';
+
 export class DoceboAPI {
   private config: DoceboConfig;
   private accessToken?: string;
@@ -40,69 +41,79 @@ export class DoceboAPI {
     // Extract key user details
     const userId = (user.user_id || user.id || '').toString();
     const email = user.email || '';
-    const fullname = user.fullname || `${user.first_name || ''} ${user.last_name || ''}`.trim() || '';
     
-    console.log(`🔍 Extracted: ID="${userId}", Email="${email}", Name="${fullname}"`);
+    // Determine user status
+    const determineStatus = (statusField: any): string => {
+      if (statusField === '1' || statusField === 1 || statusField === true || statusField === 'active') {
+        return 'Active';
+      } else if (statusField === '0' || statusField === 0 || statusField === false || statusField === 'inactive') {
+        return 'Inactive';
+      } else if (statusField === 'suspended') {
+        return 'Suspended';
+      }
+      return 'Unknown';
+    };
 
-    if (!userId || !email) {
-      throw new Error('Missing required user data');
-    }
-
-    // Handle status - Docebo uses "1" for active, "0" for inactive
-    let status = 'Unknown';
-    const statusField = user.status || user.valid || user.is_active || user.active;
-    if (statusField === '1' || statusField === 1 || statusField === true || statusField === 'active') {
-      status = 'Active';
-    } else if (statusField === '0' || statusField === 0 || statusField === false || statusField === 'inactive') {
-      status = 'Inactive';
-    } else if (statusField === 'suspended') {
-      status = 'Suspended';
-    }
-
-    // Handle user level - Docebo specific levels
-    let level = 'User';
-    const levelField = user.level || user.user_level || user.role || user.user_role || '';
-    if (levelField === 'godadmin') {
-      level = 'God Admin';
-    } else if (levelField === 'powUser' || levelField === 'power_user') {
-      level = 'Power User';
-    } else if (levelField === 'admin' || levelField === 'administrator') {
-      level = 'Admin';
-    } else if (levelField === 'user' || levelField === '4') {
-      level = 'User';
-    }
+    // Determine user level
+    const determineLevel = (levelField: string): string => {
+      const levelMap: {[key: string]: string} = {
+        'godadmin': 'God Admin',
+        'powUser': 'Power User',
+        'power_user': 'Power User',
+        'admin': 'Admin', 
+        'administrator': 'Admin',
+        'user': 'User',
+        '4': 'User'
+      };
+      return levelMap[levelField] || 'User';
+    };
 
     // Extract manager information
-    let managerInfo = 'Not assigned or not available';
-    if (user.managers && user.managers.length > 0) {
-      const directManager = user.managers.find((m: any) => m.manager_title === 'Direct Manager' || m.manager_type_id === 1);
-      if (directManager) {
-        managerInfo = `${directManager.manager_name} (${directManager.manager_username})`;
-      } else {
-        const firstManager = user.managers[0];
-        managerInfo = `${firstManager.manager_name} (${firstManager.manager_title})`;
+    const extractManagerInfo = (managers: any[]): string => {
+      if (!managers || managers.length === 0) {
+        return 'Not assigned or not available';
       }
-    }
+      
+      const directManager = managers.find((m: any) => 
+        m.manager_title === 'Direct Manager' || m.manager_type_id === 1
+      );
+      
+      if (directManager) {
+        return `${directManager.manager_name} (${directManager.manager_username})`;
+      }
+      
+      const firstManager = managers[0];
+      return `${firstManager.manager_name} (${firstManager.manager_title})`;
+    };
 
-    // Extract organizational information from custom fields
+    // Construct full name
+    const fullname = user.fullname || 
+      `${user.first_name || ''} ${user.last_name || ''}`.trim() || 
+      `User ${userId}`;
+
+    // Organizational details
     const orgChart = user.field_1 || user.orgchart_desc || user.org_chart || user.organization || 'Not specified';
     const employeeType = user.field_2 || 'Not specified';
     const businessUnit = user.field_4 || 'Not specified';
     const department = user.field_5 || orgChart;
 
+    // Validate required fields
+    if (!userId || !email) {
+      throw new Error('Missing required user data');
+    }
+
     return {
       id: userId,
-      fullname: fullname || `User ${userId}`,
+      fullname: fullname,
       email: email,
       username: user.username || user.encoded_username || user.userid || user.user_name || email,
-      status: status,
-      level: level,
+      status: determineStatus(user.status || user.valid || user.is_active || user.active),
+      level: determineLevel(user.level || user.user_level || user.role || user.user_role || ''),
       creationDate: user.creation_date || user.register_date || user.date_created || user.created_at || 'Not available',
       lastAccess: user.last_access_date || user.last_update || user.last_access || user.updated_at || 'Not available',
       timezone: user.timezone || user.time_zone || user.tz || 'America/New_York',
       language: user.language || user.lang || user.lang_code || 'English',
       department: department,
-      // Additional fields from Docebo API
       firstName: user.first_name || '',
       lastName: user.last_name || '',
       uuid: user.uuid || '',
@@ -115,7 +126,7 @@ export class DoceboAPI {
       employeeType: employeeType,
       businessUnit: businessUnit,
       employeeId: user.field_6 || userId,
-      directManager: managerInfo,
+      directManager: extractManagerInfo(user.managers || []),
       managers: user.managers || [],
       expired: user.expired || false,
       dateFormat: user.date_format || 'Not specified',
