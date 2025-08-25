@@ -183,7 +183,104 @@ export class DoceboAPI {
     };
   }
 
-  // Enrichment methods
+  // Enrichment method for course data
+  getCourseName(course: any): string {
+    return course.name ||
+           course.title ||
+           course.course_name ||
+           'Unknown Course';
+  }
+
+  // Enrichment method for learning plan data
+  getLearningPlanName(lp: any): string {
+    return lp.name ||
+           lp.title ||
+           lp.learning_plan_name ||
+           lp.lp_name ||
+           lp.learningplan_name ||
+           lp.plan_name ||
+           'Unknown Learning Plan';
+  }
+
+  async getUserDetails(email: string): Promise<UserDetails> {
+    const response = await this.apiRequest('/manage/v1/user', 'GET', null, {
+      search_text: email
+    });
+    
+    const users = response.data?.items || [];
+    const user = users.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
+    
+    if (!user) {
+      throw new Error(`No user found with email: ${email}`);
+    }
+    
+    return this.formatUserDetails(user);
+  }
+
+  // Courses and Learning Plans methods
+  async findCourseByIdentifier(identifier: string): Promise<any> {
+    // Perform search or direct lookup based on identifier
+    try {
+      // Try direct course lookup by ID if identifier is numeric
+      if (/^\d+$/.test(identifier)) {
+        console.log(`🆔 Trying direct course lookup by ID: ${identifier}`);
+        try {
+          const directResult = await this.apiRequest(`/learn/v1/courses/${identifier}`, 'GET');
+          if (directResult.data) {
+            console.log(`✅ Found course by direct ID lookup`);
+            return this.enrichCourseData(directResult.data);
+          }
+        } catch (directError) {
+          console.log(`❌ Direct course lookup failed, trying search...`);
+        }
+      }
+
+      // Fallback to course search
+      console.log(`🔍 Searching for course: ${identifier}`);
+      const courses = await this.searchCourses(identifier, 50);
+
+      if (courses.length === 0) {
+        throw new Error(`Course not found: ${identifier}`);
+      }
+
+      // Find best match
+      let bestMatch = courses.find(course => {
+        const courseName = this.getCourseName(course);
+        const courseCode = course.code || course.course_code || '';
+        const courseId = (course.id || course.course_id)?.toString();
+
+        // Exact matches
+        if (courseId === identifier.toString()) return true;
+        if (courseCode === identifier) return true;
+        if (courseName.toLowerCase() === identifier.toLowerCase()) return true;
+
+        return false;
+      });
+
+      // If no exact match, try partial match
+      if (!bestMatch) {
+        bestMatch = courses.find(course => {
+          const courseName = this.getCourseName(course);
+          return courseName.toLowerCase().includes(identifier.toLowerCase());
+        });
+      }
+
+      // Default to first result if nothing else matches
+      if (!bestMatch) {
+        bestMatch = courses[0];
+      }
+
+      console.log(`✅ Selected course: ${this.getCourseName(bestMatch)}`);
+
+      return this.enrichCourseData(bestMatch);
+
+    } catch (error) {
+      console.error(`❌ Error getting course details:`, error);
+      throw error;
+    }
+  }
+
+  // Enrichment method for course data
   private enrichCourseData(courseData: any): any {
     console.log(`📊 Enriching course data`);
 
@@ -211,6 +308,15 @@ export class DoceboAPI {
       credits: courseData.credits || 0,
       ...courseData
     };
+  }
+
+  // Search methods
+  async searchCourses(searchText: string, limit: number = 25): Promise<any[]> {
+    const result = await this.apiRequest('/learn/v1/courses', 'GET', null, {
+      search_text: searchText,
+      page_size: limit
+    });
+    return result.data?.items || [];
   }
 
   async getUserDetails(email: string): Promise<UserDetails> {
