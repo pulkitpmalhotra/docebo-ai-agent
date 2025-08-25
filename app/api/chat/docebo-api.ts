@@ -378,7 +378,220 @@ async enrollUserInCourse(
       throw error;
     }
   }
+// Helper method to get course name from various possible fields
+  getCourseName(course: any): string {
+    return course.name || 
+           course.title || 
+           course.course_name || 
+           course.courseName ||
+           course.course_title ||
+           'Unknown Course';
+  }
 
+  // Helper method to get learning plan name from various possible fields
+  getLearningPlanName(learningPlan: any): string {
+    return learningPlan.title || 
+           learningPlan.name || 
+           learningPlan.learning_plan_name || 
+           learningPlan.lp_name || 
+           learningPlan.learningplan_name ||
+           learningPlan.plan_name ||
+           'Unknown Learning Plan';
+  }
+
+  // Helper method to find learning plan by identifier
+  async findLearningPlanByIdentifier(identifier: string): Promise<any> {
+    try {
+      console.log(`🔍 Enhanced learning plan search for: ${identifier}`);
+      
+      // Try direct ID lookup if it's numeric
+      if (/^\d+$/.test(identifier)) {
+        try {
+          console.log(`🆔 Trying direct learning plan lookup by ID: ${identifier}`);
+          const directResult = await this.apiRequest(`/learningplan/v1/learningplans/${identifier}`, 'GET');
+          if (directResult.data) {
+            console.log(`✅ Found learning plan by direct ID lookup`);
+            return directResult.data;
+          }
+        } catch (directError) {
+          console.log(`❌ Direct learning plan lookup failed for ID ${identifier}`);
+        }
+      }
+
+      // Search by name/keyword
+      console.log(`🔍 Searching learning plans by name: ${identifier}`);
+      const searchResult = await this.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
+        search_text: identifier,
+        page_size: 100,
+        sort_attr: 'name',
+        sort_dir: 'asc'
+      });
+      
+      const learningPlans = searchResult.data?.items || [];
+      console.log(`📊 Found ${learningPlans.length} learning plans from search`);
+      
+      if (learningPlans.length === 0) {
+        throw new Error(`Learning plan not found: ${identifier}`);
+      }
+
+      // Find best match
+      const exactMatch = learningPlans.find((lp: any) => {
+        const lpName = this.getLearningPlanName(lp);
+        const lpId = (lp.learning_plan_id || lp.id)?.toString();
+        
+        return lpId === identifier.toString() || 
+               lpName.toLowerCase() === identifier.toLowerCase();
+      });
+
+      if (exactMatch) {
+        console.log(`✅ Found exact learning plan match: ${this.getLearningPlanName(exactMatch)}`);
+        return exactMatch;
+      }
+
+      // Return first result as fallback
+      console.log(`🔄 Using first result as fallback: ${this.getLearningPlanName(learningPlans[0])}`);
+      return learningPlans[0];
+
+    } catch (error) {
+      console.error(`❌ Error finding learning plan: ${identifier}`, error);
+      throw error;
+    }
+  }
+
+  // Helper method to unenroll user from course
+  async unenrollUserFromCourse(userId: string, courseId: string): Promise<any> {
+    try {
+      console.log(`🔄 Attempting to unenroll user ${userId} from course ${courseId}`);
+      
+      const unenrollmentEndpoints = [
+        {
+          endpoint: `/learn/v1/enrollments/users/${userId}/courses/${courseId}`,
+          method: 'DELETE' as const
+        },
+        {
+          endpoint: '/learn/v1/enrollments',
+          method: 'DELETE' as const,
+          body: {
+            user_ids: [userId],
+            course_ids: [courseId]
+          }
+        }
+      ];
+
+      for (const { endpoint, method, body } of unenrollmentEndpoints) {
+        try {
+          console.log(`📋 Trying unenrollment ${method} ${endpoint}`);
+          const result = await this.apiRequest(endpoint, method, body);
+          console.log(`✅ Unenrollment successful via ${endpoint}`);
+          return result;
+        } catch (endpointError) {
+          console.log(`❌ Failed ${endpoint}:`, endpointError instanceof Error ? endpointError.message : endpointError);
+          continue;
+        }
+      }
+      
+      throw new Error('All unenrollment endpoints failed. Please check the course ID and user permissions.');
+    } catch (error) {
+      console.error(`❌ Error unenrolling user from course:`, error);
+      throw error;
+    }
+  }
+
+  // Helper method to unenroll user from learning plan
+  async unenrollUserFromLearningPlan(userId: string, learningPlanId: string): Promise<any> {
+    try {
+      console.log(`🔄 Attempting to unenroll user ${userId} from learning plan ${learningPlanId}`);
+      
+      const unenrollmentEndpoints = [
+        {
+          endpoint: `/learningplan/v1/learningplans/${learningPlanId}/enrollments/users/${userId}`,
+          method: 'DELETE' as const
+        },
+        {
+          endpoint: '/learningplan/v1/learningplans/enrollments',
+          method: 'DELETE' as const,
+          body: {
+            user_ids: [userId],
+            learning_plan_ids: [learningPlanId]
+          }
+        }
+      ];
+
+      for (const { endpoint, method, body } of unenrollmentEndpoints) {
+        try {
+          console.log(`📋 Trying LP unenrollment ${method} ${endpoint}`);
+          const result = await this.apiRequest(endpoint, method, body);
+          console.log(`✅ LP unenrollment successful via ${endpoint}`);
+          return result;
+        } catch (endpointError) {
+          console.log(`❌ Failed LP ${endpoint}:`, endpointError instanceof Error ? endpointError.message : endpointError);
+          continue;
+        }
+      }
+      
+      throw new Error('All learning plan unenrollment endpoints failed. Please check the learning plan ID and user permissions.');
+    } catch (error) {
+      console.error(`❌ Error unenrolling user from learning plan:`, error);
+      throw error;
+    }
+  }
+
+  // Helper method to get user details by email
+  async getUserDetails(email: string): Promise<any> {
+    try {
+      console.log(`🔍 Getting user details for: ${email}`);
+      
+      const user = await this.findUserByEmail(email);
+      if (!user) {
+        throw new Error(`User not found: ${email}`);
+      }
+
+      return this.formatUserDetails(user);
+    } catch (error) {
+      console.error(`❌ Error getting user details for ${email}:`, error);
+      throw error;
+    }
+  }
+
+  // Helper method to format user details consistently
+  formatUserDetails(userData: any): any {
+    return {
+      id: (userData.user_id || userData.id)?.toString() || 'Unknown',
+      fullname: userData.fullname || `${userData.first_name || ''} ${userData.last_name || ''}`.trim() || 'Not available',
+      email: userData.email || 'Not available',
+      username: userData.username || userData.userid || 'Not available',
+      status: this.mapUserStatus(userData.status),
+      level: this.mapUserLevel(userData.level),
+      creationDate: userData.date_creation ? new Date(userData.date_creation * 1000).toLocaleDateString() : 'Not available',
+      lastAccess: userData.date_last_update ? new Date(userData.date_last_update * 1000).toLocaleDateString() : 'Not available',
+      timezone: userData.timezone || 'Not set',
+      language: userData.lang_code || 'en',
+      department: userData.field_5 || userData.department || 'Not assigned',
+      
+      // Additional fields
+      firstName: userData.first_name,
+      lastName: userData.last_name,
+      directManager: userData.direct_manager,
+      isManager: userData.is_manager || false
+    };
+  }
+
+  // Helper method to map user status
+  private mapUserStatus(status: any): string {
+    if (status === 1 || status === '1' || status === 'active') return 'Active';
+    if (status === 0 || status === '0' || status === 'inactive') return 'Inactive';
+    if (status === 2 || status === '2' || status === 'suspended') return 'Suspended';
+    return status?.toString() || 'Unknown';
+  }
+
+  // Helper method to map user level
+  private mapUserLevel(level: any): string {
+    if (level === 'godadmin') return 'Super Admin';
+    if (level === 'power_user') return 'Power User';
+    if (level === 'course_creator') return 'Course Creator';
+    if (level === 'student') return 'Student';
+    return level?.toString() || 'User';
+  }
   // Enrich course data with normalized fields
   private enrichCourseData(courseData: any): any {
     return {
