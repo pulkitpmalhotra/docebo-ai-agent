@@ -1,5 +1,10 @@
 // app/api/chat/intent-analyzer.ts - COMPLETE with ALL intent patterns
-import { IntentAnalysis } from './types';
+
+export interface IntentAnalysis {
+  intent: string;
+  entities: any;
+  confidence: number;
+}
 
 export class IntentAnalyzer {
   static analyzeIntent(message: string): IntentAnalysis {
