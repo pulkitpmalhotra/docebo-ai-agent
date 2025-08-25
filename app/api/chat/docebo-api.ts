@@ -273,7 +273,6 @@ export class DoceboAPI {
     });
     return result.data?.items || [];
   }
-}
 
   // User details extraction and formatting
   private formatUserDetails(user: any): UserDetails {
@@ -461,6 +460,15 @@ export class DoceboAPI {
     return result.data?.items || [];
   }
 
+  // Search users
+  async searchUsers(searchText: string, limit: number = 25): Promise<any[]> {
+    const result = await this.apiRequest('/manage/v1/user', 'GET', null, {
+      search_text: searchText,
+      page_size: limit
+    });
+    return result.data?.items || [];
+  }
+
   // Get user enrollments
   async getUserAllEnrollments(userId: string): Promise<EnrollmentData> {
     try {
@@ -520,7 +528,7 @@ export class DoceboAPI {
   }
 
   // Format course enrollment
-  private formatCourseEnrollment(enrollment: any): FormattedEnrollment {
+  formatCourseEnrollment(enrollment: any): FormattedEnrollment {
     return {
       courseId: (enrollment.course_id || enrollment.id)?.toString(),
       courseName: enrollment.course_name || enrollment.name || 'Unknown Course',
@@ -535,7 +543,7 @@ export class DoceboAPI {
   }
 
   // Format learning plan enrollment
-  private formatLearningPlanEnrollment(enrollment: any): FormattedEnrollment {
+  formatLearningPlanEnrollment(enrollment: any): FormattedEnrollment {
     return {
       learningPlanId: (enrollment.learning_plan_id || enrollment.id)?.toString(),
       learningPlanName: enrollment.learning_plan_name || enrollment.name || 'Unknown Learning Plan',
@@ -548,5 +556,56 @@ export class DoceboAPI {
       dueDate: enrollment.due_date,
       assignmentType: enrollment.assignment_type
     };
+  }
+
+  // Get enhanced user details with manager information
+  async getEnhancedUserDetails(userId: string): Promise<any> {
+    try {
+      // Get basic user details first
+      const userResponse = await this.apiRequest(`/manage/v1/user/${userId}`, 'GET');
+      const userData = userResponse.data;
+      
+      if (!userData) {
+        throw new Error(`User not found with ID: ${userId}`);
+      }
+
+      // Format basic user details
+      const basicDetails = this.formatUserDetails(userData);
+      
+      // Try to get manager information
+      let managerInfo = null;
+      try {
+        if (userData.direct_manager || userData.manager_id) {
+          const managerId = userData.direct_manager || userData.manager_id;
+          const managerResponse = await this.apiRequest(`/manage/v1/user/${managerId}`, 'GET');
+          if (managerResponse.data) {
+            managerInfo = {
+              id: managerResponse.data.user_id?.toString() || managerId,
+              fullname: managerResponse.data.fullname || `${managerResponse.data.first_name || ''} ${managerResponse.data.last_name || ''}`.trim() || 'Unknown Manager',
+              email: managerResponse.data.email || '',
+              department: managerResponse.data.department || managerResponse.data.field_5 || ''
+            };
+          }
+        }
+      } catch (managerError) {
+        console.log('Could not fetch manager details:', managerError);
+      }
+
+      // Return enhanced details
+      return {
+        ...basicDetails,
+        manager: managerInfo,
+        additionalFields: {
+          jobTitle: userData.job_title || userData.field_1 || '',
+          employeeId: userData.employee_id || userData.field_2 || '',
+          location: userData.location || userData.field_3 || '',
+          directReports: userData.subordinates_count || userData.active_subordinates_count || 0
+        }
+      };
+
+    } catch (error) {
+      console.error(`Error getting enhanced user details for ${userId}:`, error);
+      throw error;
+    }
   }
 }
