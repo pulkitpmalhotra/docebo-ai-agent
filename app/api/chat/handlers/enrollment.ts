@@ -1,4 +1,5 @@
-// app/api/chat/handlers/enrollment.ts - Enhanced enrollment handlers with assignment types and validity dates
+// app/api/chat/handlers/enrollment.ts - Enhanced with better error handling for exact matching
+
 import { NextResponse } from 'next/server';
 import { DoceboAPI } from '../docebo-api';
 import { APIResponse } from '../types';
@@ -19,7 +20,7 @@ export class EnrollmentHandlers {
 
       console.log(`🎯 Processing course enrollment: ${email} -> ${courseName}`);
 
-      // Find user
+      // Find user first
       const users = await api.searchUsers(email, 5);
       const user = users.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
       
@@ -31,9 +32,19 @@ export class EnrollmentHandlers {
         });
       }
 
-      // Find course
-      const course = await api.findCourseByIdentifier(courseName);
-      const courseId = course.id || course.course_id || course.idCourse;
+      // Find course with enhanced error handling
+      let course;
+      try {
+        course = await api.findCourseByIdentifier(courseName);
+      } catch (courseError) {
+        return NextResponse.json({
+          response: `❌ **Course Search Error**: ${courseError instanceof Error ? courseError.message : 'Unknown error'}\n\n**💡 Tips for exact matching:**\n• Use the complete, exact course name\n• Check spelling and capitalization\n• Use course ID if you know it (e.g., "12345")\n• If multiple courses exist with similar names, use course ID`,
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      const courseId = (course.id || course.course_id || course.idCourse).toString();
       const displayCourseName = api.getCourseName(course);
 
       // Prepare enrollment options with enhanced parameters
@@ -88,15 +99,31 @@ export class EnrollmentHandlers {
       console.error('❌ Course enrollment error:', error);
       
       return NextResponse.json({
-        response: `❌ **Enrollment Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
+        response: `❌ **Learning Plan Unenrollment Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
 
 Please check:
 • User email exists in the system
-• Course name is correct
+• Learning plan name is **exact** and matches a single learning plan
+• User is currently enrolled in the learning plan
+• You have permission to unenroll users from learning plans
+
+**💡 Pro Tip**: For unenrollment operations, exact learning plan name matching is critical to prevent accidental unenrollments from wrong learning plans.`,
+        success: false,
+        timestamp: new Date().toISOString()
+      });
+    }
+  }
+}❌ **Enrollment Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
+
+Please check:
+• User email exists in the system
+• Course name is **exact** and complete
 • Assignment type is "required" or "optional"
 • Validity dates are in YYYY-MM-DD format
 • End validity is after start validity
-• You have permission to enroll users`,
+• You have permission to enroll users
+
+**💡 Pro Tip**: Use course IDs (numbers) for guaranteed exact matching when dealing with courses that have similar names.`,
         success: false,
         timestamp: new Date().toISOString()
       });
@@ -117,7 +144,7 @@ Please check:
 
       console.log(`🎯 Processing learning plan enrollment: ${email} -> ${learningPlanName}`);
 
-      // Find user
+      // Find user first
       const users = await api.searchUsers(email, 5);
       const user = users.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
       
@@ -129,9 +156,19 @@ Please check:
         });
       }
 
-      // Find learning plan
-      const learningPlan = await api.findLearningPlanByIdentifier(learningPlanName);
-      const learningPlanId = learningPlan.learning_plan_id || learningPlan.id;
+      // Find learning plan with enhanced error handling
+      let learningPlan;
+      try {
+        learningPlan = await api.findLearningPlanByIdentifier(learningPlanName);
+      } catch (lpError) {
+        return NextResponse.json({
+          response: `❌ **Learning Plan Search Error**: ${lpError instanceof Error ? lpError.message : 'Unknown error'}\n\n**💡 Tips for exact matching:**\n• Use the complete, exact learning plan name\n• Check spelling and capitalization\n• Use learning plan ID if you know it (e.g., "274")\n• If multiple learning plans exist with similar names, use learning plan ID`,
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      const learningPlanId = (learningPlan.learning_plan_id || learningPlan.id).toString();
       const displayLearningPlanName = api.getLearningPlanName(learningPlan);
 
       // Prepare enrollment options with enhanced parameters
@@ -189,11 +226,13 @@ Please check:
 
 Please check:
 • User email exists in the system
-• Learning plan name is correct
+• Learning plan name is **exact** and complete
 • Assignment type is "required" or "optional"
 • Validity dates are in YYYY-MM-DD format
 • End validity is after start validity
-• You have permission to enroll users in learning plans`,
+• You have permission to enroll users in learning plans
+
+**💡 Pro Tip**: Use learning plan IDs (numbers) for guaranteed exact matching when dealing with learning plans that have similar names.`,
         success: false,
         timestamp: new Date().toISOString()
       });
@@ -214,7 +253,7 @@ Please check:
 
       console.log(`🎯 Processing course unenrollment: ${email} -> ${courseName}`);
 
-      // Find user
+      // Find user first
       const users = await api.searchUsers(email, 5);
       const user = users.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
       
@@ -226,16 +265,26 @@ Please check:
         });
       }
 
-      // Find course
-      const course = await api.findCourseByIdentifier(courseName);
-      const courseId = course.id || course.course_id || course.idCourse;
+      // Find course with enhanced error handling
+      let course;
+      try {
+        course = await api.findCourseByIdentifier(courseName);
+      } catch (courseError) {
+        return NextResponse.json({
+          response: `❌ **Course Search Error for Unenrollment**: ${courseError instanceof Error ? courseError.message : 'Unknown error'}\n\n**💡 For unenrollment, exact matching is required:**\n• Use the complete, exact course name\n• Check spelling and capitalization carefully\n• Use course ID if you know it (e.g., "12345")\n• If multiple courses exist with similar names, use course ID`,
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      const courseId = (course.id || course.course_id || course.idCourse).toString();
       const displayCourseName = api.getCourseName(course);
 
       // Unenroll user
       const unenrollmentResult = await api.unenrollUserFromCourse(user.user_id || user.id, courseId);
 
       return NextResponse.json({
-        response: `✅ **Unenrollment Successful**
+        response: `✅ **Course Unenrollment Successful**
 
 👤 **User**: ${user.fullname} (${email})
 📚 **Course**: ${displayCourseName}
@@ -267,9 +316,11 @@ The user has been successfully unenrolled from the course.`,
 
 Please check:
 • User email exists in the system
-• Course name is correct
+• Course name is **exact** and matches a single course
 • User is currently enrolled in the course
-• You have permission to unenroll users`,
+• You have permission to unenroll users
+
+**💡 Pro Tip**: For unenrollment operations, exact course name matching is critical to prevent accidental unenrollments from wrong courses.`,
         success: false,
         timestamp: new Date().toISOString()
       });
@@ -290,7 +341,7 @@ Please check:
 
       console.log(`🎯 Processing learning plan unenrollment: ${email} -> ${learningPlanName}`);
 
-      // Find user
+      // Find user first
       const users = await api.searchUsers(email, 5);
       const user = users.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
       
@@ -302,9 +353,19 @@ Please check:
         });
       }
 
-      // Find learning plan
-      const learningPlan = await api.findLearningPlanByIdentifier(learningPlanName);
-      const learningPlanId = learningPlan.learning_plan_id || learningPlan.id;
+      // Find learning plan with enhanced error handling
+      let learningPlan;
+      try {
+        learningPlan = await api.findLearningPlanByIdentifier(learningPlanName);
+      } catch (lpError) {
+        return NextResponse.json({
+          response: `❌ **Learning Plan Search Error for Unenrollment**: ${lpError instanceof Error ? lpError.message : 'Unknown error'}\n\n**💡 For unenrollment, exact matching is required:**\n• Use the complete, exact learning plan name\n• Check spelling and capitalization carefully\n• Use learning plan ID if you know it (e.g., "274")\n• If multiple learning plans exist with similar names, use learning plan ID`,
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      const learningPlanId = (learningPlan.learning_plan_id || learningPlan.id).toString();
       const displayLearningPlanName = api.getLearningPlanName(learningPlan);
 
       // Unenroll user
@@ -339,16 +400,4 @@ The user has been successfully unenrolled from the learning plan.`,
       console.error('❌ Learning plan unenrollment error:', error);
       
       return NextResponse.json({
-        response: `❌ **Learning Plan Unenrollment Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
-
-Please check:
-• User email exists in the system
-• Learning plan name is correct
-• User is currently enrolled in the learning plan
-• You have permission to unenroll users from learning plans`,
-        success: false,
-        timestamp: new Date().toISOString()
-      });
-    }
-  }
-}
+        response: `
