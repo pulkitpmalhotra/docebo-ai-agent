@@ -181,172 +181,213 @@ Please check:
     }
   }
 
-  private static async processBulkEnrollment(
-    emails: string[], 
-    resourceName: string, 
-    resourceType: 'course' | 'learning_plan',
-    api: DoceboAPI,
-    enrollFunction: (userId: string) => Promise<any>
-  ): Promise<BulkEnrollmentResult> {
-    const result: BulkEnrollmentResult = {
-      successful: [],
-      failed: [],
-      summary: {
-        total: emails.length,
-        successful: 0,
-        failed: 0
-      }
-    };
-
-    console.log(`🔄 Processing ${emails.length} enrollments...`);
-
-    // Process enrollments with some concurrency but not too much to avoid API limits
-    const batchSize = 3;
-    for (let i = 0; i < emails.length; i += batchSize) {
-      const batch = emails.slice(i, i + batchSize);
-      
-      await Promise.all(batch.map(async (email) => {
-        try {
-          // Find user
-          const users = await api.searchUsers(email, 5);
-          const user = users.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
-          
-          if (!user) {
-            result.failed.push({
-              email: email,
-              error: 'User not found',
-              resourceName: resourceName
-            });
-            return;
-          }
-
-          // Enroll user
-          await enrollFunction(user.user_id || user.id);
-          
-          result.successful.push({
-            email: email,
-            userId: user.user_id || user.id,
-            resourceName: resourceName,
-            resourceId: 'enrolled'
-          });
-
-          console.log(`✅ Enrolled: ${email}`);
-
-        } catch (error) {
-          console.error(`❌ Failed to enroll ${email}:`, error);
-          result.failed.push({
-            email: email,
-            error: error instanceof Error ? error.message : 'Enrollment failed',
-            resourceName: resourceName
-          });
-        }
-      }));
-
-      // Small delay between batches to be API-friendly
-      if (i + batchSize < emails.length) {
-        await new Promise(resolve => setTimeout(resolve, 500));
-      }
+private static async processBulkEnrollment(
+  emails: string[], 
+  resourceName: string, 
+  resourceType: 'course' | 'learning_plan',
+  api: DoceboAPI,
+  enrollFunction: (userId: string, resourceId: string, options: any) => Promise<any>
+): Promise<BulkEnrollmentResult> {
+  const result: BulkEnrollmentResult = {
+    successful: [],
+    failed: [],
+    summary: {
+      total: emails.length,
+      successful: 0,
+      failed: 0
     }
+  };
 
-    result.summary.successful = result.successful.length;
-    result.summary.failed = result.failed.length;
+  console.log(`🔄 FIXED: Processing ${emails.length} bulk enrollments...`);
 
+  // Find the resource first to get its ID
+  let resourceId: string;
+  try {
+    if (resourceType === 'course') {
+      const course = await api.findCourseByIdentifier(resourceName);
+      resourceId = (course.id || course.course_id || course.idCourse).toString();
+    } else {
+      const learningPlan = await api.findLearningPlanByIdentifier(resourceName);
+      resourceId = (learningPlan.learning_plan_id || learningPlan.id).toString();
+    }
+    console.log(`📋 FIXED: Found ${resourceType} ID: ${resourceId}`);
+  } catch (error) {
+    // If resource not found, mark all as failed
+    emails.forEach(email => {
+      result.failed.push({
+        email: email,
+        error: `${resourceType === 'course' ? 'Course' : 'Learning plan'} not found: ${resourceName}`,
+        resourceName: resourceName
+      });
+    });
+    result.summary.failed = emails.length;
     return result;
   }
 
-  private static async processBulkUnenrollment(
-    emails: string[], 
-    resourceName: string, 
-    resourceType: 'course' | 'learning_plan',
-    api: DoceboAPI
-  ): Promise<BulkEnrollmentResult> {
-    const result: BulkEnrollmentResult = {
-      successful: [],
-      failed: [],
-      summary: {
-        total: emails.length,
-        successful: 0,
-        failed: 0
-      }
-    };
+  // Process enrollments in batches to be API-friendly
+  const batchSize = 3;
+  for (let i = 0; i < emails.length; i += batchSize) {
+    const batch = emails.slice(i, i + batchSize);
+    
+    await Promise.all(batch.map(async (email) => {
+      try {
+        // Find user
+        const users = await api.searchUsers(email, 5);
+        const user = users.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
+        
+        if (!user) {
+          result.failed.push({
+            email: email,
+            error: 'User not found',
+            resourceName: resourceName
+          });
+          return;
+        }
 
-    // Find resource first
-    let resourceId: string;
-    try {
-      if (resourceType === 'course') {
-        const course = await api.findCourseByIdentifier(resourceName);
-        resourceId = course.id || course.course_id || course.idCourse;
-      } else {
-        const learningPlan = await api.findLearningPlanByIdentifier(resourceName);
-        resourceId = learningPlan.learning_plan_id || learningPlan.id;
-      }
-    } catch (error) {
-      // If resource not found, mark all as failed
-      emails.forEach(email => {
+        const userId = (user.user_id || user.id).toString();
+
+        // FIXED: Use the corrected enrollment methods based on resource type
+        if (resourceType === 'course') {
+          await api.enrollUserInCourse(userId, resourceId, { 
+            level: 'student', 
+            assignmentType: 'required' 
+          });
+        } else {
+          await api.enrollUserInLearningPlan(userId, resourceId, { 
+            assignmentType: 'required' 
+          });
+        }
+        
+        result.successful.push({
+          email: email,
+          userId: userId,
+          resourceName: resourceName,
+          resourceId: resourceId
+        });
+
+        console.log(`✅ FIXED: Bulk enrolled: ${email} in ${resourceName}`);
+
+      } catch (error) {
+        console.error(`❌ FIXED: Failed to enroll ${email}:`, error);
         result.failed.push({
           email: email,
-          error: `${resourceType === 'course' ? 'Course' : 'Learning plan'} not found: ${resourceName}`,
+          error: error instanceof Error ? error.message : 'Enrollment failed',
           resourceName: resourceName
         });
-      });
-      result.summary.failed = emails.length;
-      return result;
-    }
-
-    // Process unenrollments
-    const batchSize = 3;
-    for (let i = 0; i < emails.length; i += batchSize) {
-      const batch = emails.slice(i, i + batchSize);
-      
-      await Promise.all(batch.map(async (email) => {
-        try {
-          // Find user
-          const users = await api.searchUsers(email, 5);
-          const user = users.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
-          
-          if (!user) {
-            result.failed.push({
-              email: email,
-              error: 'User not found',
-              resourceName: resourceName
-            });
-            return;
-          }
-
-          // Unenroll user
-          if (resourceType === 'course') {
-            await api.unenrollUserFromCourse(user.user_id || user.id, resourceId);
-          } else {
-            await api.unenrollUserFromLearningPlan(user.user_id || user.id, resourceId);
-          }
-          
-          result.successful.push({
-            email: email,
-            userId: user.user_id || user.id,
-            resourceName: resourceName,
-            resourceId: resourceId
-          });
-
-        } catch (error) {
-          result.failed.push({
-            email: email,
-            error: error instanceof Error ? error.message : 'Unenrollment failed',
-            resourceName: resourceName
-          });
-        }
-      }));
-
-      // Small delay between batches
-      if (i + batchSize < emails.length) {
-        await new Promise(resolve => setTimeout(resolve, 500));
       }
+    }));
+
+    // Small delay between batches to be API-friendly
+    if (i + batchSize < emails.length) {
+      await new Promise(resolve => setTimeout(resolve, 500));
     }
+  }
 
-    result.summary.successful = result.successful.length;
-    result.summary.failed = result.failed.length;
+  result.summary.successful = result.successful.length;
+  result.summary.failed = result.failed.length;
 
+  return result;
+}
+
+private static async processBulkUnenrollment(
+  emails: string[], 
+  resourceName: string, 
+  resourceType: 'course' | 'learning_plan',
+  api: DoceboAPI
+): Promise<BulkEnrollmentResult> {
+  const result: BulkEnrollmentResult = {
+    successful: [],
+    failed: [],
+    summary: {
+      total: emails.length,
+      successful: 0,
+      failed: 0
+    }
+  };
+
+  // Find resource first to get its ID
+  let resourceId: string;
+  try {
+    if (resourceType === 'course') {
+      const course = await api.findCourseByIdentifier(resourceName);
+      resourceId = (course.id || course.course_id || course.idCourse).toString();
+    } else {
+      const learningPlan = await api.findLearningPlanByIdentifier(resourceName);
+      resourceId = (learningPlan.learning_plan_id || learningPlan.id).toString();
+    }
+    console.log(`📋 FIXED: Found ${resourceType} ID for unenrollment: ${resourceId}`);
+  } catch (error) {
+    // If resource not found, mark all as failed
+    emails.forEach(email => {
+      result.failed.push({
+        email: email,
+        error: `${resourceType === 'course' ? 'Course' : 'Learning plan'} not found: ${resourceName}`,
+        resourceName: resourceName
+      });
+    });
+    result.summary.failed = emails.length;
     return result;
   }
+
+  // Process unenrollments in batches
+  const batchSize = 3;
+  for (let i = 0; i < emails.length; i += batchSize) {
+    const batch = emails.slice(i, i + batchSize);
+    
+    await Promise.all(batch.map(async (email) => {
+      try {
+        // Find user
+        const users = await api.searchUsers(email, 5);
+        const user = users.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
+        
+        if (!user) {
+          result.failed.push({
+            email: email,
+            error: 'User not found',
+            resourceName: resourceName
+          });
+          return;
+        }
+
+        const userId = (user.user_id || user.id).toString();
+
+        // FIXED: Use the corrected unenrollment methods based on resource type
+        if (resourceType === 'course') {
+          await api.unenrollUserFromCourse(userId, resourceId);
+        } else {
+          await api.unenrollUserFromLearningPlan(userId, resourceId);
+        }
+        
+        result.successful.push({
+          email: email,
+          userId: userId,
+          resourceName: resourceName,
+          resourceId: resourceId
+        });
+
+        console.log(`✅ FIXED: Bulk unenrolled: ${email} from ${resourceName}`);
+
+      } catch (error) {
+        console.error(`❌ FIXED: Failed to unenroll ${email}:`, error);
+        result.failed.push({
+          email: email,
+          error: error instanceof Error ? error.message : 'Unenrollment failed',
+          resourceName: resourceName
+        });
+      }
+    }));
+
+    // Small delay between batches
+    if (i + batchSize < emails.length) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+  }
+
+  result.summary.successful = result.successful.length;
+  result.summary.failed = result.failed.length;
+
+  return result;
+}
 
   private static formatBulkResponse(
     result: BulkEnrollmentResult, 
