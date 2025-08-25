@@ -118,131 +118,92 @@ export class DoceboAPI {
   }
 
   // FIXED: Enroll user in a course using correct API endpoints and parameters
-  async enrollUserInCourse(
-    userId: string, 
-    courseId: string, 
-    options: {
-      level?: string;
-      assignmentType?: string;
-      startValidity?: string;
-      endValidity?: string;
-    } = {}
-  ): Promise<any> {
-    try {
-      // Try multiple enrollment endpoints with different parameter formats
-      const enrollmentEndpoints = [
-        {
-          endpoint: '/learn/v1/enrollments',
-          body: {
-            user_ids: [userId],
-            course_ids: [courseId],
-            level: options.level || 'student',
-            assignment_type: options.assignmentType || 'required'
-          }
-        },
-        {
-          endpoint: '/learn/v1/enrollments',
-          body: {
-            users: [userId],
-            courses: [courseId],
-            level: options.level || 'student',
-            assignment_type: options.assignmentType || 'required'
-          }
-        },
-        {
-          endpoint: '/course/v1/courses/enrollments',
-          body: {
-            user_id: userId,
-            course_id: courseId,
-            level: options.level || 'student',
-            assignment_type: options.assignmentType || 'required'
-          }
-        }
-      ];
+async enrollUserInCourse(
+  userId: string, 
+  courseId: string, 
+  options: {
+    level?: string;
+    assignmentType?: string;
+    startValidity?: string;
+    endValidity?: string;
+  } = {}
+): Promise<any> {
+  try {
+    console.log(`🔄 FIXED: Attempting to enroll user ${userId} in course ${courseId}`);
 
-      console.log(`🔄 Attempting to enroll user ${userId} in course ${courseId}`);
+    // Convert level to the correct numeric value based on your documentation
+    let levelValue = 3; // default to student
+    if (options.level === 'tutor') levelValue = 4;
+    else if (options.level === 'instructor') levelValue = 6;
+    else levelValue = 3; // student
 
-      // Try each endpoint until one succeeds
-      for (const { endpoint, body } of enrollmentEndpoints) {
-        try {
-          console.log(`📋 Trying ${endpoint} with body:`, body);
-          const result = await this.apiRequest(endpoint, 'POST', body);
-          console.log(`✅ Enrollment successful via ${endpoint}:`, result);
-          return result;
-        } catch (endpointError) {
-          console.log(`❌ Failed ${endpoint}:`, endpointError instanceof Error ? endpointError.message : endpointError);
-          continue;
-        }
-      }
-      
-      // If all endpoints fail, throw the last error
-      throw new Error('All enrollment endpoints failed. Please check the course ID and user permissions.');
-    } catch (error) {
-      console.error(`❌ Error enrolling user in course:`, error);
-      throw error;
+    // Using the correct endpoint from your Enrollments.docx: POST /learn/v1/enrollments
+    const enrollmentBody = {
+      course_ids: [parseInt(courseId)],
+      user_ids: [parseInt(userId)],
+      level: levelValue.toString(), // Your documentation shows this as string
+      assignment_type: options.assignmentType || 'required'
+    };
+
+    // Add validity dates if provided
+    if (options.startValidity) {
+      enrollmentBody.date_begin_validity = options.startValidity;
     }
-  }
-
-  async enrollUserInLearningPlan(
-    userId: string, 
-    learningPlanId: string, 
-    options: {
-      assignmentType?: string;
-      startValidity?: string;
-      endValidity?: string;
-    } = {}
-  ): Promise<any> {
-    try {
-      // Try multiple learning plan enrollment endpoints
-      const enrollmentEndpoints = [
-        {
-          endpoint: '/learningplan/v1/learningplans/enrollments',
-          body: {
-            user_ids: [userId],
-            learning_plan_ids: [learningPlanId],
-            assignment_type: options.assignmentType || 'required'
-          }
-        },
-        {
-          endpoint: '/learningplan/v1/learningplans/enrollments',
-          body: {
-            users: [userId],
-            learning_plans: [learningPlanId],
-            assignment_type: options.assignmentType || 'required'
-          }
-        },
-        {
-          endpoint: '/learningplan/v1/learningplans/enrollments',
-          body: {
-            user_id: userId,
-            learning_plan_id: learningPlanId,
-            assignment_type: options.assignmentType || 'required'
-          }
-        }
-      ];
-
-      console.log(`🔄 Attempting to enroll user ${userId} in learning plan ${learningPlanId}`);
-
-      // Try each endpoint until one succeeds
-      for (const { endpoint, body } of enrollmentEndpoints) {
-        try {
-          console.log(`📋 Trying LP ${endpoint} with body:`, body);
-          const result = await this.apiRequest(endpoint, 'POST', body);
-          console.log(`✅ LP enrollment successful via ${endpoint}:`, result);
-          return result;
-        } catch (endpointError) {
-          console.log(`❌ Failed LP ${endpoint}:`, endpointError instanceof Error ? endpointError.message : endpointError);
-          continue;
-        }
-      }
-      
-      // If all endpoints fail, throw the last error
-      throw new Error('All learning plan enrollment endpoints failed. Please check the learning plan ID and user permissions.');
-    } catch (error) {
-      console.error(`❌ Error enrolling user in learning plan:`, error);
-      throw error;
+    if (options.endValidity) {
+      enrollmentBody.date_expire_validity = options.endValidity;
     }
+
+    console.log(`📋 FIXED: Using POST /learn/v1/enrollments with body:`, enrollmentBody);
+    
+    const result = await this.apiRequest('/learn/v1/enrollments', 'POST', enrollmentBody);
+    console.log(`✅ FIXED: Course enrollment successful:`, result);
+    return result;
+
+  } catch (error) {
+    console.error(`❌ FIXED: Error enrolling user ${userId} in course ${courseId}:`, error);
+    throw error;
   }
+}
+
+// FIXED: Enroll user in learning plan using the correct endpoint
+async enrollUserInLearningPlan(
+  userId: string, 
+  learningPlanId: string, 
+  options: {
+    assignmentType?: string;
+    startValidity?: string;
+    endValidity?: string;
+  } = {}
+): Promise<any> {
+  try {
+    console.log(`🔄 FIXED: Attempting to enroll user ${userId} in learning plan ${learningPlanId}`);
+
+    // Using the correct endpoint from your documentation
+    const enrollmentBody = {
+      user_ids: [parseInt(userId)],
+      learningplan_ids: [parseInt(learningPlanId)],
+      assignment_type: options.assignmentType || 'required'
+    };
+
+    // Add validity dates if provided
+    if (options.startValidity) {
+      enrollmentBody.date_begin_validity = options.startValidity;
+    }
+    if (options.endValidity) {
+      enrollmentBody.date_expire_validity = options.endValidity;
+    }
+
+    console.log(`📋 FIXED: Using POST /learningplan/v1/learningplans/enrollments with body:`, enrollmentBody);
+    
+    const result = await this.apiRequest('/learningplan/v1/learningplans/enrollments', 'POST', enrollmentBody);
+    console.log(`✅ FIXED: Learning plan enrollment successful:`, result);
+    return result;
+
+  } catch (error) {
+    console.error(`❌ FIXED: Error enrolling user ${userId} in learning plan ${learningPlanId}:`, error);
+    throw error;
+  }
+}
 
   // FIXED: Helper method to map enrollment levels
   private mapEnrollmentLevel(level: string): number {
@@ -446,83 +407,55 @@ export class DoceboAPI {
   }
 
   // Helper method to unenroll user from course
-  async unenrollUserFromCourse(userId: string, courseId: string): Promise<any> {
-    try {
-      console.log(`🔄 Attempting to unenroll user ${userId} from course ${courseId}`);
-      
-      const unenrollmentEndpoints = [
-        {
-          endpoint: `/learn/v1/enrollments/users/${userId}/courses/${courseId}`,
-          method: 'DELETE' as const
-        },
-        {
-          endpoint: '/learn/v1/enrollments',
-          method: 'DELETE' as const,
-          body: {
-            user_ids: [userId],
-            course_ids: [courseId]
-          }
-        }
-      ];
+ async unenrollUserFromCourse(userId: string, courseId: string): Promise<any> {
+  try {
+    console.log(`🔄 FIXED: Attempting to unenroll user ${userId} from course ${courseId}`);
+    
+    // Using the correct DELETE endpoint from your documentation
+    const unenrollmentBody = {
+      user_ids: [parseInt(userId)],
+      course_ids: [parseInt(courseId)],
+      reset_tracks: false, // Don't reset tracking data by default
+      delete_issued_certificates: false // Don't delete certificates by default
+    };
 
-      for (const { endpoint, method, body } of unenrollmentEndpoints) {
-        try {
-          console.log(`📋 Trying unenrollment ${method} ${endpoint}`);
-          const result = await this.apiRequest(endpoint, method, body);
-          console.log(`✅ Unenrollment successful via ${endpoint}`);
-          return result;
-        } catch (endpointError) {
-          console.log(`❌ Failed ${endpoint}:`, endpointError instanceof Error ? endpointError.message : endpointError);
-          continue;
-        }
-      }
-      
-      throw new Error('All unenrollment endpoints failed. Please check the course ID and user permissions.');
-    } catch (error) {
-      console.error(`❌ Error unenrolling user from course:`, error);
-      throw error;
-    }
+    console.log(`📋 FIXED: Using DELETE /learn/v1/enrollments with body:`, unenrollmentBody);
+    
+    const result = await this.apiRequest('/learn/v1/enrollments', 'DELETE', unenrollmentBody);
+    console.log(`✅ FIXED: Course unenrollment successful:`, result);
+    return result;
+
+  } catch (error) {
+    console.error(`❌ FIXED: Error unenrolling user ${userId} from course ${courseId}:`, error);
+    throw error;
   }
+}
 
-  // Helper method to unenroll user from learning plan
-  async unenrollUserFromLearningPlan(userId: string, learningPlanId: string): Promise<any> {
-    try {
-      console.log(`🔄 Attempting to unenroll user ${userId} from learning plan ${learningPlanId}`);
-      
-      const unenrollmentEndpoints = [
-        {
-          endpoint: `/learningplan/v1/learningplans/${learningPlanId}/enrollments/users/${userId}`,
-          method: 'DELETE' as const
-        },
-        {
-          endpoint: '/learningplan/v1/learningplans/enrollments',
-          method: 'DELETE' as const,
-          body: {
-            user_ids: [userId],
-            learning_plan_ids: [learningPlanId]
-          }
-        }
-      ];
+// FIXED: Unenroll user from learning plan using the correct endpoint
+async unenrollUserFromLearningPlan(userId: string, learningPlanId: string): Promise<any> {
+  try {
+    console.log(`🔄 FIXED: Attempting to unenroll user ${userId} from learning plan ${learningPlanId}`);
+    
+    // Using the correct DELETE endpoint from your documentation
+    const unenrollmentBody = {
+      user_ids: [parseInt(userId)],
+      learningplan_ids: [parseInt(learningPlanId)],
+      reset_tracks: false, // Don't reset tracking data by default
+      cascade_unenroll_from_courses_in_selected_learning_plan: false, // Don't unenroll from courses by default
+      delete_issued_certificates: false // Don't delete certificates by default
+    };
 
-      for (const { endpoint, method, body } of unenrollmentEndpoints) {
-        try {
-          console.log(`📋 Trying LP unenrollment ${method} ${endpoint}`);
-          const result = await this.apiRequest(endpoint, method, body);
-          console.log(`✅ LP unenrollment successful via ${endpoint}`);
-          return result;
-        } catch (endpointError) {
-          console.log(`❌ Failed LP ${endpoint}:`, endpointError instanceof Error ? endpointError.message : endpointError);
-          continue;
-        }
-      }
-      
-      throw new Error('All learning plan unenrollment endpoints failed. Please check the learning plan ID and user permissions.');
-    } catch (error) {
-      console.error(`❌ Error unenrolling user from learning plan:`, error);
-      throw error;
-    }
+    console.log(`📋 FIXED: Using DELETE /learningplan/v1/learningplans/enrollments with body:`, unenrollmentBody);
+    
+    const result = await this.apiRequest('/learningplan/v1/learningplans/enrollments', 'DELETE', unenrollmentBody);
+    console.log(`✅ FIXED: Learning plan unenrollment successful:`, result);
+    return result;
+
+  } catch (error) {
+    console.error(`❌ FIXED: Error unenrolling user ${userId} from learning plan ${learningPlanId}:`, error);
+    throw error;
   }
-
+}
   // FIXED: Helper method to get user details by email
   async getUserDetails(email: string): Promise<any> {
     try {
