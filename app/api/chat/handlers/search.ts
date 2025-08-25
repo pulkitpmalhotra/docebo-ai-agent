@@ -148,7 +148,7 @@ export class SearchHandlers {
         }
 
         // Multiple users found - show list with FIXED field mapping
-        const userList = users.slice(0, 10).map((user: any, index: number) => {
+        const userList = users.slice(0, 100).map((user: any, index: number) => {
           const name = user.fullname || `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'No name';
           const email = user.email || 'No email';
           const status = this.mapUserStatus(user.status);
@@ -168,7 +168,7 @@ ${users.length > 10 ? `\n... and ${users.length - 10} more users` : ''}
 💡 **Tip**: Use an exact email address for detailed user information.`,
           success: true,
           data: {
-            users: users.slice(0, 10),
+            users: users.slice(0, 100),
             totalCount: users.length,
             query: query
           },
