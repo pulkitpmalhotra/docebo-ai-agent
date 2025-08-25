@@ -1,11 +1,11 @@
-// app/api/chat/handlers/search.ts - Complete fixed search handlers
+// app/api/chat/handlers/search.ts - FIXED search handlers with proper data mapping
 import { NextResponse } from 'next/server';
 import { DoceboAPI } from '../docebo-api';
 import { APIResponse } from '../types';
 
 export class SearchHandlers {
   
-    static async handleUserSearch(entities: any, api: DoceboAPI): Promise<NextResponse> {
+  static async handleUserSearch(entities: any, api: DoceboAPI): Promise<NextResponse> {
     try {
       const { email, searchTerm } = entities;
       const query = email || searchTerm;
@@ -18,26 +18,23 @@ export class SearchHandlers {
         });
       }
 
-      console.log(`🔍 Searching users: "${query}"`);
+      console.log(`🔍 FIXED: Searching users: "${query}"`);
 
       // If searching by email, get detailed user info directly
       if (email && email.includes('@')) {
         console.log(`📧 Email search detected: ${email}`);
 
         try {
-          // Use getUserDetails which has improved exact email matching
-          const userDetails = await api.getUserDetails(email);
-
-          console.log(`👤 Found user via getUserDetails:`, {
-            id: userDetails.id,
-            email: userDetails.email,
-            fullname: userDetails.fullname
-          });
-
-          // Check if userDetails has valid data before trying to get enhanced details
-          if (!userDetails.id || userDetails.id === 'Unknown' || !userDetails.email || userDetails.email === 'Not available') {
-            console.log(`❌ Invalid user details returned, user not found: ${email}`);
-
+          // Use direct API call with proper field mapping
+          const users = await api.searchUsers(email, 5);
+          console.log(`📊 Direct search returned:`, users);
+          
+          // Find exact email match
+          const user = users.find((u: any) => 
+            u.email && u.email.toLowerCase() === email.toLowerCase()
+          );
+          
+          if (!user) {
             return NextResponse.json({
               response: `❌ **User Not Found**: "${email}"\n\nNo user found with that exact email address.\n\n💡 **Please check:**\n• Email spelling is correct\n• User exists in the system\n• Email domain is correct`,
               success: false,
@@ -45,109 +42,92 @@ export class SearchHandlers {
             });
           }
 
-          // Get enhanced user details including manager info
-          console.log(`🔍 Attempting to get enhanced details for user ID: ${userDetails.id}`);
-          try {
-            const enhancedUserDetails = await api.getEnhancedUserDetails(userDetails.id);
+          // FIXED: Properly extract user data from API response
+          const userDetails = {
+            id: (user.user_id || user.id || 'Unknown').toString(),
+            fullname: user.fullname || `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Not available',
+            email: user.email || 'Not available',
+            username: user.username || user.encoded_username || 'Not available',
+            status: this.mapUserStatus(user.status),
+            level: this.mapUserLevel(user.level),
+            creationDate: user.creation_date ? new Date(user.creation_date).toLocaleDateString() : 'Not available',
+            lastAccess: user.last_access_date ? new Date(user.last_access_date).toLocaleDateString() : 'Not available',
+            timezone: user.timezone || 'Not set',
+            language: user.language || user.lang_code || 'en',
+            department: user.field_1 || user.field_5 || 'Not assigned',
+            uuid: user.uuid,
+            isManager: user.is_manager || false
+          };
 
-            let responseMessage = `👤 **User Details**: ${enhancedUserDetails.fullname}
-
-🆔 **User ID**: ${enhancedUserDetails.id}
-📧 **Email**: ${enhancedUserDetails.email}
-🔑 **Username**: ${enhancedUserDetails.username}
-📊 **Status**: ${enhancedUserDetails.status}
-👑 **Level**: ${enhancedUserDetails.level}
-🌍 **Language**: ${enhancedUserDetails.language}
-🕐 **Timezone**: ${enhancedUserDetails.timezone}
-📅 **Created**: ${enhancedUserDetails.creationDate}
-🔄 **Last Access**: ${enhancedUserDetails.lastAccess}`;
-
-            // Add manager information if available (WITHOUT EMAIL)
-            if (enhancedUserDetails.manager) {
-              responseMessage += `\n\n👥 **Management Structure**:
-📋 **Direct Manager**: ${enhancedUserDetails.manager.fullname}`;
-            } else {
-              responseMessage += `\n\n👥 **Management Structure**:
-📋 **Direct Manager**: Not assigned or not available`;
+          // Get manager information if available
+          let managerInfo = null;
+          if (user.managers && user.managers.length > 0) {
+            const directManager = user.managers.find((m: any) => m.manager_title === 'Direct Manager');
+            if (directManager) {
+              managerInfo = {
+                fullname: directManager.manager_name,
+                username: directManager.manager_username,
+                id: directManager.manager_id
+              };
             }
+          }
 
-            // Add additional fields if available
-            if (enhancedUserDetails.additionalFields && Object.keys(enhancedUserDetails.additionalFields).length > 0) {
-              responseMessage += `\n\n📋 **Additional Information**:`;
-              if (enhancedUserDetails.additionalFields.jobTitle) {
-                responseMessage += `\n💼 **Job Title**: ${enhancedUserDetails.additionalFields.jobTitle}`;
-              }
-              if (enhancedUserDetails.additionalFields.employeeId) {
-                responseMessage += `\n🆔 **Employee ID**: ${enhancedUserDetails.additionalFields.employeeId}`;
-              }
-              if (enhancedUserDetails.additionalFields.location) {
-                responseMessage += `\n📍 **Location**: ${enhancedUserDetails.additionalFields.location}`;
-              }
-            }
-
-            return NextResponse.json({
-              response: responseMessage,
-              success: true,
-              data: {
-                user: enhancedUserDetails,
-                totalCount: 1,
-                isDetailedView: true,
-                hasManagerInfo: !!enhancedUserDetails.manager
-              },
-              totalCount: 1,
-              timestamp: new Date().toISOString()
-            });
-
-          } catch (enhancedError) {
-            console.error('❌ Error getting enhanced user details:', enhancedError);
-
-            // Fall back to basic user details
-            if (userDetails.email === 'Not available' || userDetails.fullname === 'Not available') {
-              return NextResponse.json({
-                response: `❌ **User Not Found**: "${email}"\n\nNo user found with that exact email address.`,
-                success: false,
-                timestamp: new Date().toISOString()
-              });
-            }
-
-            let basicResponse = `👤 **User Details**: ${userDetails.fullname}
+          let responseMessage = `👤 **User Details**: ${userDetails.fullname}
 
 🆔 **User ID**: ${userDetails.id}
 📧 **Email**: ${userDetails.email}
 🔑 **Username**: ${userDetails.username}
 📊 **Status**: ${userDetails.status}
 👑 **Level**: ${userDetails.level}
-🏢 **Department**: ${userDetails.department}
 🌍 **Language**: ${userDetails.language}
 🕐 **Timezone**: ${userDetails.timezone}
 📅 **Created**: ${userDetails.creationDate}
 🔄 **Last Access**: ${userDetails.lastAccess}
+🏢 **Department**: ${userDetails.department}
+🆔 **UUID**: ${userDetails.uuid}`;
 
-👥 **Management Structure**:
-📋 **Direct Manager**: Unable to retrieve manager information
-
-⚠️ **Note**: Using basic user information. Enhanced details not available.`;
-
-            return NextResponse.json({
-              response: basicResponse,
-              success: true,
-              data: {
-                user: userDetails,
-                totalCount: 1,
-                isDetailedView: true,
-                hasManagerInfo: false,
-                fallbackMode: true
-              },
-              totalCount: 1,
-              timestamp: new Date().toISOString()
-            });
+          // Add manager information
+          responseMessage += `\n\n👥 **Management Structure**:`;
+          if (managerInfo) {
+            responseMessage += `\n📋 **Direct Manager**: ${managerInfo.fullname} (${managerInfo.username})`;
+          } else {
+            responseMessage += `\n📋 **Direct Manager**: Not assigned or not available`;
           }
 
-        } catch (userNotFoundError) {
-          console.error(`❌ User not found: ${email}`, userNotFoundError);
+          // Add additional fields from user data
+          if (user.field_2) {
+            responseMessage += `\n\n📋 **Additional Information**:`;
+            responseMessage += `\n👤 **Googler Type**: ${user.field_2}`;
+          }
+          if (user.field_3) {
+            responseMessage += `\n👑 **Is Manager**: ${user.field_3}`;
+          }
+          if (user.field_4) {
+            responseMessage += `\n🏢 **Organization**: ${user.field_4}`;
+          }
+          if (user.field_6) {
+            responseMessage += `\n🆔 **Person ID**: ${user.field_6}`;
+          }
 
           return NextResponse.json({
-            response: `❌ **User Not Found**: "${email}"\n\nNo user found with that exact email address.\n\n💡 **Please check:**\n• Email spelling is correct\n• User exists in the system\n• Email domain is correct`,
+            response: responseMessage,
+            success: true,
+            data: {
+              user: userDetails,
+              manager: managerInfo,
+              totalCount: 1,
+              isDetailedView: true,
+              hasManagerInfo: !!managerInfo
+            },
+            totalCount: 1,
+            timestamp: new Date().toISOString()
+          });
+
+        } catch (userError) {
+          console.error(`❌ User search failed:`, userError);
+
+          return NextResponse.json({
+            response: `❌ **User Search Failed**: ${userError instanceof Error ? userError.message : 'Unknown error'}`,
             success: false,
             timestamp: new Date().toISOString()
           });
@@ -167,14 +147,15 @@ export class SearchHandlers {
           });
         }
 
-        // Multiple users found - show list
+        // Multiple users found - show list with FIXED field mapping
         const userList = users.slice(0, 10).map((user: any, index: number) => {
-          const name = user.fullname || `${user.firstname || ''} ${user.lastname || ''}`.trim() || 'No name';
+          const name = user.fullname || `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'No name';
           const email = user.email || 'No email';
-          const status = user.status === '1' ? '🟢 Active' : user.status === '0' ? '🔴 Inactive' : '⚪ Unknown';
-          const level = user.level === 'godadmin' ? '👑 Admin' : user.level || 'User';
+          const status = this.mapUserStatus(user.status);
+          const level = this.mapUserLevel(user.level);
+          const userId = (user.user_id || user.id || 'Unknown').toString();
 
-          return `${index + 1}. **${name}** (${email})\n   🆔 ID: ${user.user_id || user.id} • ${status} • ${level}`;
+          return `${index + 1}. **${name}** (${email})\n   🆔 ID: ${userId} • ${status} • ${level}`;
         }).join('\n\n');
 
         return NextResponse.json({
@@ -189,8 +170,7 @@ ${users.length > 10 ? `\n... and ${users.length - 10} more users` : ''}
           data: {
             users: users.slice(0, 10),
             totalCount: users.length,
-            query: query,
-            fallbackMode: false
+            query: query
           },
           totalCount: users.length,
           timestamp: new Date().toISOString()
@@ -238,15 +218,16 @@ ${users.length > 10 ? `\n... and ${users.length - 10} more users` : ''}
 
       console.log(`🔍 FIXED: Searching courses: "${searchTerm}"`);
 
-      // FIXED: Use correct endpoint with search_text parameter
-      const courses = await api.apiRequest('/learn/v1/courses', 'GET', null, {
+      // FIXED: Use correct endpoint and properly map response fields
+      const result = await api.apiRequest('/course/v1/courses', 'GET', null, {
         search_text: searchTerm,
-        page_size: Math.min(25, 200),
+        page_size: 25,
         sort_attr: 'name',
         sort_dir: 'asc'
       });
 
-      const courseItems = courses.data?.items || [];
+      const courseItems = result.data?.items || [];
+      console.log(`📊 Found ${courseItems.length} courses from API`);
 
       if (courseItems.length === 0) {
         return NextResponse.json({
@@ -256,58 +237,44 @@ ${users.length > 10 ? `\n... and ${users.length - 10} more users` : ''}
         });
       }
 
-      // FIXED: Enhanced course list with correct field mappings
-      const courseListPromises = courseItems.slice(0, 20).map(async (course: any, index: number) => {
-        const name = course.name || course.title || course.course_name || 'Unknown Course';
-        const courseId = course.id || course.course_id || course.idCourse || 'Unknown';
+      // FIXED: Enhanced course list with proper field mappings from your API response
+      const courseList = courseItems.slice(0, 20).map((course: any, index: number) => {
+        const name = course.title || course.name || 'Unknown Course';
+        const courseId = course.id?.toString() || 'Unknown';
 
-        // FIXED: Correct course type mapping
+        // FIXED: Correct course type mapping based on actual API response
         let type = 'Course';
-        if (course.course_type) {
-          switch(course.course_type) {
+        if (course.type) {
+          switch(course.type.toLowerCase()) {
             case 'elearning': type = 'E-Learning'; break;
             case 'classroom': type = 'Classroom'; break;
             case 'webinar': type = 'Webinar'; break;
-            case 'learning_object': type = 'Learning Object'; break;
-            default: type = course.course_type; break;
+            default: type = course.type; break;
           }
         }
 
-        // FIXED: Proper status mapping based on Docebo API
+        // FIXED: Proper status mapping based on actual API fields
         let status = 'Unknown';
         let statusIcon = '📚';
 
-        if (course.status === 2 || course.status === 'active' || course.can_subscribe === 1) {
+        if (course.published === true || course.course_status === 'published') {
           status = 'Published';
           statusIcon = '🟢';
-        } else if (course.status === 0 || course.status === 'inactive' || course.can_subscribe === 0) {
+        } else if (course.published === false || course.course_status === 'unpublished') {
           status = 'Unpublished';
           statusIcon = '🟡';
-        } else if (course.status === 1 || course.status === 'suspended') {
-          status = 'Suspended';
-          statusIcon = '🔴';
         }
 
-        // FIXED: Get enrollment count from correct fields
-        let enrollments = 'Unknown';
-        if (course.enrolled_users_count !== undefined) {
-          enrollments = course.enrolled_users_count;
-        } else if (course.enrolled_users !== undefined) {
-          enrollments = course.enrolled_users;
-        } else if (course.subscription_count !== undefined) {
-          enrollments = course.subscription_count;
-        }
+        // FIXED: Get enrollment count from actual API fields
+        const enrollments = course.enrolled_count || course.enrolled_users_count || course.waiting_list || 0;
 
         return `${index + 1}. ${statusIcon} **${name}**\n   Type: ${type} • ID: ${courseId} • Status: ${status} • Enrollments: ${enrollments}`;
-      });
-
-      // Wait for all course details to be processed
-      const courseList = await Promise.all(courseListPromises);
+      }).join('\n\n');
 
       return NextResponse.json({
         response: `📚 **Course Search Results**: "${searchTerm}" (${courseItems.length} found)
 
-${courseList.join('\n\n')}
+${courseList}
 
 ${courseItems.length > 20 ? `\n... and ${courseItems.length - 20} more courses` : ''}
 
@@ -319,7 +286,7 @@ ${courseItems.length > 20 ? `\n... and ${courseItems.length - 20} more courses` 
           courses: courseItems,
           totalCount: courseItems.length,
           query: searchTerm,
-          endpoint_used: '/learn/v1/courses'
+          endpoint_used: '/course/v1/courses'
         },
         totalCount: courseItems.length,
         timestamp: new Date().toISOString()
@@ -331,7 +298,7 @@ ${courseItems.length > 20 ? `\n... and ${courseItems.length - 20} more courses` 
       return NextResponse.json({
         response: `❌ **Course Search Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
 
-**Using endpoint**: /learn/v1/courses with search_text parameter`,
+**Using endpoint**: /course/v1/courses with search_text parameter`,
         success: false,
         timestamp: new Date().toISOString()
       });
@@ -352,76 +319,69 @@ ${courseItems.length > 20 ? `\n... and ${courseItems.length - 20} more courses` 
 
       console.log(`🔍 FIXED: Searching learning plans: "${searchTerm}"`);
 
-      // FIXED: Use correct endpoint with proper parameters
-      const learningPlans = await api.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
-        search_text: searchTerm,
-        page_size: Math.min(25, 200),
-        sort_attr: 'name',
-        sort_dir: 'asc'
-      });
-
-      const lpItems = learningPlans.data?.items || [];
-
-      if (lpItems.length === 0) {
-        // FIXED: Try alternate search strategy
-        console.log(`🔍 Trying alternate learning plan search method...`);
-
-        const allLearningPlans = await api.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
-          page_size: Math.min(100, 200),
-          sort_attr: 'name',
-          sort_dir: 'asc'
+      // FIXED: Use correct endpoint without sort_attr that was causing 400 error
+      let result;
+      try {
+        result = await api.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
+          search_text: searchTerm,
+          page_size: 25
         });
-
-        const allLpItems = allLearningPlans.data?.items || [];
-        const filteredPlans = allLpItems.filter((lp: any) => {
-          const name = api.getLearningPlanName(lp).toLowerCase();
+      } catch (searchError) {
+        console.log(`🔍 Direct search failed, trying without search_text parameter...`);
+        
+        // Fallback: Get all and filter manually
+        result = await api.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
+          page_size: 100
+        });
+        
+        // Manual filtering
+        const allItems = result.data?.items || [];
+        const filteredItems = allItems.filter((lp: any) => {
+          const name = (lp.title || lp.name || '').toLowerCase();
           const description = (lp.description || '').toLowerCase();
           return name.includes(searchTerm.toLowerCase()) || 
                  description.includes(searchTerm.toLowerCase());
         });
-
-        if (filteredPlans.length === 0) {
-          return NextResponse.json({
-            response: `❌ **No Learning Plans Found**: "${searchTerm}"\n\nNo learning plans found matching your search criteria.\n\n💡 **Try**: \n• Different keywords\n• Broader search terms\n• Check spelling`,
-            success: false,
-            timestamp: new Date().toISOString()
-          });
-        }
-
-        // Use filtered results
-        lpItems.push(...filteredPlans.slice(0, 25));
+        
+        // Replace result with filtered data
+        result = {
+          data: {
+            items: filteredItems,
+            total_count: filteredItems.length
+          }
+        };
       }
 
+      const lpItems = result.data?.items || [];
+      console.log(`📊 Found ${lpItems.length} learning plans from API`);
+
+      if (lpItems.length === 0) {
+        return NextResponse.json({
+          response: `❌ **No Learning Plans Found**: "${searchTerm}"\n\nNo learning plans found matching your search criteria.\n\n💡 **Try**: \n• Different keywords\n• Broader search terms\n• Check spelling`,
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      // FIXED: Enhanced learning plan list with proper field mappings
       const planList = lpItems.slice(0, 20).map((plan: any, index: number) => {
-        const name = api.getLearningPlanName(plan);
-        const planId = plan.learning_plan_id || plan.id || 'Unknown';
+        const name = plan.title || plan.name || 'Unknown Learning Plan';
+        const planId = (plan.learning_plan_id || plan.id || 'Unknown').toString();
 
         // FIXED: Proper status mapping for learning plans
         let status = 'Unknown';
         let statusIcon = '📋';
 
-        if (plan.is_active === true || plan.is_active === 1 || plan.status === 2) {
+        if (plan.is_published === true || plan.is_publishable === true) {
           status = 'Published';
           statusIcon = '🟢';
-        } else if (plan.is_active === false || plan.is_active === 0 || plan.status === 0) {
+        } else if (plan.is_published === false) {
           status = 'Draft';
           statusIcon = '🟡';
-        } else if (plan.status === 1) {
-          status = 'Suspended';
-          statusIcon = '🔴';
         }
 
-        // FIXED: Get enrollment count from correct fields
-        let enrollments = 'Unknown';
-        if (plan.enrolled_users_count !== undefined) {
-          enrollments = plan.enrolled_users_count;
-        } else if (plan.enrolled_users !== undefined) {
-          enrollments = plan.enrolled_users;
-        } else if (plan.total_users !== undefined) {
-          enrollments = plan.total_users;
-        } else if (plan.user_count !== undefined) {
-          enrollments = plan.user_count;
-        }
+        // FIXED: Get enrollment count from actual API fields
+        const enrollments = plan.assigned_enrollments_count || plan.enrolled_users_count || 0;
 
         return `${index + 1}. ${statusIcon} **${name}**\n   ID: ${planId} • Status: ${status} • Enrollments: ${enrollments}`;
       }).join('\n\n');
@@ -437,7 +397,7 @@ ${lpItems.length > 20 ? `\n... and ${lpItems.length - 20} more learning plans` :
 • "Learning plan info [plan name]" for details
 • "Enroll [user] in learning plan [plan name]" to enroll users
 
-*Using endpoint: /learningplan/v1/learningplans*`,
+*Using endpoint: /learningplan/v1/learningplans (without sort_attr to avoid 400 error)*`,
         success: true,
         data: {
           learningPlans: lpItems,
@@ -455,10 +415,26 @@ ${lpItems.length > 20 ? `\n... and ${lpItems.length - 20} more learning plans` :
       return NextResponse.json({
         response: `❌ **Learning Plan Search Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
 
-**Using endpoint**: /learningplan/v1/learningplans with search_text parameter`,
+**Using endpoint**: /learningplan/v1/learningplans (removed sort_attr parameter that was causing 400 error)`,
         success: false,
         timestamp: new Date().toISOString()
       });
     }
+  }
+
+  // FIXED: Helper methods for mapping API response values
+  private static mapUserStatus(status: any): string {
+    if (status === '1' || status === 1) return '🟢 Active';
+    if (status === '0' || status === 0) return '🔴 Inactive';
+    if (status === '2' || status === 2) return '🟡 Suspended';
+    return '⚪ Unknown';
+  }
+
+  private static mapUserLevel(level: any): string {
+    if (level === 'godadmin') return '👑 Super Admin';
+    if (level === 'power_user') return '🔧 Power User';
+    if (level === 'course_creator') return '📚 Course Creator';
+    if (level === '3' || level === 3) return '👤 Student';
+    return level?.toString() || 'User';
   }
 }
