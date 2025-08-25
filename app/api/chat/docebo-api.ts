@@ -193,7 +193,664 @@ async enrollUserInLearningPlan(
     throw error;
   }
 }
+// Complete method replacements for app/api/chat/docebo-api.ts
+// Add these helper methods to your DoceboAPI class:
 
+// Helper method to get course name from various possible fields
+getCourseName(course: any): string {
+  return course.name || 
+         course.title || 
+         course.course_name || 
+         course.courseName ||
+         course.course_title ||
+         'Unknown Course';
+}
+
+// Helper method to get learning plan name from various possible fields
+getLearningPlanName(learningPlan: any): string {
+  return learningPlan.title || 
+         learningPlan.name || 
+         learningPlan.learning_plan_name || 
+         learningPlan.lp_name || 
+         learningPlan.learningplan_name ||
+         learningPlan.plan_name ||
+         'Unknown Learning Plan';
+}
+
+// Helper method to enrich course data with normalized fields
+private enrichCourseData(courseData: any): any {
+  return {
+    id: courseData.id || courseData.course_id || courseData.idCourse,
+    course_id: courseData.id || courseData.course_id || courseData.idCourse,
+    title: this.getCourseName(courseData),
+    course_name: this.getCourseName(courseData),
+    name: this.getCourseName(courseData),
+    code: courseData.code || courseData.course_code,
+    type: courseData.course_type || courseData.type || 'elearning',
+    course_type: courseData.course_type || courseData.type || 'elearning',
+    status: courseData.status,
+    can_subscribe: courseData.can_subscribe,
+    description: courseData.description || '',
+    date_creation: courseData.date_creation,
+    date_modification: courseData.date_modification,
+    creation_date: courseData.date_creation ? new Date(courseData.date_creation * 1000).toISOString() : null,
+    last_update: courseData.date_modification ? new Date(courseData.date_modification * 1000).toISOString() : null,
+    language: courseData.lang_code || courseData.language,
+    lang_code: courseData.lang_code,
+    enrolled_count: courseData.enrolled_users_count || courseData.enrolled_users || courseData.subscription_count || 0,
+    enrollment_count: courseData.enrolled_users_count || courseData.enrolled_users || courseData.subscription_count || 0,
+    category_name: courseData.category_name,
+    credits: courseData.credits || 0,
+    ...courseData
+  };
+}
+
+// FIXED: Enroll user in a course using the correct endpoint from your documentation
+async enrollUserInCourse(
+  userId: string, 
+  courseId: string, 
+  options: {
+    level?: string;
+    assignmentType?: string;
+    startValidity?: string;
+    endValidity?: string;
+  } = {}
+): Promise<any> {
+  try {
+    console.log(`🔄 FIXED: Attempting to enroll user ${userId} in course ${courseId}`);
+
+    // Convert level to the correct numeric value based on your documentation
+    let levelValue: string | number = 3;
+    if (options.level === 'tutor') levelValue = 4;
+    else if (options.level === 'instructor') levelValue = 6;
+    else levelValue = 3; // student
+
+    // Based on your Enrollments.docx, try the main enrollment endpoint format
+    const enrollmentData = {
+      course_ids: [parseInt(courseId)],
+      user_ids: [parseInt(userId)],
+      level: levelValue.toString(),
+      assignment_type: options.assignmentType || 'mandatory',
+      ...(options.startValidity && { date_begin_validity: options.startValidity }),
+      ...(options.endValidity && { date_expire_validity: options.endValidity })
+    };
+
+    console.log(`📋 FIXED: Course enrollment data:`, enrollmentData);
+    
+    const result = await this.apiRequest('/learn/v1/enrollments', 'POST', enrollmentData);
+    console.log(`✅ FIXED: Course enrollment successful:`, result);
+    return result;
+
+  } catch (error) {
+    console.error(`❌ FIXED: Error enrolling user ${userId} in course ${courseId}:`, error);
+    throw error;
+  }
+}
+
+// FIXED: Enroll user in learning plan using the correct endpoint
+async enrollUserInLearningPlan(
+  userId: string, 
+  learningPlanId: string, 
+  options: {
+    assignmentType?: string;
+    startValidity?: string;
+    endValidity?: string;
+  } = {}
+): Promise<any> {
+  try {
+    console.log(`🔄 FIXED: Attempting to enroll user ${userId} in learning plan ${learningPlanId}`);
+
+    // Using the format from your Enrollments.docx documentation
+    const enrollmentData = {
+      user_ids: [parseInt(userId)],
+      learningplan_ids: [parseInt(learningPlanId)],
+      assignment_type: options.assignmentType || 'mandatory',
+      ...(options.startValidity && { date_begin_validity: options.startValidity }),
+      ...(options.endValidity && { date_expire_validity: options.endValidity })
+    };
+
+    console.log(`📋 FIXED: LP enrollment data:`, enrollmentData);
+    
+    // Try the correct learning plan enrollment endpoint
+    const result = await this.apiRequest('/learn/v1/enrollments', 'POST', enrollmentData);
+    console.log(`✅ FIXED: Learning plan enrollment successful:`, result);
+    return result;
+
+  } catch (error) {
+    console.error(`❌ FIXED: Error enrolling user ${userId} in learning plan ${learningPlanId}:`, error);
+    throw error;
+  }
+}
+
+// FIXED: Unenroll user from course using the correct endpoint
+async unenrollUserFromCourse(userId: string, courseId: string): Promise<any> {
+  try {
+    console.log(`🔄 FIXED: Attempting to unenroll user ${userId} from course ${courseId}`);
+    
+    // Using the correct DELETE endpoint from your documentation
+    const unenrollmentBody = {
+      user_ids: [parseInt(userId)],
+      course_ids: [parseInt(courseId)],
+      reset_tracks: false, // Don't reset tracking data by default
+      delete_issued_certificates: false // Don't delete certificates by default
+    };
+
+    console.log(`📋 FIXED: Using DELETE /learn/v1/enrollments with body:`, unenrollmentBody);
+    
+    const result = await this.apiRequest('/learn/v1/enrollments', 'DELETE', unenrollmentBody);
+    console.log(`✅ FIXED: Course unenrollment successful:`, result);
+    return result;
+
+  } catch (error) {
+    console.error(`❌ FIXED: Error unenrolling user ${userId} from course ${courseId}:`, error);
+    throw error;
+  }
+}
+
+// FIXED: Unenroll user from learning plan using the correct endpoint
+async unenrollUserFromLearningPlan(userId: string, learningPlanId: string): Promise<any> {
+  try {
+    console.log(`🔄 FIXED: Attempting to unenroll user ${userId} from learning plan ${learningPlanId}`);
+    
+    // Using the correct DELETE endpoint from your documentation
+    const unenrollmentBody = {
+      user_ids: [parseInt(userId)],
+      learningplan_ids: [parseInt(learningPlanId)],
+      reset_tracks: false, // Don't reset tracking data by default
+      cascade_unenroll_from_courses_in_selected_learning_plan: false, // Don't unenroll from courses by default
+      delete_issued_certificates: false // Don't delete certificates by default
+    };
+
+    console.log(`📋 FIXED: Using DELETE /learningplan/v1/learningplans/enrollments with body:`, unenrollmentBody);
+    
+    const result = await this.apiRequest('/learningplan/v1/learningplans/enrollments', 'DELETE', unenrollmentBody);
+    console.log(`✅ FIXED: Learning plan unenrollment successful:`, result);
+    return result;
+
+  } catch (error) {
+    console.error(`❌ FIXED: Error unenrolling user ${userId} from learning plan ${learningPlanId}:`, error);
+    throw error;
+  }
+}
+
+// FIXED: Enhanced course search with EXACT matching priority
+async findCourseByIdentifier(identifier: string): Promise<any> {
+  try {
+    console.log(`🔍 EXACT SEARCH: Finding course: "${identifier}"`);
+    
+    // Try direct ID lookup if it's numeric
+    if (/^\d+$/.test(identifier)) {
+      try {
+        console.log(`🆔 Direct course lookup by ID: ${identifier}`);
+        const directResult = await this.apiRequest(`/course/v1/courses/${identifier}`, 'GET');
+        if (directResult.data) {
+          console.log(`✅ Found course by direct ID lookup`);
+          return this.enrichCourseData(directResult.data);
+        }
+      } catch (directError) {
+        console.log(`❌ Direct course lookup failed for ID ${identifier}`);
+      }
+    }
+
+    // Search by name/keyword with EXACT matching priority
+    console.log(`🔍 Searching courses by name: "${identifier}"`);
+    const searchResult = await this.apiRequest('/course/v1/courses', 'GET', null, {
+      search_text: identifier,
+      page_size: 200,
+      sort_attr: 'name',
+      sort_dir: 'asc'
+    });
+    
+    const courses = searchResult.data?.items || [];
+    console.log(`📊 Found ${courses.length} courses from search`);
+    
+    if (courses.length === 0) {
+      throw new Error(`Course not found: ${identifier}`);
+    }
+
+    // PRIORITY 1: Exact title/name match (case-insensitive)
+    let exactMatch = courses.find((course: any) => {
+      const courseName = this.getCourseName(course);
+      return courseName.toLowerCase() === identifier.toLowerCase();
+    });
+
+    if (exactMatch) {
+      console.log(`✅ EXACT MATCH: Found exact course match: "${this.getCourseName(exactMatch)}"`);
+      return this.enrichCourseData(exactMatch);
+    }
+
+    // PRIORITY 2: Exact code match
+    exactMatch = courses.find((course: any) => {
+      const courseCode = course.code || '';
+      return courseCode.toLowerCase() === identifier.toLowerCase();
+    });
+
+    if (exactMatch) {
+      console.log(`✅ CODE MATCH: Found exact code match: "${this.getCourseName(exactMatch)}" (${exactMatch.code})`);
+      return this.enrichCourseData(exactMatch);
+    }
+
+    // PRIORITY 3: Title starts with identifier (for partial but precise matches)
+    const startsWithMatch = courses.find((course: any) => {
+      const courseName = this.getCourseName(course);
+      return courseName.toLowerCase().startsWith(identifier.toLowerCase());
+    });
+
+    if (startsWithMatch) {
+      console.log(`✅ STARTS WITH: Found course starting with "${identifier}": "${this.getCourseName(startsWithMatch)}"`);
+      return this.enrichCourseData(startsWithMatch);
+    }
+
+    // PRIORITY 4: Only if no better matches, use contains (with warning)
+    const containsMatch = courses.find((course: any) => {
+      const courseName = this.getCourseName(course);
+      return courseName.toLowerCase().includes(identifier.toLowerCase());
+    });
+
+    if (containsMatch) {
+      console.log(`⚠️ PARTIAL MATCH: Using partial match: "${this.getCourseName(containsMatch)}" for search "${identifier}"`);
+      return this.enrichCourseData(containsMatch);
+    }
+
+    // If no good matches, return first result but log warning
+    console.log(`⚠️ FALLBACK: No exact matches found, using first result: "${this.getCourseName(courses[0])}" for search "${identifier}"`);
+    return this.enrichCourseData(courses[0]);
+
+  } catch (error) {
+    console.error(`❌ Error finding course: ${identifier}`, error);
+    throw error;
+  }
+}
+
+// FIXED: Enhanced learning plan search with EXACT matching priority
+async findLearningPlanByIdentifier(identifier: string): Promise<any> {
+  try {
+    console.log(`🔍 EXACT SEARCH: Finding learning plan: "${identifier}"`);
+    
+    // Try direct ID lookup if it's numeric
+    if (/^\d+$/.test(identifier)) {
+      try {
+        console.log(`🆔 Direct learning plan lookup by ID: ${identifier}`);
+        const directResult = await this.apiRequest(`/learningplan/v1/learningplans/${identifier}`, 'GET');
+        if (directResult.data) {
+          console.log(`✅ Found learning plan by direct ID lookup`);
+          return directResult.data;
+        }
+      } catch (directError) {
+        console.log(`❌ Direct learning plan lookup failed for ID ${identifier}`);
+      }
+    }
+
+    // Search by name/keyword with EXACT matching priority
+    console.log(`🔍 Searching learning plans by name: "${identifier}"`);
+    let result;
+    try {
+      result = await this.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
+        search_text: identifier,
+        page_size: 200
+        // No sort_attr to avoid 400 error
+      });
+    } catch (searchError) {
+      console.log('Direct search failed, trying fallback method...');
+      
+      // Fallback: Get all and filter manually
+      result = await this.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
+        page_size: 200
+      });
+      
+      // Manual filtering with exact matching priority
+      const allItems = result.data?.items || [];
+      const filteredItems = allItems.filter((lp: any) => {
+        const name = this.getLearningPlanName(lp).toLowerCase();
+        const description = (lp.description || '').toLowerCase();
+        const searchLower = identifier.toLowerCase();
+        
+        // Exact match gets highest priority
+        if (name === searchLower) return true;
+        // Starts with gets second priority  
+        if (name.startsWith(searchLower)) return true;
+        // Contains match gets lower priority
+        return name.includes(searchLower) || description.includes(searchLower);
+      });
+      
+      // Sort filtered results by match quality
+      filteredItems.sort((a: any, b: any) => {
+        const nameA = this.getLearningPlanName(a).toLowerCase();
+        const nameB = this.getLearningPlanName(b).toLowerCase();
+        const searchLower = identifier.toLowerCase();
+        
+        // Exact matches first
+        if (nameA === searchLower && nameB !== searchLower) return -1;
+        if (nameB === searchLower && nameA !== searchLower) return 1;
+        
+        // Starts with matches second
+        const aStartsWith = nameA.startsWith(searchLower);
+        const bStartsWith = nameB.startsWith(searchLower);
+        if (aStartsWith && !bStartsWith) return -1;
+        if (bStartsWith && !aStartsWith) return 1;
+        
+        return 0;
+      });
+      
+      // Replace result with filtered and sorted data
+      result = {
+        data: {
+          items: filteredItems,
+          total_count: filteredItems.length
+        }
+      };
+    }
+    
+    const learningPlans = result.data?.items || [];
+    console.log(`📊 Found ${learningPlans.length} learning plans from search`);
+    
+    if (learningPlans.length === 0) {
+      throw new Error(`Learning plan not found: ${identifier}`);
+    }
+
+    // PRIORITY 1: Exact name match (case-insensitive)
+    let exactMatch = learningPlans.find((lp: any) => {
+      const lpName = this.getLearningPlanName(lp);
+      const lpId = (lp.learning_plan_id || lp.id)?.toString();
+      
+      // Exact ID match
+      if (lpId === identifier.toString()) return true;
+      // Exact name match
+      return lpName.toLowerCase() === identifier.toLowerCase();
+    });
+
+    if (exactMatch) {
+      console.log(`✅ EXACT MATCH: Found exact learning plan match: "${this.getLearningPlanName(exactMatch)}"`);
+      return exactMatch;
+    }
+
+    // PRIORITY 2: Name starts with identifier
+    const startsWithMatch = learningPlans.find((lp: any) => {
+      const lpName = this.getLearningPlanName(lp);
+      return lpName.toLowerCase().startsWith(identifier.toLowerCase());
+    });
+
+    if (startsWithMatch) {
+      console.log(`✅ STARTS WITH: Found learning plan starting with "${identifier}": "${this.getLearningPlanName(startsWithMatch)}"`);
+      return startsWithMatch;
+    }
+
+    // PRIORITY 3: Name contains identifier (with warning)
+    const containsMatch = learningPlans.find((lp: any) => {
+      const lpName = this.getLearningPlanName(lp);
+      return lpName.toLowerCase().includes(identifier.toLowerCase());
+    });
+
+    if (containsMatch) {
+      console.log(`⚠️ PARTIAL MATCH: Using partial match: "${this.getLearningPlanName(containsMatch)}" for search "${identifier}"`);
+      return containsMatch;
+    }
+
+    // Fallback to first result
+    console.log(`⚠️ FALLBACK: No exact matches found, using first result: "${this.getLearningPlanName(learningPlans[0])}" for search "${identifier}"`);
+    return learningPlans[0];
+
+  } catch (error) {
+    console.error(`❌ Error finding learning plan: ${identifier}`, error);
+    throw error;
+  }
+}plan_name || 
+         learningPlan.lp_name || 
+         learningPlan.learningplan_name ||
+         learningPlan.plan_name ||
+         'Unknown Learning Plan';
+}
+
+// Helper method to enrich course data with normalized fields
+private enrichCourseData(courseData: any): any {
+  return {
+    id: courseData.id || courseData.course_id || courseData.idCourse,
+    course_id: courseData.id || courseData.course_id || courseData.idCourse,
+    title: this.getCourseName(courseData),
+    course_name: this.getCourseName(courseData),
+    name: this.getCourseName(courseData),
+    code: courseData.code || courseData.course_code,
+    type: courseData.course_type || courseData.type || 'elearning',
+    course_type: courseData.course_type || courseData.type || 'elearning',
+    status: courseData.status,
+    can_subscribe: courseData.can_subscribe,
+    description: courseData.description || '',
+    date_creation: courseData.date_creation,
+    date_modification: courseData.date_modification,
+    creation_date: courseData.date_creation ? new Date(courseData.date_creation * 1000).toISOString() : null,
+    last_update: courseData.date_modification ? new Date(courseData.date_modification * 1000).toISOString() : null,
+    language: courseData.lang_code || courseData.language,
+    lang_code: courseData.lang_code,
+    enrolled_count: courseData.enrolled_users_count || courseData.enrolled_users || courseData.subscription_count || 0,
+    enrollment_count: courseData.enrolled_users_count || courseData.enrolled_users || courseData.subscription_count || 0,
+    category_name: courseData.category_name,
+    credits: courseData.credits || 0,
+    ...courseData
+  };
+}
+
+// FIXED: Enhanced course search with EXACT matching priority
+async findCourseByIdentifier(identifier: string): Promise<any> {
+  try {
+    console.log(`🔍 EXACT SEARCH: Finding course: "${identifier}"`);
+    
+    // Try direct ID lookup if it's numeric
+    if (/^\d+$/.test(identifier)) {
+      try {
+        console.log(`🆔 Direct course lookup by ID: ${identifier}`);
+        const directResult = await this.apiRequest(`/course/v1/courses/${identifier}`, 'GET');
+        if (directResult.data) {
+          console.log(`✅ Found course by direct ID lookup`);
+          return this.enrichCourseData(directResult.data);
+        }
+      } catch (directError) {
+        console.log(`❌ Direct course lookup failed for ID ${identifier}`);
+      }
+    }
+
+    // Search by name/keyword with EXACT matching priority
+    console.log(`🔍 Searching courses by name: "${identifier}"`);
+    const searchResult = await this.apiRequest('/course/v1/courses', 'GET', null, {
+      search_text: identifier,
+      page_size: 200,
+      sort_attr: 'name',
+      sort_dir: 'asc'
+    });
+    
+    const courses = searchResult.data?.items || [];
+    console.log(`📊 Found ${courses.length} courses from search`);
+    
+    if (courses.length === 0) {
+      throw new Error(`Course not found: ${identifier}`);
+    }
+
+    // PRIORITY 1: Exact title/name match (case-insensitive)
+    let exactMatch = courses.find((course: any) => {
+      const courseName = this.getCourseName(course);
+      return courseName.toLowerCase() === identifier.toLowerCase();
+    });
+
+    if (exactMatch) {
+      console.log(`✅ EXACT MATCH: Found exact course match: "${this.getCourseName(exactMatch)}"`);
+      return this.enrichCourseData(exactMatch);
+    }
+
+    // PRIORITY 2: Exact code match
+    exactMatch = courses.find((course: any) => {
+      const courseCode = course.code || '';
+      return courseCode.toLowerCase() === identifier.toLowerCase();
+    });
+
+    if (exactMatch) {
+      console.log(`✅ CODE MATCH: Found exact code match: "${this.getCourseName(exactMatch)}" (${exactMatch.code})`);
+      return this.enrichCourseData(exactMatch);
+    }
+
+    // PRIORITY 3: Title starts with identifier (for partial but precise matches)
+    const startsWithMatch = courses.find((course: any) => {
+      const courseName = this.getCourseName(course);
+      return courseName.toLowerCase().startsWith(identifier.toLowerCase());
+    });
+
+    if (startsWithMatch) {
+      console.log(`✅ STARTS WITH: Found course starting with "${identifier}": "${this.getCourseName(startsWithMatch)}"`);
+      return this.enrichCourseData(startsWithMatch);
+    }
+
+    // PRIORITY 4: Only if no better matches, use contains (with warning)
+    const containsMatch = courses.find((course: any) => {
+      const courseName = this.getCourseName(course);
+      return courseName.toLowerCase().includes(identifier.toLowerCase());
+    });
+
+    if (containsMatch) {
+      console.log(`⚠️ PARTIAL MATCH: Using partial match: "${this.getCourseName(containsMatch)}" for search "${identifier}"`);
+      return this.enrichCourseData(containsMatch);
+    }
+
+    // If no good matches, return first result but log warning
+    console.log(`⚠️ FALLBACK: No exact matches found, using first result: "${this.getCourseName(courses[0])}" for search "${identifier}"`);
+    return this.enrichCourseData(courses[0]);
+
+  } catch (error) {
+    console.error(`❌ Error finding course: ${identifier}`, error);
+    throw error;
+  }
+}
+
+// FIXED: Enhanced learning plan search with EXACT matching priority
+async findLearningPlanByIdentifier(identifier: string): Promise<any> {
+  try {
+    console.log(`🔍 EXACT SEARCH: Finding learning plan: "${identifier}"`);
+    
+    // Try direct ID lookup if it's numeric
+    if (/^\d+$/.test(identifier)) {
+      try {
+        console.log(`🆔 Direct learning plan lookup by ID: ${identifier}`);
+        const directResult = await this.apiRequest(`/learningplan/v1/learningplans/${identifier}`, 'GET');
+        if (directResult.data) {
+          console.log(`✅ Found learning plan by direct ID lookup`);
+          return directResult.data;
+        }
+      } catch (directError) {
+        console.log(`❌ Direct learning plan lookup failed for ID ${identifier}`);
+      }
+    }
+
+    // Search by name/keyword with EXACT matching priority
+    console.log(`🔍 Searching learning plans by name: "${identifier}"`);
+    let result;
+    try {
+      result = await this.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
+        search_text: identifier,
+        page_size: 200
+        // No sort_attr to avoid 400 error
+      });
+    } catch (searchError) {
+      console.log('Direct search failed, trying fallback method...');
+      
+      // Fallback: Get all and filter manually
+      result = await this.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
+        page_size: 200
+      });
+      
+      // Manual filtering with exact matching priority
+      const allItems = result.data?.items || [];
+      const filteredItems = allItems.filter((lp: any) => {
+        const name = this.getLearningPlanName(lp).toLowerCase();
+        const description = (lp.description || '').toLowerCase();
+        const searchLower = identifier.toLowerCase();
+        
+        // Exact match gets highest priority
+        if (name === searchLower) return true;
+        // Starts with gets second priority  
+        if (name.startsWith(searchLower)) return true;
+        // Contains match gets lower priority
+        return name.includes(searchLower) || description.includes(searchLower);
+      });
+      
+      // Sort filtered results by match quality
+      filteredItems.sort((a: any, b: any) => {
+        const nameA = this.getLearningPlanName(a).toLowerCase();
+        const nameB = this.getLearningPlanName(b).toLowerCase();
+        const searchLower = identifier.toLowerCase();
+        
+        // Exact matches first
+        if (nameA === searchLower && nameB !== searchLower) return -1;
+        if (nameB === searchLower && nameA !== searchLower) return 1;
+        
+        // Starts with matches second
+        const aStartsWith = nameA.startsWith(searchLower);
+        const bStartsWith = nameB.startsWith(searchLower);
+        if (aStartsWith && !bStartsWith) return -1;
+        if (bStartsWith && !aStartsWith) return 1;
+        
+        return 0;
+      });
+      
+      // Replace result with filtered and sorted data
+      result = {
+        data: {
+          items: filteredItems,
+          total_count: filteredItems.length
+        }
+      };
+    }
+    
+    const learningPlans = result.data?.items || [];
+    console.log(`📊 Found ${learningPlans.length} learning plans from search`);
+    
+    if (learningPlans.length === 0) {
+      throw new Error(`Learning plan not found: ${identifier}`);
+    }
+
+    // PRIORITY 1: Exact name match (case-insensitive)
+    let exactMatch = learningPlans.find((lp: any) => {
+      const lpName = this.getLearningPlanName(lp);
+      const lpId = (lp.learning_plan_id || lp.id)?.toString();
+      
+      // Exact ID match
+      if (lpId === identifier.toString()) return true;
+      // Exact name match
+      return lpName.toLowerCase() === identifier.toLowerCase();
+    });
+
+    if (exactMatch) {
+      console.log(`✅ EXACT MATCH: Found exact learning plan match: "${this.getLearningPlanName(exactMatch)}"`);
+      return exactMatch;
+    }
+
+    // PRIORITY 2: Name starts with identifier
+    const startsWithMatch = learningPlans.find((lp: any) => {
+      const lpName = this.getLearningPlanName(lp);
+      return lpName.toLowerCase().startsWith(identifier.toLowerCase());
+    });
+
+    if (startsWithMatch) {
+      console.log(`✅ STARTS WITH: Found learning plan starting with "${identifier}": "${this.getLearningPlanName(startsWithMatch)}"`);
+      return startsWithMatch;
+    }
+
+    // PRIORITY 3: Name contains identifier (with warning)
+    const containsMatch = learningPlans.find((lp: any) => {
+      const lpName = this.getLearningPlanName(lp);
+      return lpName.toLowerCase().includes(identifier.toLowerCase());
+    });
+
+    if (containsMatch) {
+      console.log(`⚠️ PARTIAL MATCH: Using partial match: "${this.getLearningPlanName(containsMatch)}" for search "${identifier}"`);
+      return containsMatch;
+    }
+
+    // Fallback to first result
+    console.log(`⚠️ FALLBACK: No exact matches found, using first result: "${this.getLearningPlanName(learningPlans[0])}" for search "${identifier}"`);
+    return learningPlans[0];
+
+  } catch (error) {
+    console.error(`❌ Error finding learning plan: ${identifier}`, error);
+    throw error;
+  }
+}
 
   // FIXED: Helper method to map enrollment levels
   private mapEnrollmentLevel(level: string): number {
