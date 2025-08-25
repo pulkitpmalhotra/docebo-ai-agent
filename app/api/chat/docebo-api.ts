@@ -264,7 +264,7 @@ export class DoceboAPI {
       // Try exact email search first
       const exactSearch = await this.apiRequest('/manage/v1/user', 'GET', null, {
         search_text: email,
-        page_size: 100
+        page_size: 200
       });
       
       const users = exactSearch.data?.items || [];
@@ -323,7 +323,7 @@ export class DoceboAPI {
       console.log(`🔍 Searching courses by name: ${identifier}`);
       const searchResult = await this.apiRequest('/learn/v1/courses', 'GET', null, {
         search_text: identifier,
-        page_size: 100,
+        page_size: 200,
         sort_attr: 'name',
         sort_dir: 'asc'
       });
@@ -411,7 +411,7 @@ export class DoceboAPI {
       console.log(`🔍 Searching learning plans by name: ${identifier}`);
       const searchResult = await this.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
         search_text: identifier,
-        page_size: 100
+        page_size: 200
       });
       
       const learningPlans = searchResult.data?.items || [];
@@ -628,7 +628,7 @@ export class DoceboAPI {
   }
 
   // FIXED: Search users with proper field mapping
-  async searchUsers(searchText: string, limit: number = 100): Promise<any[]> {
+  async searchUsers(searchText: string, limit: number = 200): Promise<any[]> {
     try {
       console.log(`🔍 FIXED: Searching users with: "${searchText}"`);
       
@@ -648,7 +648,7 @@ export class DoceboAPI {
   }
 
   // FIXED: Search courses with proper endpoint and mapping
-  async searchCourses(searchText: string, limit: number = 100): Promise<any[]> {
+  async searchCourses(searchText: string, limit: number = 200): Promise<any[]> {
     try {
       console.log(`🔍 FIXED: Searching courses with: "${searchText}"`);
       
@@ -670,7 +670,7 @@ export class DoceboAPI {
   }
 
   // FIXED: Search learning plans without problematic sort_attr
-  async searchLearningPlans(searchText: string, limit: number = 100): Promise<any[]> {
+  async searchLearningPlans(searchText: string, limit: number = 200): Promise<any[]> {
     try {
       console.log(`🔍 FIXED: Searching learning plans: "${searchText}"`);
       
