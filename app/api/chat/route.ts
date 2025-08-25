@@ -157,28 +157,61 @@ async function chatHandler(request: NextRequest): Promise<NextResponse> {
           );
           break;
           
-        // Bulk Enrollment Management
-        case 'bulk_enroll_course':
-          handlerPromise = BulkEnrollmentHandlers.handleBulkCourseEnrollment(analysis.entities, api);
-          break;
-          
-        case 'bulk_enroll_learning_plan':
-          handlerPromise = BulkEnrollmentHandlers.handleBulkLearningPlanEnrollment(analysis.entities, api);
-          break;
-          
-        case 'bulk_unenroll_course':
-        case 'bulk_unenroll_learning_plan':
-          handlerPromise = BulkEnrollmentHandlers.handleBulkUnenrollment(analysis.entities, api);
-          break;
+       case 'bulk_enroll_course':
+    console.log(`🎯 BULK COURSE: Routing to bulk course enrollment handler`);
+    handlerPromise = withTimeout(
+      handlers.bulkEnrollment.handleBulkCourseEnrollment(analysis.entities, api),
+      30000,
+      'Bulk course enrollment timeout'
+    );
+    break;
+    
+  case 'bulk_enroll_learning_plan':
+    console.log(`🎯 BULK LP: Routing to bulk learning plan enrollment handler`);
+    handlerPromise = withTimeout(
+      handlers.bulkEnrollment.handleBulkLearningPlanEnrollment(analysis.entities, api),
+      30000,
+      'Bulk learning plan enrollment timeout'
+    );
+    break;
+    
+  case 'bulk_unenroll':
+    console.log(`🎯 BULK UNENROLL: Routing to bulk unenrollment handler`);
+    handlerPromise = withTimeout(
+      handlers.bulkEnrollment.handleBulkUnenrollment(analysis.entities, api),
+      30000,
+      'Bulk unenrollment timeout'
+    );
+    break;
         
-        // Individual Enrollment Management
-        case 'enroll_user_in_course':
-          handlerPromise = handlers.enrollment.handleEnrollUserInCourse(analysis.entities, api);
-          break;
-          
-        case 'enroll_user_in_learning_plan':
-          handlerPromise = handlers.enrollment.handleEnrollUserInLearningPlan(analysis.entities, api);
-          break;
+     // Updated Individual Enrollment Management (for better single-user handling)
+  case 'enroll_user_in_course':
+    // Check if this is actually a bulk operation that was misclassified
+    if (analysis.entities.emails && Array.isArray(analysis.entities.emails) && analysis.entities.emails.length > 1) {
+      console.log(`🔄 REDIRECT: Single enrollment detected as bulk, redirecting...`);
+      handlerPromise = withTimeout(
+        handlers.bulkEnrollment.handleBulkCourseEnrollment(analysis.entities, api),
+        30000,
+        'Bulk course enrollment timeout'
+      );
+    } else {
+      handlerPromise = handlers.enrollment.handleEnrollUserInCourse(analysis.entities, api);
+    }
+    break;
+    
+  case 'enroll_user_in_learning_plan':
+    // Check if this is actually a bulk operation that was misclassified
+    if (analysis.entities.emails && Array.isArray(analysis.entities.emails) && analysis.entities.emails.length > 1) {
+      console.log(`🔄 REDIRECT: Single LP enrollment detected as bulk, redirecting...`);
+      handlerPromise = withTimeout(
+        handlers.bulkEnrollment.handleBulkLearningPlanEnrollment(analysis.entities, api),
+        30000,
+        'Bulk learning plan enrollment timeout'
+      );
+    } else {
+      handlerPromise = handlers.enrollment.handleEnrollUserInLearningPlan(analysis.entities, api);
+    }
+    break;
           
         case 'unenroll_user_from_course':
           handlerPromise = handlers.enrollment.handleUnenrollUserFromCourse(analysis.entities, api);
