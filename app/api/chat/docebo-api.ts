@@ -122,7 +122,7 @@ export class DoceboAPI {
 // Replace the existing enrollment methods with these corrected versions:
 
   // FIXED: Enroll user in a course using correct API endpoints and parameters
-  async enrollUserInCourse(
+async enrollUserInCourse(
     userId: string, 
     courseId: string, 
     options: {
@@ -399,30 +399,38 @@ export class DoceboAPI {
         throw new Error(`Course not found: ${identifier}`);
       }
 
+      // Helper function to extract course name
+      const getCourseName = (course: any): string => {
+        return course.name || 
+               course.title || 
+               course.course_name || 
+               'Unknown Course';
+      };
+
       // Find best match (exact name match first, then partial)
       const exactMatch = courses.find((course: any) => {
-        const courseName = this.getCourseName(course);
+        const courseName = getCourseName(course);
         return courseName.toLowerCase() === identifier.toLowerCase();
       });
 
       if (exactMatch) {
-        console.log(`✅ Found exact course match: ${this.getCourseName(exactMatch)}`);
+        console.log(`✅ Found exact course match: ${getCourseName(exactMatch)}`);
         return this.enrichCourseData(exactMatch);
       }
 
       // Try partial match
       const partialMatch = courses.find((course: any) => {
-        const courseName = this.getCourseName(course);
+        const courseName = getCourseName(course);
         return courseName.toLowerCase().includes(identifier.toLowerCase());
       });
 
       if (partialMatch) {
-        console.log(`⚠️ Found partial course match: ${this.getCourseName(partialMatch)}`);
+        console.log(`⚠️ Found partial course match: ${getCourseName(partialMatch)}`);
         return this.enrichCourseData(partialMatch);
       }
 
       // Return first result as fallback
-      console.log(`🔄 Using first result as fallback: ${this.getCourseName(courses[0])}`);
+      console.log(`🔄 Using first result as fallback: ${getCourseName(courses[0])}`);
       return this.enrichCourseData(courses[0]);
 
     } catch (error) {
