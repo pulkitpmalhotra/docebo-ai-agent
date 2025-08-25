@@ -55,17 +55,20 @@ export class DoceboAPI {
     }
 
     // Prepare request options
+    const headers: Record<string, string> = {
+      'Authorization': `Bearer ${token}`,
+      'Accept': 'application/json',
+    };
+
+    // Prepare request options
     const options: RequestInit = {
       method,
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Accept': 'application/json',
-      }
+      headers: headers
     };
 
     // Add body for non-GET requests
     if (method !== 'GET' && body) {
-      options.headers['Content-Type'] = 'application/json';
+      headers['Content-Type'] = 'application/json';
       options.body = JSON.stringify(body);
     }
 
