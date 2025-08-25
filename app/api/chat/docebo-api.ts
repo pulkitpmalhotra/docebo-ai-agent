@@ -13,12 +13,14 @@ export class DoceboAPI {
 
   // Obtain access token with improved type safety
   private async getAccessToken(): Promise<string> {
+    // Check if current token is valid
     if (this._accessToken && 
         this._tokenExpiry && 
         this._tokenExpiry > new Date()) {
       return this._accessToken;
     }
 
+    // Request new token
     try {
       const response = await fetch(`${this.baseUrl}/oauth2/token`, {
         method: 'POST',
@@ -48,106 +50,6 @@ export class DoceboAPI {
       
       return this._accessToken;
     } catch (error) {
-      console.error(`Error getting all enrollments:`, error);
-      return {
-        courses: {
-          enrollments: [],
-          totalCount: 0,
-          endpoint: '/course/v1/courses/enrollments',
-          success: false
-        },
-        learningPlans: {
-          enrollments: [],
-          totalCount: 0,
-          endpoint: '/learningplan/v1/learningplans/enrollments',
-          success: false
-        },
-        totalCourses: 0,
-        totalLearningPlans: 0,
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
-      };
-    }
-  }
-
-  // Format course enrollment
-  formatCourseEnrollment(enrollment: any): FormattedEnrollment {
-    return {
-      courseId: (enrollment.course_id || enrollment.id)?.toString(),
-      courseName: enrollment.course_name || enrollment.name || 'Unknown Course',
-      enrollmentStatus: enrollment.status || 'enrolled',
-      enrollmentDate: enrollment.enrollment_date || enrollment.date_inscr,
-      completionDate: enrollment.completion_date,
-      progress: enrollment.progress || 0,
-      score: enrollment.score,
-      dueDate: enrollment.due_date,
-      assignmentType: enrollment.assignment_type
-    };
-  }
-
-  // Format learning plan enrollment
-  formatLearningPlanEnrollment(enrollment: any): FormattedEnrollment {
-    return {
-      learningPlanId: (enrollment.learning_plan_id || enrollment.id)?.toString(),
-      learningPlanName: enrollment.learning_plan_name || enrollment.name || 'Unknown Learning Plan',
-      enrollmentStatus: enrollment.status || 'enrolled',
-      enrollmentDate: enrollment.enrollment_date || enrollment.date_inscr,
-      completionDate: enrollment.completion_date,
-      progress: enrollment.progress || 0,
-      completedCourses: enrollment.completed_courses,
-      totalCourses: enrollment.total_courses,
-      dueDate: enrollment.due_date,
-      assignmentType: enrollment.assignment_type
-    };
-  }
-
-  // Get enhanced user details with manager information
-  async getEnhancedUserDetails(userId: string): Promise<any> {
-    try {
-      const userResponse = await this.apiRequest(`/manage/v1/user/${userId}`, 'GET');
-      const userData = userResponse.data;
-      
-      if (!userData) {
-        throw new Error(`User not found with ID: ${userId}`);
-      }
-
-      const basicDetails = this.formatUserDetails(userData);
-      
-      let managerInfo = null;
-      try {
-        if (userData.direct_manager || userData.manager_id) {
-          const managerId = userData.direct_manager || userData.manager_id;
-          const managerResponse = await this.apiRequest(`/manage/v1/user/${managerId}`, 'GET');
-          if (managerResponse.data) {
-            managerInfo = {
-              id: managerResponse.data.user_id?.toString() || managerId,
-              fullname: managerResponse.data.fullname || `${managerResponse.data.first_name || ''} ${managerResponse.data.last_name || ''}`.trim() || 'Unknown Manager',
-              email: managerResponse.data.email || '',
-              department: managerResponse.data.department || managerResponse.data.field_5 || ''
-            };
-          }
-        }
-      } catch (managerError) {
-        console.log('Could not fetch manager details:', managerError);
-      }
-
-      return {
-        ...basicDetails,
-        manager: managerInfo,
-        additionalFields: {
-          jobTitle: userData.job_title || userData.field_1 || '',
-          employeeId: userData.employee_id || userData.field_2 || '',
-          location: userData.location || userData.field_3 || '',
-          directReports: userData.subordinates_count || userData.active_subordinates_count || 0
-        }
-      };
-
-    } catch (error) {
-      console.error(`Error getting enhanced user details for ${userId}:`, error);
-      throw error;
-    }
-  }
-}
       this._accessToken = '';
       this._tokenExpiry = null;
       console.error('Token acquisition failed:', error);
@@ -830,3 +732,103 @@ export class DoceboAPI {
         success: true
       };
     } catch (error) {
+      console.error(`Error getting all enrollments:`, error);
+      return {
+        courses: {
+          enrollments: [],
+          totalCount: 0,
+          endpoint: '/course/v1/courses/enrollments',
+          success: false
+        },
+        learningPlans: {
+          enrollments: [],
+          totalCount: 0,
+          endpoint: '/learningplan/v1/learningplans/enrollments',
+          success: false
+        },
+        totalCourses: 0,
+        totalLearningPlans: 0,
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  // Format course enrollment
+  formatCourseEnrollment(enrollment: any): FormattedEnrollment {
+    return {
+      courseId: (enrollment.course_id || enrollment.id)?.toString(),
+      courseName: enrollment.course_name || enrollment.name || 'Unknown Course',
+      enrollmentStatus: enrollment.status || 'enrolled',
+      enrollmentDate: enrollment.enrollment_date || enrollment.date_inscr,
+      completionDate: enrollment.completion_date,
+      progress: enrollment.progress || 0,
+      score: enrollment.score,
+      dueDate: enrollment.due_date,
+      assignmentType: enrollment.assignment_type
+    };
+  }
+
+  // Format learning plan enrollment
+  formatLearningPlanEnrollment(enrollment: any): FormattedEnrollment {
+    return {
+      learningPlanId: (enrollment.learning_plan_id || enrollment.id)?.toString(),
+      learningPlanName: enrollment.learning_plan_name || enrollment.name || 'Unknown Learning Plan',
+      enrollmentStatus: enrollment.status || 'enrolled',
+      enrollmentDate: enrollment.enrollment_date || enrollment.date_inscr,
+      completionDate: enrollment.completion_date,
+      progress: enrollment.progress || 0,
+      completedCourses: enrollment.completed_courses,
+      totalCourses: enrollment.total_courses,
+      dueDate: enrollment.due_date,
+      assignmentType: enrollment.assignment_type
+    };
+  }
+
+  // Get enhanced user details with manager information
+  async getEnhancedUserDetails(userId: string): Promise<any> {
+    try {
+      const userResponse = await this.apiRequest(`/manage/v1/user/${userId}`, 'GET');
+      const userData = userResponse.data;
+      
+      if (!userData) {
+        throw new Error(`User not found with ID: ${userId}`);
+      }
+
+      const basicDetails = this.formatUserDetails(userData);
+      
+      let managerInfo = null;
+      try {
+        if (userData.direct_manager || userData.manager_id) {
+          const managerId = userData.direct_manager || userData.manager_id;
+          const managerResponse = await this.apiRequest(`/manage/v1/user/${managerId}`, 'GET');
+          if (managerResponse.data) {
+            managerInfo = {
+              id: managerResponse.data.user_id?.toString() || managerId,
+              fullname: managerResponse.data.fullname || `${managerResponse.data.first_name || ''} ${managerResponse.data.last_name || ''}`.trim() || 'Unknown Manager',
+              email: managerResponse.data.email || '',
+              department: managerResponse.data.department || managerResponse.data.field_5 || ''
+            };
+          }
+        }
+      } catch (managerError) {
+        console.log('Could not fetch manager details:', managerError);
+      }
+
+      return {
+        ...basicDetails,
+        manager: managerInfo,
+        additionalFields: {
+          jobTitle: userData.job_title || userData.field_1 || '',
+          employeeId: userData.employee_id || userData.field_2 || '',
+          location: userData.location || userData.field_3 || '',
+          directReports: userData.subordinates_count || userData.active_subordinates_count || 0
+        }
+      };
+
+    } catch (error) {
+      console.error(`Error getting enhanced user details for ${userId}:`, error);
+      throw error;
+    }
+  }
+}
