@@ -836,7 +836,7 @@ static async handleUserEnrollments(entities: any, api: DoceboAPI): Promise<NextR
     const { email, userId, loadMore, offset } = entities;
     const identifier = email || userId;
     const currentOffset = parseInt(offset || '0');
-    const pageSize = 20; // Items to display per page
+    const pageSize = 100; // Items to display per page
     
     console.log(`📚 FIXED PAGINATION: Getting user enrollments: ${identifier} (offset: ${currentOffset}, loadMore: ${loadMore})`);
     
@@ -1255,7 +1255,7 @@ private static async getOptimizedEnrollmentPages(userId: string, api: DoceboAPI,
       const courseResult = await api.apiRequest(`/course/v1/courses/enrollments`, 'GET', null, {
         'user_id[]': userId,
         page: page,
-        page_size: 50 // Reasonable page size
+        page_size: 100 // Reasonable page size
       });
       
       if (courseResult?.data?.items?.length > 0) {
@@ -1337,7 +1337,7 @@ private static async getOptimizedRecentEnrollments(userId: string, api: DoceboAP
       'user_id[]': userId,
       sort_attr: 'enrollment_created_at',
       sort_dir: 'desc',
-      page_size: Math.min(limit, 50)
+      page_size: Math.min(limit, 100)
     });
     
     if (courseResult?.data?.items?.length > 0) {
@@ -1361,7 +1361,7 @@ private static async getOptimizedRecentEnrollments(userId: string, api: DoceboAP
       'user_id[]': userId,
       sort_attr: 'enrollment_created_at',
       sort_dir: 'desc',
-      page_size: Math.min(limit, 50)
+      page_size: Math.min(limit, 100)
     });
     
     if (lpResult?.data?.items?.length > 0) {
