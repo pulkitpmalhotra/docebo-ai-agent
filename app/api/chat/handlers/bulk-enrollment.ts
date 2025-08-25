@@ -148,7 +148,54 @@ Please check:
     });
   }
 }
+static async handleBulkUnenrollment(entities: any, api: DoceboAPI): Promise<NextResponse> {
+  try {
+    const { emails, resourceName, resourceType } = entities;
+    
+    console.log(`🎯 BULK UNENROLL: Processing entities:`, { emails, resourceName, resourceType });
+    
+    if (!emails || !Array.isArray(emails) || emails.length === 0) {
+      return NextResponse.json({
+        response: '❌ **Missing Information**: I need a list of user emails for bulk unenrollment.\n\n**Examples**: \n• "Remove john@co.com,sarah@co.com from course Excel Training"\n• "Unenroll marketing team from learning plan Old Program"',
+        success: false,
+        timestamp: new Date().toISOString()
+      });
+    }
 
+    if (!resourceName) {
+      return NextResponse.json({
+        response: '❌ **Missing Resource**: Please specify which course or learning plan to unenroll users from.\n\n**Example**: "Remove john@co.com,sarah@co.com from course Excel Training"',
+        success: false,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // Determine resource type if not specified
+    const finalResourceType = resourceType || 'course'; // default to course
+    
+    console.log(`🎯 BULK UNENROLL: Processing bulk unenrollment: ${emails.length} users from ${finalResourceType} "${resourceName}"`);
+
+    // Process bulk unenrollment using the existing private method
+    const result = await this.processBulkUnenrollment(emails, resourceName, finalResourceType as 'course' | 'learning_plan', api);
+
+    return this.formatBulkResponse(result, resourceName, finalResourceType as 'course' | 'learning_plan', 'unenroll');
+
+  } catch (error) {
+    console.error('❌ Bulk unenrollment error:', error);
+    
+    return NextResponse.json({
+      response: `❌ **Bulk Unenrollment Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
+
+Please check:
+• All email addresses are correct
+• Resource name is spelled correctly and exists
+• Users are currently enrolled in the specified resource
+• You have permission to unenroll users`,
+      success: false,
+      timestamp: new Date().toISOString()
+    });
+  }
+}
 // NEW: Dedicated method for bulk course enrollment processing
 private static async processBulkCourseEnrollment(
   emails: string[], 
