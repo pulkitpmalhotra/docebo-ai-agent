@@ -1,11 +1,5 @@
 // app/api/chat/types.ts - Enhanced TypeScript interfaces and types
 
-export interface IntentAnalysis {
-  intent: string;
-  entities: any;
-  confidence: number;
-}
-
 export interface DoceboConfig {
   domain: string;
   clientId: string;
@@ -26,18 +20,29 @@ export interface UserDetails {
   timezone: string;
   language: string;
   department: string;
+  
+  // Expanded user details
+  firstName?: string;
+  lastName?: string;
+  uuid?: string;
   isManager?: boolean;
   subordinatesCount?: number;
   avatar?: string;
   expirationDate?: string | null;
   emailValidationStatus?: string;
+  
+  // Organizational details
   organizationChart?: string;
   employeeType?: string;
   businessUnit?: string;
   employeeId?: string;
+  
+  // Management details
   directManager?: string;
   managers?: any[];
   expired?: boolean;
+  
+  // Additional metadata
   dateFormat?: string;
   newsletterOptout?: string;
 }
