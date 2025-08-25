@@ -279,7 +279,7 @@ export class DoceboAPI {
   // Enhanced course search with EXACT matching priority
   async findCourseByIdentifier(identifier: string): Promise<any> {
     try {
-      console.log(`🔍 EXACT SEARCH: Finding course: "${identifier}"`);
+      console.log(`🔍 EXACT COURSE SEARCH: Finding course: "${identifier}"`);
       
       // Try direct ID lookup if it's numeric
       if (/^\d+$/.test(identifier)) {
@@ -292,14 +292,15 @@ export class DoceboAPI {
           }
         } catch (directError) {
           console.log(`❌ Direct course lookup failed for ID ${identifier}`);
+          throw new Error(`Course with ID ${identifier} not found`);
         }
       }
 
-      // Search by name/keyword with EXACT matching priority
+      // Search by name/keyword with comprehensive search
       console.log(`🔍 Searching courses by name: "${identifier}"`);
       const searchResult = await this.apiRequest('/course/v1/courses', 'GET', null, {
         search_text: identifier,
-        page_size: 200,
+        page_size: 200, // Get more results to catch all matches
         sort_attr: 'name',
         sort_dir: 'asc'
       });
@@ -308,67 +309,72 @@ export class DoceboAPI {
       console.log(`📊 Found ${courses.length} courses from search`);
       
       if (courses.length === 0) {
-        throw new Error(`Course not found: ${identifier}`);
+        throw new Error(`No courses found matching: "${identifier}"`);
       }
 
-      // PRIORITY 1: Exact title/name match (case-insensitive)
-      let exactMatch = courses.find((course: any) => {
+      // PRIORITY 1: Find EXACT title/name matches (case-insensitive)
+      const exactMatches = courses.filter((course: any) => {
         const courseName = this.getCourseName(course);
         return courseName.toLowerCase() === identifier.toLowerCase();
       });
 
-      if (exactMatch) {
-        console.log(`✅ EXACT MATCH: Found exact course match: "${this.getCourseName(exactMatch)}"`);
-        return this.enrichCourseData(exactMatch);
+      console.log(`🎯 EXACT MATCHES: Found ${exactMatches.length} exact matches`);
+
+      if (exactMatches.length === 1) {
+        console.log(`✅ SINGLE EXACT MATCH: Found exact course match: "${this.getCourseName(exactMatches[0])}"`);
+        return this.enrichCourseData(exactMatches[0]);
+      } else if (exactMatches.length > 1) {
+        // Multiple exact matches - this is an error condition
+        const courseNames = exactMatches.map(course => `"${this.getCourseName(course)}" (ID: ${course.id || course.course_id})`);
+        console.log(`❌ MULTIPLE EXACT MATCHES: Found ${exactMatches.length} courses with same name`);
+        throw new Error(`Multiple courses found with the exact name "${identifier}". Please use course ID instead. Found courses: ${courseNames.join(', ')}`);
       }
 
-      // PRIORITY 2: Exact code match
-      exactMatch = courses.find((course: any) => {
+      // PRIORITY 2: Find EXACT code matches
+      const exactCodeMatches = courses.filter((course: any) => {
         const courseCode = course.code || '';
         return courseCode.toLowerCase() === identifier.toLowerCase();
       });
 
-      if (exactMatch) {
-        console.log(`✅ CODE MATCH: Found exact code match: "${this.getCourseName(exactMatch)}" (${exactMatch.code})`);
-        return this.enrichCourseData(exactMatch);
+      console.log(`🏷️ CODE MATCHES: Found ${exactCodeMatches.length} exact code matches`);
+
+      if (exactCodeMatches.length === 1) {
+        console.log(`✅ SINGLE CODE MATCH: Found exact code match: "${this.getCourseName(exactCodeMatches[0])}" (${exactCodeMatches[0].code})`);
+        return this.enrichCourseData(exactCodeMatches[0]);
+      } else if (exactCodeMatches.length > 1) {
+        const courseNames = exactCodeMatches.map(course => `"${this.getCourseName(course)}" (Code: ${course.code})`);
+        console.log(`❌ MULTIPLE CODE MATCHES: Found ${exactCodeMatches.length} courses with same code`);
+        throw new Error(`Multiple courses found with the exact code "${identifier}". Please use course ID instead. Found courses: ${courseNames.join(', ')}`);
       }
 
-      // PRIORITY 3: Title starts with identifier
-      const startsWithMatch = courses.find((course: any) => {
-        const courseName = this.getCourseName(course);
-        return courseName.toLowerCase().startsWith(identifier.toLowerCase());
-      });
-
-      if (startsWithMatch) {
-        console.log(`✅ STARTS WITH: Found course starting with "${identifier}": "${this.getCourseName(startsWithMatch)}"`);
-        return this.enrichCourseData(startsWithMatch);
-      }
-
-      // PRIORITY 4: Contains match (with warning)
-      const containsMatch = courses.find((course: any) => {
+      // NO EXACT MATCHES FOUND - Return error with suggestions
+      console.log(`❌ NO EXACT MATCHES: No exact matches found for "${identifier}"`);
+      
+      // Show partial matches as suggestions
+      const partialMatches = courses.filter((course: any) => {
         const courseName = this.getCourseName(course);
         return courseName.toLowerCase().includes(identifier.toLowerCase());
-      });
+      }).slice(0, 5);
 
-      if (containsMatch) {
-        console.log(`⚠️ PARTIAL MATCH: Using partial match: "${this.getCourseName(containsMatch)}" for search "${identifier}"`);
-        return this.enrichCourseData(containsMatch);
+      if (partialMatches.length > 0) {
+        const suggestions = partialMatches.map(course => 
+          `"${this.getCourseName(course)}" (ID: ${course.id || course.course_id})`
+        );
+        throw new Error(`No exact match found for course "${identifier}". Did you mean one of these? ${suggestions.join(', ')}. For exact matching, use the complete course name or course ID.`);
       }
 
-      // Fallback to first result
-      console.log(`⚠️ FALLBACK: No exact matches found, using first result: "${this.getCourseName(courses[0])}" for search "${identifier}"`);
-      return this.enrichCourseData(courses[0]);
+      throw new Error(`Course "${identifier}" not found. Please check the course name spelling or use the course ID for exact matching.`);
 
     } catch (error) {
-      console.error(`❌ Error finding course: ${identifier}`, error);
+      console.error(`❌ Error in findCourseByIdentifier: ${identifier}`, error);
       throw error;
     }
   }
 
-  // Enhanced learning plan search with EXACT matching priority
+  // FIXED: Enhanced learning plan search with EXACT matching and duplicate detection
   async findLearningPlanByIdentifier(identifier: string): Promise<any> {
     try {
-      console.log(`🔍 EXACT SEARCH: Finding learning plan: "${identifier}"`);
+      console.log(`🔍 EXACT LP SEARCH: Finding learning plan: "${identifier}"`);
       
       // Try direct ID lookup if it's numeric
       if (/^\d+$/.test(identifier)) {
@@ -381,6 +387,7 @@ export class DoceboAPI {
           }
         } catch (directError) {
           console.log(`❌ Direct learning plan lookup failed for ID ${identifier}`);
+          throw new Error(`Learning plan with ID ${identifier} not found`);
         }
       }
 
@@ -390,7 +397,7 @@ export class DoceboAPI {
       try {
         result = await this.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
           search_text: identifier,
-          page_size: 200
+          page_size: 200 // Get more results to catch all matches
         });
       } catch (searchError) {
         console.log('Direct search failed, trying fallback method...');
@@ -406,25 +413,8 @@ export class DoceboAPI {
           const description = (lp.description || '').toLowerCase();
           const searchLower = identifier.toLowerCase();
           
-          if (name === searchLower) return true;
-          if (name.startsWith(searchLower)) return true;
+          // Include if name contains search term or description contains it
           return name.includes(searchLower) || description.includes(searchLower);
-        });
-        
-        filteredItems.sort((a: any, b: any) => {
-          const nameA = this.getLearningPlanName(a).toLowerCase();
-          const nameB = this.getLearningPlanName(b).toLowerCase();
-          const searchLower = identifier.toLowerCase();
-          
-          if (nameA === searchLower && nameB !== searchLower) return -1;
-          if (nameB === searchLower && nameA !== searchLower) return 1;
-          
-          const aStartsWith = nameA.startsWith(searchLower);
-          const bStartsWith = nameB.startsWith(searchLower);
-          if (aStartsWith && !bStartsWith) return -1;
-          if (bStartsWith && !aStartsWith) return 1;
-          
-          return 0;
         });
         
         result = {
@@ -439,51 +429,65 @@ export class DoceboAPI {
       console.log(`📊 Found ${learningPlans.length} learning plans from search`);
       
       if (learningPlans.length === 0) {
-        throw new Error(`Learning plan not found: ${identifier}`);
+        throw new Error(`No learning plans found matching: "${identifier}"`);
       }
 
-      // PRIORITY 1: Exact name match
-      let exactMatch = learningPlans.find((lp: any) => {
+      // PRIORITY 1: Find EXACT name matches (case-insensitive)
+      const exactMatches = learningPlans.filter((lp: any) => {
         const lpName = this.getLearningPlanName(lp);
-        const lpId = (lp.learning_plan_id || lp.id)?.toString();
-        
-        if (lpId === identifier.toString()) return true;
         return lpName.toLowerCase() === identifier.toLowerCase();
       });
 
-      if (exactMatch) {
-        console.log(`✅ EXACT MATCH: Found exact learning plan match: "${this.getLearningPlanName(exactMatch)}"`);
-        return exactMatch;
+      console.log(`🎯 EXACT MATCHES: Found ${exactMatches.length} exact matches`);
+
+      if (exactMatches.length === 1) {
+        console.log(`✅ SINGLE EXACT MATCH: Found exact learning plan match: "${this.getLearningPlanName(exactMatches[0])}"`);
+        return exactMatches[0];
+      } else if (exactMatches.length > 1) {
+        // Multiple exact matches - this is an error condition
+        const lpNames = exactMatches.map(lp => 
+          `"${this.getLearningPlanName(lp)}" (ID: ${lp.learning_plan_id || lp.id})`
+        );
+        console.log(`❌ MULTIPLE EXACT MATCHES: Found ${exactMatches.length} learning plans with same name`);
+        throw new Error(`Multiple learning plans found with the exact name "${identifier}". Please use learning plan ID instead. Found plans: ${lpNames.join(', ')}`);
       }
 
-      // PRIORITY 2: Name starts with identifier
-      const startsWithMatch = learningPlans.find((lp: any) => {
-        const lpName = this.getLearningPlanName(lp);
-        return lpName.toLowerCase().startsWith(identifier.toLowerCase());
+      // PRIORITY 2: Find EXACT ID matches (for string-based IDs)
+      const exactIdMatches = learningPlans.filter((lp: any) => {
+        const lpId = (lp.learning_plan_id || lp.id)?.toString();
+        return lpId === identifier.toString();
       });
 
-      if (startsWithMatch) {
-        console.log(`✅ STARTS WITH: Found learning plan starting with "${identifier}": "${this.getLearningPlanName(startsWithMatch)}"`);
-        return startsWithMatch;
+      if (exactIdMatches.length === 1) {
+        console.log(`✅ SINGLE ID MATCH: Found exact ID match: "${this.getLearningPlanName(exactIdMatches[0])}"`);
+        return exactIdMatches[0];
+      } else if (exactIdMatches.length > 1) {
+        const lpNames = exactIdMatches.map(lp => 
+          `"${this.getLearningPlanName(lp)}" (ID: ${lp.learning_plan_id || lp.id})`
+        );
+        throw new Error(`Multiple learning plans found with the ID "${identifier}". This should not happen. Found plans: ${lpNames.join(', ')}`);
       }
 
-      // PRIORITY 3: Name contains identifier
-      const containsMatch = learningPlans.find((lp: any) => {
+      // NO EXACT MATCHES FOUND - Return error with suggestions
+      console.log(`❌ NO EXACT MATCHES: No exact matches found for "${identifier}"`);
+      
+      // Show partial matches as suggestions
+      const partialMatches = learningPlans.filter((lp: any) => {
         const lpName = this.getLearningPlanName(lp);
         return lpName.toLowerCase().includes(identifier.toLowerCase());
-      });
+      }).slice(0, 5);
 
-      if (containsMatch) {
-        console.log(`⚠️ PARTIAL MATCH: Using partial match: "${this.getLearningPlanName(containsMatch)}" for search "${identifier}"`);
-        return containsMatch;
+      if (partialMatches.length > 0) {
+        const suggestions = partialMatches.map(lp => 
+          `"${this.getLearningPlanName(lp)}" (ID: ${lp.learning_plan_id || lp.id})`
+        );
+        throw new Error(`No exact match found for learning plan "${identifier}". Did you mean one of these? ${suggestions.join(', ')}. For exact matching, use the complete learning plan name or ID.`);
       }
 
-      // Fallback to first result
-      console.log(`⚠️ FALLBACK: No exact matches found, using first result: "${this.getLearningPlanName(learningPlans[0])}" for search "${identifier}"`);
-      return learningPlans[0];
+      throw new Error(`Learning plan "${identifier}" not found. Please check the learning plan name spelling or use the learning plan ID for exact matching.`);
 
     } catch (error) {
-      console.error(`❌ Error finding learning plan: ${identifier}`, error);
+      console.error(`❌ Error in findLearningPlanByIdentifier: ${identifier}`, error);
       throw error;
     }
   }
