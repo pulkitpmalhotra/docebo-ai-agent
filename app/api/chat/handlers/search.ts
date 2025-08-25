@@ -305,122 +305,113 @@ ${courseItems.length > 20 ? `\n... and ${courseItems.length - 20} more courses` 
     }
   }
 
-  static async handleLearningPlanSearch(entities: any, api: DoceboAPI): Promise<NextResponse> {
-    try {
-      const { searchTerm } = entities;
+// Fixed version of handleLearningPlanSearch in app/api/chat/handlers/search.ts
 
-      if (!searchTerm) {
-        return NextResponse.json({
-          response: '❌ **Missing Search Term**: Please provide a learning plan name or keyword.\n\n**Examples**: \n• "Find Python learning plans"\n• "Search leadership programs"',
-          success: false,
-          timestamp: new Date().toISOString()
-        });
-      }
+static async handleLearningPlanSearch(entities: any, api: DoceboAPI): Promise<NextResponse> {
+  try {
+    const { searchTerm } = entities;
 
-      console.log(`🔍 FIXED: Searching learning plans: "${searchTerm}"`);
-
-      // FIXED: Use correct endpoint without sort_attr that was causing 400 error
-      let result;
-      try {
-        result = await api.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
-          search_text: searchTerm,
-          page_size: 25
-        });
-      } catch (searchError) {
-        console.log(`🔍 Direct search failed, trying without search_text parameter...`);
-        
-        // Fallback: Get all and filter manually
-        result = await api.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
-          page_size: 100
-        });
-        
-        // Manual filtering
-        const allItems = result.data?.items || [];
-        const filteredItems = allItems.filter((lp: any) => {
-          const name = (lp.title || lp.name || '').toLowerCase();
-          const description = (lp.description || '').toLowerCase();
-          return name.includes(searchTerm.toLowerCase()) || 
-                 description.includes(searchTerm.toLowerCase());
-        });
-        
-        // Replace result with filtered data
-        result = {
-          data: {
-            items: filteredItems,
-            total_count: filteredItems.length
-          }
-        };
-      }
-
-      const lpItems = result.data?.items || [];
-      console.log(`📊 Found ${lpItems.length} learning plans from API`);
-
-      if (lpItems.length === 0) {
-        return NextResponse.json({
-          response: `❌ **No Learning Plans Found**: "${searchTerm}"\n\nNo learning plans found matching your search criteria.\n\n💡 **Try**: \n• Different keywords\n• Broader search terms\n• Check spelling`,
-          success: false,
-          timestamp: new Date().toISOString()
-        });
-      }
-
-      // FIXED: Enhanced learning plan list with proper field mappings
-      const planList = lpItems.slice(0, 20).map((plan: any, index: number) => {
-        const name = plan.title || plan.name || 'Unknown Learning Plan';
-        const planId = (plan.learning_plan_id || plan.id || 'Unknown').toString();
-
-        // FIXED: Proper status mapping for learning plans
-        let status = 'Unknown';
-        let statusIcon = '📋';
-
-        if (plan.is_published === true || plan.is_publishable === true) {
-          status = 'Published';
-          statusIcon = '🟢';
-        } else if (plan.is_published === false) {
-          status = 'Draft';
-          statusIcon = '🟡';
-        }
-
-        // FIXED: Get enrollment count from actual API fields
-        const enrollments = plan.assigned_enrollments_count || plan.enrolled_users_count || 0;
-
-        return `${index + 1}. ${statusIcon} **${name}**\n   ID: ${planId} • Status: ${status} • Enrollments: ${enrollments}`;
-      }).join('\n\n');
-
+    if (!searchTerm) {
       return NextResponse.json({
-        response: `📋 **Learning Plan Search Results**: "${searchTerm}" (${lpItems.length} found)
-
-${planList}
-
-${lpItems.length > 20 ? `\n... and ${lpItems.length - 20} more learning plans` : ''}
-
-💡 **Next Steps**: 
-• "Learning plan info [plan name]" for details
-• "Enroll [user] in learning plan [plan name]" to enroll users
-
-*Using endpoint: /learningplan/v1/learningplans (without sort_attr to avoid 400 error)*`,
-        success: true,
-        data: {
-          learningPlans: lpItems,
-          totalCount: lpItems.length,
-          query: searchTerm,
-          endpoint_used: '/learningplan/v1/learningplans'
-        },
-        totalCount: lpItems.length,
-        timestamp: new Date().toISOString()
-      });
-
-    } catch (error) {
-      console.error('❌ Learning plan search error:', error);
-
-      return NextResponse.json({
-        response: `❌ **Learning Plan Search Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
-
-**Using endpoint**: /learningplan/v1/learningplans (removed sort_attr parameter that was causing 400 error)`,
+        response: 'Missing Search Term: Please provide a learning plan name or keyword.\n\nExamples: \n• "Find Python learning plans"\n• "Search leadership programs"',
         success: false,
         timestamp: new Date().toISOString()
       });
     }
+
+    console.log(`Searching learning plans: "${searchTerm}"`);
+
+    // FIXED: Remove problematic sort_attr parameter
+    let result;
+    try {
+      result = await api.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
+        search_text: searchTerm,
+        page_size: 50
+        // REMOVED: sort_attr and sort_dir parameters that cause 400 error
+      });
+    } catch (searchError) {
+      console.log('Direct search failed, trying fallback method...');
+      
+      // Fallback: Get all and filter manually
+      result = await api.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
+        page_size: 100
+      });
+      
+      // Manual filtering
+      const allItems = result.data?.items || [];
+      const filteredItems = allItems.filter((lp: any) => {
+        const name = (lp.title || lp.name || '').toLowerCase();
+        const description = (lp.description || '').toLowerCase();
+        return name.includes(searchTerm.toLowerCase()) || 
+               description.includes(searchTerm.toLowerCase());
+      });
+      
+      // Replace result with filtered data
+      result = {
+        data: {
+          items: filteredItems,
+          total_count: filteredItems.length
+        }
+      };
+    }
+
+    const lpItems = result.data?.items || [];
+    console.log(`Found ${lpItems.length} learning plans from API`);
+
+    if (lpItems.length === 0) {
+      return NextResponse.json({
+        response: `No Learning Plans Found: "${searchTerm}"\n\nNo learning plans found matching your search criteria.\n\nTry: \n• Different keywords\n• Broader search terms\n• Check spelling`,
+        success: false,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // Enhanced learning plan list with proper field mappings
+    const planList = lpItems.slice(0, 20).map((plan: any, index: number) => {
+      const name = plan.title || plan.name || 'Unknown Learning Plan';
+      const planId = (plan.learning_plan_id || plan.id || 'Unknown').toString();
+
+      // Proper status mapping for learning plans
+      let status = 'Unknown';
+      let statusIcon = '📋';
+
+      if (plan.is_published === true || plan.is_publishable === true) {
+        status = 'Published';
+        statusIcon = '🟢';
+      } else if (plan.is_published === false) {
+        status = 'Draft';
+        statusIcon = '🟡';
+      }
+
+      // Get enrollment count from actual API fields
+      const enrollments = plan.assigned_enrollments_count || plan.enrolled_users_count || 0;
+
+      return `${index + 1}. ${statusIcon} **${name}**\n   ID: ${planId} • Status: ${status} • Enrollments: ${enrollments}`;
+    }).join('\n\n');
+
+    return NextResponse.json({
+      response: `Learning Plan Search Results: "${searchTerm}" (${lpItems.length} found)\n\n${planList}\n\n${lpItems.length > 20 ? `... and ${lpItems.length - 20} more learning plans\n\n` : ''}Next Steps: \n• "Learning plan info [plan name]" for details\n• "Enroll [user] in learning plan [plan name]" to enroll users\n\n*Using endpoint: /learningplan/v1/learningplans (removed sort_attr to fix 400 error)*`,
+      success: true,
+      data: {
+        learningPlans: lpItems,
+        totalCount: lpItems.length,
+        query: searchTerm,
+        endpoint_used: '/learningplan/v1/learningplans'
+      },
+      totalCount: lpItems.length,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('Learning plan search error:', error);
+
+    return NextResponse.json({
+      response: `Learning Plan Search Failed: ${error instanceof Error ? error.message : 'Unknown error'}\n\nUsing endpoint: /learningplan/v1/learningplans (removed sort_attr parameter that was causing 400 error)`,
+      success: false,
+      timestamp: new Date().toISOString()
+    });
   }
+}
 
   // FIXED: Helper methods for mapping API response values
   private static mapUserStatus(status: any): string {
