@@ -380,7 +380,123 @@ export class IntentAnalyzer {
         },
         confidence: 0.95
       },
+      
+// Bulk Course Enrollment
+      {
+  intent: 'bulk_enroll_course',
+  patterns: [
+    /(?:enroll|add|assign|register)\s+(.+?)\s+(?:in|to|for)\s+(?:course|training)\s+(.+)/i,
+    /(?:bulk enroll|mass enroll)\s+(.+?)\s+(?:in|to|for)\s+(?:course|training)\s+(.+)/i
+  ],
+  extractEntities: () => {
+    console.log(`🔄 BULK COURSE: Analyzing message: "${message}"`);
+    
+    // Extract all emails from the message
+    const allEmails = this.extractMultipleEmails(message);
+    console.log(`📧 BULK COURSE: Found ${allEmails.length} emails:`, allEmails);
+    
+    // Extract course name more precisely
+    const courseMatch = message.match(/(?:enroll|add|assign|register|bulk enroll|mass enroll)\s+.+?\s+(?:in|to|for)\s+(?:course|training)\s+(.+?)(?:\s*$|\s+with|\s+as)/i);
+    let courseName = '';
+    
+    if (courseMatch && courseMatch[1]) {
+      courseName = courseMatch[1].trim();
+      // Clean up common suffixes
+      courseName = courseName.replace(/\s+(with|as|using).*$/i, '');
+      courseName = courseName.replace(/[\.!?]*$/, ''); // Remove trailing punctuation
+    }
+    
+    console.log(`📚 BULK COURSE: Extracted course name: "${courseName}"`);
+    
+    return {
+      emails: allEmails,
+      courseName: courseName,
+      resourceType: 'course',
+      action: 'bulk_enroll',
+      isBulk: true
+    };
+  },
+  confidence: allEmails.length > 1 ? 0.95 : 0.85
+},
 
+// Bulk Learning Plan Enrollment - FIXED  
+{
+  intent: 'bulk_enroll_learning_plan',
+  patterns: [
+    /(?:enroll|add|assign|register)\s+(.+?)\s+(?:in|to|for)\s+(?:learning plan|lp|learning path)\s+(.+)/i,
+    /(?:bulk enroll|mass enroll)\s+(.+?)\s+(?:in|to|for)\s+(?:learning plan|lp|learning path)\s+(.+)/i
+  ],
+  extractEntities: () => {
+    console.log(`🔄 BULK LP: Analyzing message: "${message}"`);
+    
+    // Extract all emails from the message
+    const allEmails = this.extractMultipleEmails(message);
+    console.log(`📧 BULK LP: Found ${allEmails.length} emails:`, allEmails);
+    
+    // Extract learning plan name more precisely
+    const lpMatch = message.match(/(?:enroll|add|assign|register|bulk enroll|mass enroll)\s+.+?\s+(?:in|to|for)\s+(?:learning plan|lp|learning path)\s+(.+?)(?:\s*$|\s+with|\s+as)/i);
+    let learningPlanName = '';
+    
+    if (lpMatch && lpMatch[1]) {
+      learningPlanName = lpMatch[1].trim();
+      // Clean up common suffixes
+      learningPlanName = learningPlanName.replace(/\s+(with|as|using).*$/i, '');
+      learningPlanName = learningPlanName.replace(/[\.!?]*$/, ''); // Remove trailing punctuation
+    }
+    
+    console.log(`📋 BULK LP: Extracted learning plan name: "${learningPlanName}"`);
+    
+    return {
+      emails: allEmails,
+      learningPlanName: learningPlanName,
+      resourceType: 'learning_plan',
+      action: 'bulk_enroll',
+      isBulk: true
+    };
+  },
+  confidence: allEmails.length > 1 ? 0.95 : 0.85
+},
+
+// Bulk Unenrollment - FIXED
+{
+  intent: 'bulk_unenroll',
+  patterns: [
+    /(?:unenroll|remove|drop)\s+(.+?)\s+(?:from|out of)\s+(?:course|training|learning plan|lp)\s+(.+)/i,
+    /(?:bulk unenroll|mass unenroll|bulk remove)\s+(.+?)\s+(?:from|out of)\s+(.+)/i
+  ],
+  extractEntities: () => {
+    console.log(`🔄 BULK UNENROLL: Analyzing message: "${message}"`);
+    
+    // Extract all emails from the message
+    const allEmails = this.extractMultipleEmails(message);
+    console.log(`📧 BULK UNENROLL: Found ${allEmails.length} emails:`, allEmails);
+    
+    // Determine resource type and name
+    const isLearningPlan = /learning plan|lp/i.test(message);
+    const resourceType = isLearningPlan ? 'learning_plan' : 'course';
+    
+    const resourceMatch = message.match(/(?:unenroll|remove|drop|bulk unenroll|mass unenroll|bulk remove)\s+.+?\s+(?:from|out of)\s+(?:course|training|learning plan|lp\s+)?(.+?)(?:\s*$|\s+with|\s+as)/i);
+    let resourceName = '';
+    
+    if (resourceMatch && resourceMatch[1]) {
+      resourceName = resourceMatch[1].trim();
+      // Clean up common suffixes  
+      resourceName = resourceName.replace(/\s+(with|as|using).*$/i, '');
+      resourceName = resourceName.replace(/[\.!?]*$/, ''); // Remove trailing punctuation
+    }
+    
+    console.log(`📋 BULK UNENROLL: Resource type: ${resourceType}, name: "${resourceName}"`);
+    
+    return {
+      emails: allEmails,
+      resourceName: resourceName,
+      resourceType: resourceType,
+      action: 'bulk_unenroll',
+      isBulk: true
+    };
+  },
+  confidence: allEmails.length > 1 ? 0.95 : 0.85
+}
       // User search (specific to email lookup) - LOWERED priority
       {
         intent: 'search_users',
@@ -602,10 +718,10 @@ export class IntentAnalyzer {
   }
   
   static extractMultipleEmails(message: string): string[] {
-    const emailRegex = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g;
-    const emails = message.match(emailRegex) || [];
-    return [...new Set(emails.map(email => email.toLowerCase()))];
-  }
+  const emailRegex = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g;
+  const emails = message.match(emailRegex) || [];
+  return [...new Set(emails.map(email => email.toLowerCase()))];
+}
   
   // User ID extraction
   static extractUserId(message: string): string | null {
