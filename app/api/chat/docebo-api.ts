@@ -133,68 +133,60 @@ async enrollUserInCourse(
     } = {}
   ): Promise<any> {
     try {
-      console.log(`🔄 ENROLLING: User ${userId} -> Course ${courseId}`, options);
-      
-      // Primary endpoint attempt
-      const primaryBody = {
-        course_ids: [parseInt(courseId)],
-        user_ids: [parseInt(userId)],
-        level: options.level === 'instructor' ? 6 : (options.level === 'tutor' ? 4 : 3),
-        assignment_type: options.assignmentType || 'required'
-      };
-
-      console.log(`📋 PRIMARY REQUEST:`, JSON.stringify(primaryBody, null, 2));
-
-      try {
-        const result = await this.apiRequest('/learn/v1/enrollments', 'POST', primaryBody);
-        console.log(`✅ PRIMARY SUCCESS:`, result);
-        return result;
-      } catch (primaryError) {
-        console.log(`❌ PRIMARY FAILED:`, primaryError);
-        
-        // Alternative endpoint attempt
-        const altBody = {
-          users: [parseInt(userId)],
-          courses: [parseInt(courseId)],
-          level: options.level === 'instructor' ? 6 : (options.level === 'tutor' ? 4 : 3),
-          assignment_type: options.assignmentType || 'required'
-        };
-
-        console.log(`📋 ALTERNATIVE REQUEST:`, JSON.stringify(altBody, null, 2));
-
-        try {
-          const altResult = await this.apiRequest('/learn/v1/enrollments', 'POST', altBody);
-          console.log(`✅ ALTERNATIVE SUCCESS:`, altResult);
-          return altResult;
-        } catch (altError) {
-          console.log(`❌ ALTERNATIVE FAILED:`, altError);
-          
-          // Final attempt with different endpoint
-          try {
-            const finalResult = await this.apiRequest('/course/v1/courses/enrollments', 'POST', {
-              user_id: parseInt(userId),
-              course_id: parseInt(courseId),
-              level: options.level === 'instructor' ? 6 : (options.level === 'tutor' ? 4 : 3)
-            });
-            console.log(`✅ FINAL ENDPOINT SUCCESS:`, finalResult);
-            return finalResult;
-          } catch (finalError) {
-            console.error(`❌ ALL ENDPOINTS FAILED:`, {
-              primary: primaryError,
-              alternative: altError,
-              final: finalError
-            });
-            throw new Error(`All course enrollment endpoints failed. Check user ID ${userId}, course ID ${courseId}, and API permissions.`);
+      // Try multiple enrollment endpoints with different parameter formats
+      const enrollmentEndpoints = [
+        {
+          endpoint: '/learn/v1/enrollments',
+          body: {
+            user_ids: [userId],
+            course_ids: [courseId],
+            level: options.level || 'student',
+            assignment_type: options.assignmentType || 'required'
+          }
+        },
+        {
+          endpoint: '/learn/v1/enrollments',
+          body: {
+            users: [userId],
+            courses: [courseId],
+            level: options.level || 'student',
+            assignment_type: options.assignmentType || 'required'
+          }
+        },
+        {
+          endpoint: '/course/v1/courses/enrollments',
+          body: {
+            user_id: userId,
+            course_id: courseId,
+            level: options.level || 'student',
+            assignment_type: options.assignmentType || 'required'
           }
         }
+      ];
+
+      console.log(`🔄 Attempting to enroll user ${userId} in course ${courseId}`);
+
+      // Try each endpoint until one succeeds
+      for (const { endpoint, body } of enrollmentEndpoints) {
+        try {
+          console.log(`📋 Trying ${endpoint} with body:`, body);
+          const result = await this.apiRequest(endpoint, 'POST', body);
+          console.log(`✅ Enrollment successful via ${endpoint}:`, result);
+          return result;
+        } catch (endpointError) {
+          console.log(`❌ Failed ${endpoint}:`, endpointError instanceof Error ? endpointError.message : endpointError);
+          continue;
+        }
       }
+      
+      // If all endpoints fail, throw the last error
+      throw new Error('All enrollment endpoints failed. Please check the course ID and user permissions.');
     } catch (error) {
-      console.error(`❌ COURSE ENROLLMENT ERROR:`, error);
+      console.error(`❌ Error enrolling user in course:`, error);
       throw error;
     }
   }
 
-  // Enroll user in a learning plan
   async enrollUserInLearningPlan(
     userId: string, 
     learningPlanId: string, 
@@ -205,47 +197,53 @@ async enrollUserInCourse(
     } = {}
   ): Promise<any> {
     try {
-      console.log(`🔄 LP ENROLLING: User ${userId} -> LP ${learningPlanId}`, options);
-      
-      // Primary LP endpoint attempt
-      const primaryBody = {
-        user_ids: [parseInt(userId)],
-        learningplan_ids: [parseInt(learningPlanId)],
-        assignment_type: options.assignmentType || 'required'
-      };
+      // Try multiple learning plan enrollment endpoints
+      const enrollmentEndpoints = [
+        {
+          endpoint: '/learningplan/v1/learningplans/enrollments',
+          body: {
+            user_ids: [userId],
+            learning_plan_ids: [learningPlanId],
+            assignment_type: options.assignmentType || 'required'
+          }
+        },
+        {
+          endpoint: '/learningplan/v1/learningplans/enrollments',
+          body: {
+            users: [userId],
+            learning_plans: [learningPlanId],
+            assignment_type: options.assignmentType || 'required'
+          }
+        },
+        {
+          endpoint: '/learningplan/v1/learningplans/enrollments',
+          body: {
+            user_id: userId,
+            learning_plan_id: learningPlanId,
+            assignment_type: options.assignmentType || 'required'
+          }
+        }
+      ];
 
-      console.log(`📋 LP PRIMARY REQUEST:`, JSON.stringify(primaryBody, null, 2));
+      console.log(`🔄 Attempting to enroll user ${userId} in learning plan ${learningPlanId}`);
 
-      try {
-        const result = await this.apiRequest('/learningplan/v1/learningplans/enrollments', 'POST', primaryBody);
-        console.log(`✅ LP PRIMARY SUCCESS:`, result);
-        return result;
-      } catch (primaryError) {
-        console.log(`❌ LP PRIMARY FAILED:`, primaryError);
-        
-        // Alternative LP endpoint attempt
-        const altBody = {
-          users: [parseInt(userId)],
-          learning_plans: [parseInt(learningPlanId)],
-          assignment_type: options.assignmentType || 'required'
-        };
-
-        console.log(`📋 LP ALTERNATIVE REQUEST:`, JSON.stringify(altBody, null, 2));
-
+      // Try each endpoint until one succeeds
+      for (const { endpoint, body } of enrollmentEndpoints) {
         try {
-          const altResult = await this.apiRequest('/learningplan/v1/learningplans/enrollments', 'POST', altBody);
-          console.log(`✅ LP ALTERNATIVE SUCCESS:`, altResult);
-          return altResult;
-        } catch (altError) {
-          console.error(`❌ ALL LP ENDPOINTS FAILED:`, {
-            primary: primaryError,
-            alternative: altError
-          });
-          throw new Error(`All learning plan enrollment endpoints failed. Check user ID ${userId}, learning plan ID ${learningPlanId}, and API permissions.`);
+          console.log(`📋 Trying LP ${endpoint} with body:`, body);
+          const result = await this.apiRequest(endpoint, 'POST', body);
+          console.log(`✅ LP enrollment successful via ${endpoint}:`, result);
+          return result;
+        } catch (endpointError) {
+          console.log(`❌ Failed LP ${endpoint}:`, endpointError instanceof Error ? endpointError.message : endpointError);
+          continue;
         }
       }
+      
+      // If all endpoints fail, throw the last error
+      throw new Error('All learning plan enrollment endpoints failed. Please check the learning plan ID and user permissions.');
     } catch (error) {
-      console.error(`❌ LP ENROLLMENT ERROR:`, error);
+      console.error(`❌ Error enrolling user in learning plan:`, error);
       throw error;
     }
   }
