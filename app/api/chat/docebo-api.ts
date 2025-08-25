@@ -35,6 +35,52 @@ export class DoceboAPI {
     return this.accessToken!;
   }
 
+  // Generic API request method
+  async apiRequest(
+    endpoint: string, 
+    method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET', 
+    body?: any, 
+    params?: Record<string, string | number>
+  ): Promise<any> {
+    const token = await this.getAccessToken();
+    
+    // Construct URL with optional query parameters
+    let url = `${this.baseUrl}${endpoint}`;
+    if (params) {
+      const queryParams = new URLSearchParams();
+      Object.entries(params).forEach(([key, value]) => {
+        queryParams.append(key, value.toString());
+      });
+      url += `?${queryParams}`;
+    }
+
+    // Prepare request options
+    const options: RequestInit = {
+      method,
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/json',
+      }
+    };
+
+    // Add body for non-GET requests
+    if (method !== 'GET' && body) {
+      options.headers['Content-Type'] = 'application/json';
+      options.body = JSON.stringify(body);
+    }
+
+    // Perform the request
+    const response = await fetch(url, options);
+
+    // Handle response
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`API request failed: ${response.status} - ${errorText}`);
+    }
+
+    return await response.json();
+  }
+
   private formatUserDetails(user: any): UserDetails {
     console.log('🔍 Raw user data received:', JSON.stringify(user, null, 2));
     
@@ -131,6 +177,36 @@ export class DoceboAPI {
       expired: user.expired || false,
       dateFormat: user.date_format || 'Not specified',
       newsletterOptout: user.newsletter_optout === '1' ? 'Yes' : 'No',
+    };
+  }
+
+  // Enrichment methods
+  private enrichCourseData(courseData: any): any {
+    console.log(`📊 Enriching course data`);
+
+    return {
+      id: courseData.id || courseData.course_id || courseData.idCourse,
+      course_id: courseData.id || courseData.course_id || courseData.idCourse,
+      title: courseData.name || courseData.title || courseData.course_name,
+      course_name: courseData.name || courseData.title || courseData.course_name,
+      name: courseData.name || courseData.title || courseData.course_name,
+      code: courseData.code || courseData.course_code,
+      type: courseData.course_type || 'elearning',
+      course_type: courseData.course_type || 'elearning',
+      status: courseData.status,
+      can_subscribe: courseData.can_subscribe,
+      description: courseData.description || '',
+      date_creation: courseData.date_creation,
+      date_modification: courseData.date_modification,
+      creation_date: courseData.date_creation ? new Date(courseData.date_creation * 1000).toISOString() : null,
+      last_update: courseData.date_modification ? new Date(courseData.date_modification * 1000).toISOString() : null,
+      language: courseData.lang_code || courseData.language,
+      lang_code: courseData.lang_code,
+      enrolled_count: courseData.enrolled_users_count || courseData.enrolled_users || courseData.subscription_count || 0,
+      enrollment_count: courseData.enrolled_users_count || courseData.enrolled_users || courseData.subscription_count || 0,
+      category_name: courseData.category_name,
+      credits: courseData.credits || 0,
+      ...courseData
     };
   }
 
