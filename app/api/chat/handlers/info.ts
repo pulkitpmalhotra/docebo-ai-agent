@@ -1602,439 +1602,585 @@ private static async getOptimizedRecentEnrollments(userId: string, api: DoceboAP
   }
 
 static async handleCourseInfo(entities: any, api: DoceboAPI): Promise<NextResponse> {
-    try {
-      const { courseId, courseName } = entities;
-      const identifier = courseId || courseName;
-      
-      if (!identifier) {
-        return NextResponse.json({
-          response: '❌ **Missing Information**: Please provide a course name or ID.\n\n**Example**: "Course info Python Programming"',
-          success: false,
-          timestamp: new Date().toISOString()
-        });
-      }
+  try {
+    const { courseId, courseName } = entities;
+    const identifier = courseId || courseName;
+    
+    if (!identifier) {
+      return NextResponse.json({
+        response: 'Missing Information: Please provide a course name or ID.\n\nExample: "Course info Python Programming"',
+        success: false,
+        timestamp: new Date().toISOString()
+      });
+    }
 
-      console.log(`📚 FIXED: Getting detailed course info for: ${identifier}`);
-      
-      let courseDetails: any = null;
-      
-      // FIXED: Try direct course lookup by ID first
-      if (/^\d+$/.test(identifier)) {
-        try {
-          console.log(`🆔 Trying direct course lookup by ID: ${identifier}`);
-          const directResult = await api.apiRequest(`/learn/v1/courses/${identifier}`, 'GET');
-          if (directResult.data) {
-            courseDetails = directResult.data;
-            console.log(`✅ Found course by direct ID lookup`);
-          }
-        } catch (directError) {
-          console.log(`❌ Direct course lookup failed, trying search...`);
+    console.log(`Getting detailed course info for: ${identifier}`);
+    
+    let courseDetails: any = null;
+    
+    // Try direct course lookup by ID first
+    if (/^\d+$/.test(identifier)) {
+      try {
+        console.log(`Trying direct course lookup by ID: ${identifier}`);
+        const directResult = await api.apiRequest(`/learn/v1/courses/${identifier}`, 'GET');
+        if (directResult.data) {
+          courseDetails = directResult.data;
+          console.log(`Found course by direct ID lookup`);
         }
+      } catch (directError) {
+        console.log(`Direct course lookup failed, trying search...`);
+      }
+    }
+    
+    // Fallback to course search
+    if (!courseDetails) {
+      console.log(`Searching for course: ${identifier}`);
+      const searchResult = await api.apiRequest('/learn/v1/courses', 'GET', null, {
+        search_text: identifier,
+        page_size: 50
+        // REMOVED: sort_attr parameters that might cause issues
+      });
+      
+      const courses = searchResult.data?.items || [];
+      
+      if (courses.length === 0) {
+        throw new Error(`Course not found: ${identifier}`);
       }
       
-      // Fallback to course search
+      // Find best match
+      courseDetails = courses.find((course: any) => {
+        const courseName = course.name || course.title || '';
+        const courseCode = course.code || '';
+        const courseId = course.id?.toString();
+        
+        // Exact matches
+        if (courseId === identifier.toString()) return true;
+        if (courseCode === identifier) return true;
+        if (courseName.toLowerCase() === identifier.toLowerCase()) return true;
+        
+        return false;
+      });
+      
+      // If no exact match, try partial match
       if (!courseDetails) {
-        console.log(`🔍 Searching for course: ${identifier}`);
-        const searchResult = await api.apiRequest('/learn/v1/courses', 'GET', null, {
-          search_text: identifier,
-          page_size: 50,
-          sort_attr: 'name',
-          sort_dir: 'asc'
-        });
-        
-        const courses = searchResult.data?.items || [];
-        
-        if (courses.length === 0) {
-          throw new Error(`Course not found: ${identifier}`);
-        }
-        
-        // Find best match
         courseDetails = courses.find((course: any) => {
           const courseName = course.name || course.title || '';
-          const courseCode = course.code || '';
-          const courseId = course.id?.toString();
-          
-          // Exact matches
-          if (courseId === identifier.toString()) return true;
-          if (courseCode === identifier) return true;
-          if (courseName.toLowerCase() === identifier.toLowerCase()) return true;
-          
-          return false;
+          return courseName.toLowerCase().includes(identifier.toLowerCase());
         });
-        
-        // If no exact match, try partial match
-        if (!courseDetails) {
-          courseDetails = courses.find((course: any) => {
-            const courseName = course.name || course.title || '';
-            return courseName.toLowerCase().includes(identifier.toLowerCase());
-          });
-        }
-        
-        // Default to first result
-        if (!courseDetails) {
-          courseDetails = courses[0];
-        }
       }
       
-      const courseDisplayName = courseDetails.name || courseDetails.title || 'Unknown Course';
-      const finalCourseId = courseDetails.id;
-      
-      // FIXED: Build comprehensive course information response
-      let responseMessage = `📚 **Course Information**: ${courseDisplayName}
-
-🆔 **Course ID**: ${courseDetails.id || 'Not available'}
-📝 **Name**: ${courseDisplayName}`;
-
-      // Course Code and Type
-      if (courseDetails.code) {
-        responseMessage += `\n🏷️ **Code**: ${courseDetails.code}`;
+      // Default to first result
+      if (!courseDetails) {
+        courseDetails = courses[0];
       }
+    }
+    
+    const courseDisplayName = courseDetails.name || courseDetails.title || 'Unknown Course';
+    const finalCourseId = courseDetails.id;
+    
+    // Build comprehensive course information response with ALL available fields
+    let responseMessage = `Course Information: ${courseDisplayName}\n\n`;
 
-      // FIXED: Course Type with proper mapping
-      const courseType = courseDetails.course_type || 'elearning';
-      let typeIcon = '📂';
-      let typeDisplay = courseType;
-      
-      switch(courseType) {
-        case 'elearning': 
-          typeIcon = '💻'; 
-          typeDisplay = 'E-Learning'; 
-          break;
-        case 'classroom': 
-          typeIcon = '🏫'; 
-          typeDisplay = 'Classroom'; 
-          break;
-        case 'webinar': 
-          typeIcon = '📹'; 
-          typeDisplay = 'Webinar'; 
-          break;
-        case 'learning_object': 
-          typeIcon = '📦'; 
-          typeDisplay = 'Learning Object'; 
-          break;
+    // Core Information
+    responseMessage += `**Core Details:**\n`;
+    responseMessage += `• Course ID: ${courseDetails.id || 'Not available'}\n`;
+    responseMessage += `• Name: ${courseDisplayName}\n`;
+    
+    if (courseDetails.code) {
+      responseMessage += `• Code: ${courseDetails.code}\n`;
+    }
+    
+    if (courseDetails.uidCourse) {
+      responseMessage += `• UID: ${courseDetails.uidCourse}\n`;
+    }
+
+    // Course Type with enhanced mapping
+    const courseType = courseDetails.course_type || courseDetails.type || 'elearning';
+    let typeDisplay = courseType;
+    
+    switch(courseType) {
+      case 'elearning': 
+        typeDisplay = 'E-Learning'; 
+        break;
+      case 'classroom': 
+        typeDisplay = 'Classroom'; 
+        break;
+      case 'webinar': 
+        typeDisplay = 'Webinar'; 
+        break;
+      case 'learning_object': 
+        typeDisplay = 'Learning Object'; 
+        break;
+    }
+    
+    responseMessage += `• Type: ${typeDisplay}\n`;
+
+    // Status with enhanced mapping
+    let status = 'Unknown';
+    
+    if (courseDetails.is_published === true || courseDetails.published === true) {
+      status = 'Published';
+    } else if (courseDetails.is_published === false || courseDetails.published === false) {
+      status = 'Unpublished';
+    } else if (courseDetails.course_status) {
+      status = courseDetails.course_status.charAt(0).toUpperCase() + courseDetails.course_status.slice(1);
+    }
+    
+    responseMessage += `• Status: ${status}\n`;
+
+    // Language
+    if (courseDetails.lang_code || courseDetails.language) {
+      responseMessage += `• Language: ${courseDetails.language || courseDetails.lang_code}\n`;
+    }
+
+    // Enrollment Information
+    responseMessage += `\n**Enrollment Details:**\n`;
+    
+    // Enrollment count from multiple possible fields
+    let enrollmentCount = 'Unknown';
+    if (courseDetails.enrolled_count !== undefined) {
+      enrollmentCount = courseDetails.enrolled_count.toString();
+    } else if (courseDetails.enrolled_users_count !== undefined) {
+      enrollmentCount = courseDetails.enrolled_users_count.toString();
+    } else if (courseDetails.enrolled_users !== undefined) {
+      enrollmentCount = courseDetails.enrolled_users.toString();
+    } else if (courseDetails.subscription_count !== undefined) {
+      enrollmentCount = courseDetails.subscription_count.toString();
+    }
+    
+    responseMessage += `• Current Enrollments: ${enrollmentCount}\n`;
+    
+    if (courseDetails.waiting_list !== undefined) {
+      responseMessage += `• Waiting List: ${courseDetails.waiting_list}\n`;
+    }
+
+    // Self enrollment capability
+    if (courseDetails.can_subscribe !== undefined) {
+      responseMessage += `• Self Enrollment: ${courseDetails.can_subscribe === 1 ? 'Enabled' : 'Admin only'}\n`;
+    }
+
+    // Credits and certification
+    if (courseDetails.credits && courseDetails.credits > 0) {
+      responseMessage += `• Credits: ${courseDetails.credits}\n`;
+    }
+
+    // Category
+    if (courseDetails.category_name) {
+      responseMessage += `• Category: ${courseDetails.category_name}\n`;
+    }
+
+    // Dates and times
+    responseMessage += `\n**Timeline:**\n`;
+    
+    if (courseDetails.creation_date || courseDetails.date_creation) {
+      try {
+        const creationTimestamp = courseDetails.creation_date || courseDetails.date_creation;
+        const creationDate = typeof creationTimestamp === 'string' 
+          ? new Date(creationTimestamp)
+          : new Date(creationTimestamp * 1000);
+        responseMessage += `• Created: ${creationDate.toLocaleDateString()}\n`;
+      } catch (e) {
+        responseMessage += `• Created: ${courseDetails.creation_date || courseDetails.date_creation}\n`;
       }
-      
-      responseMessage += `\n${typeIcon} **Type**: ${typeDisplay}`;
+    }
 
-      // FIXED: Status with correct field mapping
-      let status = 'Unknown';
-      let statusIcon = '📊';
-      
-      if (courseDetails.status === 2 || courseDetails.can_subscribe === 1) {
-        status = 'Published';
-        statusIcon = '🟢';
-      } else if (courseDetails.status === 0 || courseDetails.can_subscribe === 0) {
-        status = 'Unpublished';
-        statusIcon = '🟡';
-      } else if (courseDetails.status === 1) {
-        status = 'Suspended';
-        statusIcon = '🔴';
+    if (courseDetails.last_update || courseDetails.date_modification) {
+      try {
+        const updateTimestamp = courseDetails.last_update || courseDetails.date_modification;
+        const updateDate = typeof updateTimestamp === 'string'
+          ? new Date(updateTimestamp)
+          : new Date(updateTimestamp * 1000);
+        responseMessage += `• Last Updated: ${updateDate.toLocaleDateString()}\n`;
+      } catch (e) {
+        responseMessage += `• Last Updated: ${courseDetails.last_update || courseDetails.date_modification}\n`;
       }
-      
-      responseMessage += `\n${statusIcon} **Status**: ${status}`;
+    }
 
-      // FIXED: Enrollment count
-      let enrollmentCount = 'Unknown';
-      if (courseDetails.enrolled_users_count !== undefined) {
-        enrollmentCount = courseDetails.enrolled_users_count.toString();
-      } else if (courseDetails.enrolled_users !== undefined) {
-        enrollmentCount = courseDetails.enrolled_users.toString();
-      } else if (courseDetails.subscription_count !== undefined) {
-        enrollmentCount = courseDetails.subscription_count.toString();
-      }
-      
-      responseMessage += `\n👥 **Current Enrollments**: ${enrollmentCount}`;
-
-      // Description
-      if (courseDetails.description) {
-        const cleanDescription = courseDetails.description
-          .replace(/<[^>]*>/g, ' ')
-          .replace(/\s+/g, ' ')
-          .trim();
-        const description = cleanDescription.length > 200 
-          ? cleanDescription.substring(0, 200) + '...' 
-          : cleanDescription;
-        responseMessage += `\n📄 **Description**: ${description}`;
-      }
-
-      // Creation and update dates
-      if (courseDetails.date_creation) {
-        try {
-          const creationDate = new Date(courseDetails.date_creation * 1000);
-          responseMessage += `\n📅 **Created**: ${creationDate.toLocaleDateString()}`;
-        } catch (e) {
-          responseMessage += `\n📅 **Created**: ${courseDetails.date_creation}`;
-        }
-      }
-
-      if (courseDetails.date_modification) {
-        try {
-          const updateDate = new Date(courseDetails.date_modification * 1000);
-          responseMessage += `\n🔄 **Last Updated**: ${updateDate.toLocaleDateString()}`;
-        } catch (e) {
-          responseMessage += `\n🔄 **Last Updated**: ${courseDetails.date_modification}`;
-        }
-      }
-
-      // Language
-      if (courseDetails.lang_code) {
-        responseMessage += `\n🌍 **Language**: ${courseDetails.lang_code}`;
-      }
-
-      // Credits
-      if (courseDetails.credits && courseDetails.credits > 0) {
-        responseMessage += `\n🎓 **Credits**: ${courseDetails.credits}`;
-      }
-
-      // Category
-      if (courseDetails.category_name) {
-        responseMessage += `\n📁 **Category**: ${courseDetails.category_name}`;
-      }
-
-      // Self enrollment
-      if (courseDetails.can_subscribe === 1) {
-        responseMessage += `\n✅ **Self Enrollment**: Enabled`;
+    if (courseDetails.average_completion_time) {
+      const hours = Math.floor(courseDetails.average_completion_time / 3600);
+      const minutes = Math.floor((courseDetails.average_completion_time % 3600) / 60);
+      if (hours > 0) {
+        responseMessage += `• Avg Completion Time: ${hours}h ${minutes}m\n`;
       } else {
-        responseMessage += `\n📝 **Self Enrollment**: Admin only`;
+        responseMessage += `• Avg Completion Time: ${minutes}m\n`;
       }
+    }
 
-      return NextResponse.json({
-        response: responseMessage,
-        success: true,
-        data: {
-          course: courseDetails,
-          courseName: courseDisplayName,
-          courseId: finalCourseId,
-          courseType: courseDetails.course_type,
-          status: status,
-          enrollmentCount: enrollmentCount,
-          endpoint_used: '/learn/v1/courses'
-        },
-        timestamp: new Date().toISOString()
-      });
+    // Description
+    if (courseDetails.description) {
+      const cleanDescription = courseDetails.description
+        .replace(/<[^>]*>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      const description = cleanDescription.length > 300 
+        ? cleanDescription.substring(0, 300) + '...' 
+        : cleanDescription;
+      responseMessage += `\n**Description:**\n${description}\n`;
+    }
 
-    } catch (error) {
-      console.error('❌ Course info error:', error);
+    // Additional course metadata
+    if (courseDetails.price !== undefined) {
+      responseMessage += `\n**Commerce:**\n`;
+      responseMessage += `• Price: ${courseDetails.price === 0 ? 'Free' : courseDetails.price}\n`;
       
+      if (courseDetails.on_sale) {
+        responseMessage += `• On Sale: Yes\n`;
+      }
+    }
+
+    // Course settings
+    responseMessage += `\n**Settings:**\n`;
+    
+    if (courseDetails.max_attempts) {
+      responseMessage += `• Max Attempts: ${courseDetails.max_attempts}\n`;
+    }
+    
+    if (courseDetails.allow_overbooking !== undefined) {
+      responseMessage += `• Allow Overbooking: ${courseDetails.allow_overbooking ? 'Yes' : 'No'}\n`;
+    }
+
+    if (courseDetails.can_enter !== undefined) {
+      responseMessage += `• Can Enter: ${courseDetails.can_enter ? 'Yes' : 'No'}\n`;
+    }
+
+    // Skills (if available)
+    if (courseDetails.skills && Array.isArray(courseDetails.skills) && courseDetails.skills.length > 0) {
+      responseMessage += `\n**Skills Covered:**\n`;
+      courseDetails.skills.forEach((skill: any, index: number) => {
+        const skillName = skill.title || skill.name || skill;
+        responseMessage += `• ${skillName}\n`;
+      });
+    }
+
+    // Provider information
+    if (courseDetails.created_by && courseDetails.created_by.fullname) {
+      responseMessage += `\n**Administration:**\n`;
+      responseMessage += `• Created by: ${courseDetails.created_by.fullname}\n`;
+    }
+
+    return NextResponse.json({
+      response: responseMessage,
+      success: true,
+      data: {
+        course: courseDetails,
+        courseName: courseDisplayName,
+        courseId: finalCourseId,
+        courseType: courseDetails.course_type || courseDetails.type,
+        status: status,
+        enrollmentCount: enrollmentCount,
+        endpoint_used: '/learn/v1/courses'
+      },
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('Course info error:', error);
+    
+    return NextResponse.json({
+      response: `Course Information Failed: ${error instanceof Error ? error.message : 'Unknown error'}\n\nUsing endpoint: /learn/v1/courses/{id} and /learn/v1/courses with search_text\n\nCommon Issues:\n• Course name might not exist\n• Course might be unpublished\n• Try using exact course name from search results`,
+      success: false,
+      timestamp: new Date().toISOString()
+    });
+  }
+}
+  
+  // Enhanced Learning Plan Info Handler in app/api/chat/handlers/info.ts
+
+static async handleLearningPlanInfo(entities: any, api: DoceboAPI): Promise<NextResponse> {
+  try {
+    const { learningPlanName } = entities;
+    
+    if (!learningPlanName) {
       return NextResponse.json({
-        response: `❌ **Course Information Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
-
-**Using endpoint**: /learn/v1/courses/{id} and /learn/v1/courses with search_text
-
-**Common Issues**:
-• Course name might not exist
-• Course might be unpublished
-• Try using exact course name from search results`,
+        response: 'Missing Information: Please provide a learning plan name or ID.\n\nExample: "Learning plan info Data Science Program"',
         success: false,
         timestamp: new Date().toISOString()
       });
     }
-  }
-  
-  static async handleLearningPlanInfo(entities: any, api: DoceboAPI): Promise<NextResponse> {
-    try {
-      const { learningPlanName } = entities;
-      
-      if (!learningPlanName) {
-        return NextResponse.json({
-          response: '❌ **Missing Information**: Please provide a learning plan name or ID.\n\n**Example**: "Learning plan info Data Science Program"',
-          success: false,
-          timestamp: new Date().toISOString()
-        });
-      }
 
-      console.log(`📋 FIXED: Getting detailed learning plan info for: ${learningPlanName}`);
+    console.log(`Getting detailed learning plan info for: ${learningPlanName}`);
 
-      let learningPlanDetails: any = null;
-      
-      // FIXED: Try direct learning plan lookup by ID first
-      if (/^\d+$/.test(learningPlanName)) {
-        try {
-          console.log(`🆔 Trying direct learning plan lookup by ID: ${learningPlanName}`);
-          const directResult = await api.apiRequest(`/learningplan/v1/learningplans/${learningPlanName}`, 'GET');
-          if (directResult.data) {
-            learningPlanDetails = directResult.data;
-            console.log(`✅ Found learning plan by direct ID lookup`);
-          }
-        } catch (directError) {
-          console.log(`❌ Direct learning plan lookup failed, trying search...`);
+    let learningPlanDetails: any = null;
+    
+    // Try direct learning plan lookup by ID first
+    if (/^\d+$/.test(learningPlanName)) {
+      try {
+        console.log(`Trying direct learning plan lookup by ID: ${learningPlanName}`);
+        const directResult = await api.apiRequest(`/learningplan/v1/learningplans/${learningPlanName}`, 'GET');
+        if (directResult.data) {
+          learningPlanDetails = directResult.data;
+          console.log(`Found learning plan by direct ID lookup`);
         }
+      } catch (directError) {
+        console.log(`Direct learning plan lookup failed, trying search...`);
       }
+    }
+    
+    // Fallback to learning plan search
+    if (!learningPlanDetails) {
+      console.log(`Searching for learning plan: ${learningPlanName}`);
+      let searchResult;
       
-      // Fallback to learning plan search
-      if (!learningPlanDetails) {
-        console.log(`🔍 Searching for learning plan: ${learningPlanName}`);
-        const searchResult = await api.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
+      try {
+        searchResult = await api.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
           search_text: learningPlanName,
-          page_size: 50,
-          sort_attr: 'name',
-          sort_dir: 'asc'
+          page_size: 50
+          // REMOVED: sort_attr parameter that causes 400 error
+        });
+      } catch (searchError) {
+        // Fallback to getting all and filtering manually
+        searchResult = await api.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
+          page_size: 100
         });
         
-        let learningPlans = searchResult.data?.items || [];
+        const allLearningPlans = searchResult.data?.items || [];
+        const filteredPlans = allLearningPlans.filter((lp: any) => {
+          const name = api.getLearningPlanName(lp).toLowerCase();
+          const description = (lp.description || '').toLowerCase();
+          return name.includes(learningPlanName.toLowerCase()) || 
+                 description.includes(learningPlanName.toLowerCase());
+        });
         
-        // If search_text didn't work, try manual filtering
-        if (learningPlans.length === 0) {
-          const allResult = await api.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
-            page_size: 100,
-            sort_attr: 'name',
-            sort_dir: 'asc'
-          });
-          
-          const allLearningPlans = allResult.data?.items || [];
-          learningPlans = allLearningPlans.filter((lp: any) => {
-            const name = api.getLearningPlanName(lp).toLowerCase();
-            const description = (lp.description || '').toLowerCase();
-            return name.includes(learningPlanName.toLowerCase()) || 
-                   description.includes(learningPlanName.toLowerCase());
-          });
-        }
+        searchResult = {
+          data: {
+            items: filteredPlans
+          }
+        };
+      }
+      
+      let learningPlans = searchResult.data?.items || [];
+      
+      if (learningPlans.length === 0) {
+        throw new Error(`Learning plan not found: ${learningPlanName}`);
+      }
+      
+      // Find best match
+      learningPlanDetails = learningPlans.find((lp: any) => {
+        const lpName = api.getLearningPlanName(lp);
+        const lpId = (lp.learning_plan_id || lp.id)?.toString();
         
-        if (learningPlans.length === 0) {
-          throw new Error(`Learning plan not found: ${learningPlanName}`);
-        }
+        // Exact matches
+        if (lpId === learningPlanName.toString()) return true;
+        if (lpName.toLowerCase() === learningPlanName.toLowerCase()) return true;
         
-        // Find best match
+        return false;
+      });
+      
+      // If no exact match, try partial match
+      if (!learningPlanDetails) {
         learningPlanDetails = learningPlans.find((lp: any) => {
           const lpName = api.getLearningPlanName(lp);
-          const lpId = (lp.learning_plan_id || lp.id)?.toString();
-          
-          // Exact matches
-          if (lpId === learningPlanName.toString()) return true;
-          if (lpName.toLowerCase() === learningPlanName.toLowerCase()) return true;
-          
-          return false;
+          return lpName.toLowerCase().includes(learningPlanName.toLowerCase());
         });
-        
-        // If no exact match, try partial match
-        if (!learningPlanDetails) {
-          learningPlanDetails = learningPlans.find((lp: any) => {
-            const lpName = api.getLearningPlanName(lp);
-            return lpName.toLowerCase().includes(learningPlanName.toLowerCase());
-          });
-        }
-        
-        // Default to first result
-        if (!learningPlanDetails) {
-          learningPlanDetails = learningPlans[0];
-        }
       }
       
-      const displayName = api.getLearningPlanName(learningPlanDetails);
-      
-      // FIXED: Enhanced learning plan information formatting
-      let responseMessage = `📋 **Learning Plan Information**: ${displayName}
-
-🆔 **Learning Plan ID**: ${learningPlanDetails.learning_plan_id || learningPlanDetails.id || 'Not available'}
-📝 **Name**: ${displayName}`;
-
-      // FIXED: Status with enhanced mapping
-      let status = 'Unknown';
-      let statusIcon = '📊';
-      
-      if (learningPlanDetails.is_active === true || learningPlanDetails.is_active === 1 || learningPlanDetails.status === 2) {
-        status = 'Published';
-        statusIcon = '🟢';
-      } else if (learningPlanDetails.is_active === false || learningPlanDetails.is_active === 0 || learningPlanDetails.status === 0) {
-        status = 'Draft';
-        statusIcon = '🟡';
-      } else if (learningPlanDetails.status === 1) {
-        status = 'Suspended';
-        statusIcon = '🔴';
+      // Default to first result
+      if (!learningPlanDetails) {
+        learningPlanDetails = learningPlans[0];
       }
-      
-      responseMessage += `\n${statusIcon} **Status**: ${status}`;
-
-      // Code/UUID
-      if (learningPlanDetails.code) {
-        responseMessage += `\n🏷️ **Code**: ${learningPlanDetails.code}`;
-      }
-
-      // Description
-      if (learningPlanDetails.description) {
-        const cleanDescription = learningPlanDetails.description
-          .replace(/<[^>]*>/g, ' ')
-          .replace(/\s+/g, ' ')
-          .trim();
-        const truncatedDescription = cleanDescription.length > 200 
-          ? cleanDescription.substring(0, 200) + '...' 
-          : cleanDescription;
-        responseMessage += `\n📄 **Description**: ${truncatedDescription}`;
-      }
-
-      // FIXED: Enrollment information from correct fields
-      let enrollmentCount = 'Unknown';
-      if (learningPlanDetails.enrolled_users_count !== undefined) {
-        enrollmentCount = learningPlanDetails.enrolled_users_count.toString();
-      } else if (learningPlanDetails.enrolled_users !== undefined) {
-        enrollmentCount = learningPlanDetails.enrolled_users.toString();
-      } else if (learningPlanDetails.total_users !== undefined) {
-        enrollmentCount = learningPlanDetails.total_users.toString();
-      } else if (learningPlanDetails.user_count !== undefined) {
-        enrollmentCount = learningPlanDetails.user_count.toString();
-      }
-
-      if (enrollmentCount !== 'Unknown') {
-        responseMessage += `\n👥 **Current Enrollments**: ${enrollmentCount} users`;
-      }
-
-      // Course information within the learning plan
-      if (learningPlanDetails.courses_count || learningPlanDetails.total_courses) {
-        const coursesCount = learningPlanDetails.courses_count || learningPlanDetails.total_courses;
-        responseMessage += `\n📚 **Total Courses**: ${coursesCount} courses`;
-      }
-
-      // Creation and update information
-      if (learningPlanDetails.date_creation) {
-        try {
-          const creationDate = new Date(learningPlanDetails.date_creation * 1000);
-          responseMessage += `\n📅 **Created**: ${creationDate.toLocaleDateString()}`;
-        } catch (e) {
-          responseMessage += `\n📅 **Created**: ${learningPlanDetails.date_creation}`;
-        }
-      }
-
-      if (learningPlanDetails.date_modification) {
-        try {
-          const updateDate = new Date(learningPlanDetails.date_modification * 1000);
-          responseMessage += `\n🔄 **Last Updated**: ${updateDate.toLocaleDateString()}`;
-        } catch (e) {
-          responseMessage += `\n🔄 **Last Updated**: ${learningPlanDetails.date_modification}`;
-        }
-      }
-
-      return NextResponse.json({
-        response: responseMessage,
-        success: true,
-        data: {
-          learningPlan: learningPlanDetails,
-          learningPlanName: displayName,
-          learningPlanId: learningPlanDetails.learning_plan_id || learningPlanDetails.id,
-          status: status,
-          enrollmentCount: enrollmentCount,
-          endpoint_used: '/learningplan/v1/learningplans'
-        },
-        timestamp: new Date().toISOString()
-      });
-
-    } catch (error) {
-      console.error('❌ Learning plan info error:', error);
-      
-      return NextResponse.json({
-        response: `❌ **Learning Plan Information Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
-
-**Using endpoint**: /learningplan/v1/learningplans/{id} and /learningplan/v1/learningplans with search_text
-
-**Common Issues**:
-• Learning plan name might not exist  
-• Learning plan might be in draft status
-• Try using exact learning plan name from search results`,
-        success: false,
-        timestamp: new Date().toISOString()
-      });
     }
-  }
+    
+    const displayName = api.getLearningPlanName(learningPlanDetails);
+    
+    // Build comprehensive learning plan information response with ALL available fields
+    let responseMessage = `Learning Plan Information: ${displayName}\n\n`;
 
+    // Core Information
+    responseMessage += `**Core Details:**\n`;
+    responseMessage += `• Learning Plan ID: ${learningPlanDetails.learning_plan_id || learningPlanDetails.id || 'Not available'}\n`;
+    responseMessage += `• Name: ${displayName}\n`;
+
+    // Code/UUID
+    if (learningPlanDetails.code) {
+      responseMessage += `• Code: ${learningPlanDetails.code}\n`;
+    }
+
+    if (learningPlanDetails.uuid) {
+      responseMessage += `• UUID: ${learningPlanDetails.uuid}\n`;
+    }
+
+    // Status with enhanced mapping
+    let status = 'Unknown';
+    
+    if (learningPlanDetails.is_published === true) {
+      status = 'Published';
+    } else if (learningPlanDetails.is_published === false) {
+      status = 'Draft';
+    } else if (learningPlanDetails.is_publishable === true && learningPlanDetails.is_published !== false) {
+      status = 'Ready to Publish';
+    } else if (learningPlanDetails.is_publishable === false) {
+      status = 'Not Publishable';
+    }
+    
+    responseMessage += `• Status: ${status}\n`;
+
+    if (learningPlanDetails.is_publishable !== undefined) {
+      responseMessage += `• Is Publishable: ${learningPlanDetails.is_publishable ? 'Yes' : 'No'}\n`;
+    }
+
+    // Enrollment Information
+    responseMessage += `\n**Enrollment Details:**\n`;
+    
+    // Enrollment count from multiple possible fields
+    let enrollmentCount = 'Unknown';
+    if (learningPlanDetails.assigned_enrollments_count !== undefined) {
+      enrollmentCount = learningPlanDetails.assigned_enrollments_count.toString();
+    } else if (learningPlanDetails.enrolled_users_count !== undefined) {
+      enrollmentCount = learningPlanDetails.enrolled_users_count.toString();
+    } else if (learningPlanDetails.enrolled_users !== undefined) {
+      enrollmentCount = learningPlanDetails.enrolled_users.toString();
+    } else if (learningPlanDetails.total_users !== undefined) {
+      enrollmentCount = learningPlanDetails.total_users.toString();
+    } else if (learningPlanDetails.user_count !== undefined) {
+      enrollmentCount = learningPlanDetails.user_count.toString();
+    }
+
+    if (enrollmentCount !== 'Unknown') {
+      responseMessage += `• Current Enrollments: ${enrollmentCount} users\n`;
+    }
+
+    // Course information within the learning plan
+    if (learningPlanDetails.assigned_courses_count !== undefined) {
+      responseMessage += `• Assigned Courses: ${learningPlanDetails.assigned_courses_count} courses\n`;
+    } else if (learningPlanDetails.courses_count !== undefined) {
+      responseMessage += `• Total Courses: ${learningPlanDetails.courses_count} courses\n`;
+    } else if (learningPlanDetails.total_courses !== undefined) {
+      responseMessage += `• Total Courses: ${learningPlanDetails.total_courses} courses\n`;
+    }
+
+    // Catalog assignments
+    if (learningPlanDetails.assigned_catalogs_count !== undefined) {
+      responseMessage += `• Assigned Catalogs: ${learningPlanDetails.assigned_catalogs_count}\n`;
+    }
+
+    if (learningPlanDetails.assigned_channels_count !== undefined) {
+      responseMessage += `• Assigned Channels: ${learningPlanDetails.assigned_channels_count}\n`;
+    }
+
+    // Creation and administration
+    responseMessage += `\n**Administration:**\n`;
+    
+    if (learningPlanDetails.created_on) {
+      try {
+        const creationDate = new Date(learningPlanDetails.created_on);
+        responseMessage += `• Created: ${creationDate.toLocaleDateString()}\n`;
+      } catch (e) {
+        responseMessage += `• Created: ${learningPlanDetails.created_on}\n`;
+      }
+    }
+
+    if (learningPlanDetails.created_by && learningPlanDetails.created_by.fullname) {
+      responseMessage += `• Created by: ${learningPlanDetails.created_by.fullname}\n`;
+    }
+
+    if (learningPlanDetails.updated_on) {
+      try {
+        const updateDate = new Date(learningPlanDetails.updated_on);
+        responseMessage += `• Last Updated: ${updateDate.toLocaleDateString()}\n`;
+      } catch (e) {
+        responseMessage += `• Last Updated: ${learningPlanDetails.updated_on}\n`;
+      }
+    }
+
+    if (learningPlanDetails.updated_by && learningPlanDetails.updated_by.fullname) {
+      responseMessage += `• Updated by: ${learningPlanDetails.updated_by.fullname}\n`;
+    }
+
+    // Learning Plan Settings
+    responseMessage += `\n**Settings:**\n`;
+    
+    if (learningPlanDetails.show_in_catalog !== undefined) {
+      responseMessage += `• Show in Catalog: ${learningPlanDetails.show_in_catalog ? 'Yes' : 'No'}\n`;
+    }
+
+    // Time options
+    if (learningPlanDetails.time_options) {
+      if (learningPlanDetails.time_options.days) {
+        responseMessage += `• Validity Days: ${learningPlanDetails.time_options.days}\n`;
+      }
+      
+      if (learningPlanDetails.time_options.trigger) {
+        responseMessage += `• Trigger: ${learningPlanDetails.time_options.trigger}\n`;
+      }
+    }
+
+    // Credits
+    if (learningPlanDetails.credits && learningPlanDetails.credits > 0) {
+      responseMessage += `• Credits: ${learningPlanDetails.credits}\n`;
+    }
+
+    // E-commerce settings
+    if (learningPlanDetails.ecommerce) {
+      responseMessage += `\n**E-commerce:**\n`;
+      responseMessage += `• Is Purchasable: ${learningPlanDetails.ecommerce.is_purchasable ? 'Yes' : 'No'}\n`;
+      
+      if (learningPlanDetails.ecommerce.price !== undefined && learningPlanDetails.ecommerce.price !== null) {
+        responseMessage += `• Price: ${learningPlanDetails.ecommerce.price === 0 ? 'Free' : learningPlanDetails.ecommerce.price}\n`;
+      }
+      
+      if (learningPlanDetails.ecommerce.on_sale) {
+        responseMessage += `• On Sale: Yes\n`;
+      }
+    }
+
+    // Description
+    if (learningPlanDetails.description) {
+      const cleanDescription = learningPlanDetails.description
+        .replace(/<[^>]*>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      const truncatedDescription = cleanDescription.length > 300 
+        ? cleanDescription.substring(0, 300) + '...' 
+        : cleanDescription;
+      responseMessage += `\n**Description:**\n${truncatedDescription}\n`;
+    }
+
+    // Certificate information
+    if (learningPlanDetails.certificate) {
+      responseMessage += `\n**Certificate:**\n`;
+      responseMessage += `• Certificate Available: Yes\n`;
+      // Add more certificate details if available in the API response
+    } else {
+      responseMessage += `\n**Certificate:** Not configured\n`;
+    }
+
+    // Thumbnail information
+    if (learningPlanDetails.thumbnail_url) {
+      responseMessage += `\n**Media:**\n`;
+      responseMessage += `• Has Thumbnail: Yes\n`;
+    }
+
+    // Deep link information
+    if (learningPlanDetails.deeplink && learningPlanDetails.deeplink.hash) {
+      responseMessage += `\n**Access:**\n`;
+      responseMessage += `• Deep Link Available: Yes\n`;
+      responseMessage += `• Deep Link Hash: ${learningPlanDetails.deeplink.hash}\n`;
+    }
+
+    return NextResponse.json({
+      response: responseMessage,
+      success: true,
+      data: {
+        learningPlan: learningPlanDetails,
+        learningPlanName: displayName,
+        learningPlanId: learningPlanDetails.learning_plan_id || learningPlanDetails.id,
+        status: status,
+        enrollmentCount: enrollmentCount,
+        endpoint_used: '/learningplan/v1/learningplans'
+      },
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('Learning plan info error:', error);
+    
+    return NextResponse.json({
+      response: `Learning Plan Information Failed: ${error instanceof Error ? error.message : 'Unknown error'}\n\nUsing endpoint: /learningplan/v1/learningplans/{id} and /learningplan/v1/learningplans with search_text\n\nCommon Issues:\n• Learning plan name might not exist  \n• Learning plan might be in draft status\n• Try using exact learning plan name from search results`,
+      success: false,
+      timestamp: new Date().toISOString()
+    });
+  }
+}
   static async handleDoceboHelp(entities: any, api: DoceboAPI): Promise<NextResponse> {
     try {
       const { query } = entities;
