@@ -1,4 +1,3 @@
-
 import { DoceboConfig, UserDetails, EnrollmentData, FormattedEnrollment } from './types';
 
 export class DoceboAPI {
@@ -202,6 +201,79 @@ export class DoceboAPI {
       throw error;
     }
   }
+
+  // Find learning plan by identifier (ID or name)
+  async findLearningPlanByIdentifier(identifier: string): Promise<any> {
+    try {
+      // Direct lookup by ID
+      if (/^\d+$/.test(identifier)) {
+        try {
+          const directResult = await this.apiRequest(`/learningplan/v1/learningplans/${identifier}`, 'GET');
+          if (directResult.data) {
+            return this.enrichLearningPlanData(directResult.data);
+          }
+        } catch (directError) {
+          console.log(`Learning plan direct lookup failed for ID ${identifier}`);
+        }
+      }
+
+      // Search by name/keyword
+      const learningPlans = await this.searchLearningPlans(identifier, 50);
+      
+      if (learningPlans.length === 0) {
+        throw new Error(`Learning plan not found: ${identifier}`);
+      }
+
+      // Find exact or best match
+      const bestMatch = learningPlans.find(lp => {
+        const lpName = this.getLearningPlanName(lp);
+        const lpId = (lp.learning_plan_id || lp.id)?.toString();
+        
+        return lpId === identifier || 
+               lpName.toLowerCase() === identifier.toLowerCase() ||
+               lpName.toLowerCase().includes(identifier.toLowerCase());
+      }) || learningPlans[0];
+
+      return this.enrichLearningPlanData(bestMatch);
+    } catch (error) {
+      console.error(`Error finding learning plan: ${identifier}`, error);
+      throw error;
+    }
+  }
+
+  // Enrich learning plan data with normalized fields
+  private enrichLearningPlanData(lpData: any): any {
+    return {
+      id: lpData.learning_plan_id || lpData.id || lpData.lp_id,
+      learning_plan_id: lpData.learning_plan_id || lpData.id || lpData.lp_id,
+      title: this.getLearningPlanName(lpData),
+      name: this.getLearningPlanName(lpData),
+      learning_plan_name: this.getLearningPlanName(lpData),
+      code: lpData.code,
+      is_active: lpData.is_active,
+      status: lpData.status,
+      description: lpData.description || '',
+      date_creation: lpData.date_creation,
+      date_modification: lpData.date_modification,
+      creation_date: lpData.date_creation ? new Date(lpData.date_creation * 1000).toISOString() : null,
+      last_update: lpData.date_modification ? new Date(lpData.date_modification * 1000).toISOString() : null,
+      enrolled_users_count: lpData.enrolled_users_count || lpData.total_users || lpData.user_count || 0,
+      courses_count: lpData.courses_count || lpData.total_courses || 0,
+      ...lpData
+    };
+  }
+
+  // Search learning plans
+  async searchLearningPlans(searchText: string, limit: number = 25): Promise<any[]> {
+    const result = await this.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
+      search_text: searchText,
+      page_size: limit,
+      sort_attr: 'name',
+      sort_dir: 'asc'
+    });
+    return result.data?.items || [];
+  }
+}
 
   // User details extraction and formatting
   private formatUserDetails(user: any): UserDetails {
