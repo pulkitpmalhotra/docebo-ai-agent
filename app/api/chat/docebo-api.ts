@@ -264,7 +264,7 @@ export class DoceboAPI {
       // Try exact email search first
       const exactSearch = await this.apiRequest('/manage/v1/user', 'GET', null, {
         search_text: email,
-        page_size: 10
+        page_size: 100
       });
       
       const users = exactSearch.data?.items || [];
@@ -628,7 +628,7 @@ export class DoceboAPI {
   }
 
   // FIXED: Search users with proper field mapping
-  async searchUsers(searchText: string, limit: number = 25): Promise<any[]> {
+  async searchUsers(searchText: string, limit: number = 100): Promise<any[]> {
     try {
       console.log(`🔍 FIXED: Searching users with: "${searchText}"`);
       
@@ -648,7 +648,7 @@ export class DoceboAPI {
   }
 
   // FIXED: Search courses with proper endpoint and mapping
-  async searchCourses(searchText: string, limit: number = 25): Promise<any[]> {
+  async searchCourses(searchText: string, limit: number = 100): Promise<any[]> {
     try {
       console.log(`🔍 FIXED: Searching courses with: "${searchText}"`);
       
@@ -670,7 +670,7 @@ export class DoceboAPI {
   }
 
   // FIXED: Search learning plans without problematic sort_attr
-  async searchLearningPlans(searchText: string, limit: number = 25): Promise<any[]> {
+  async searchLearningPlans(searchText: string, limit: number = 100): Promise<any[]> {
     try {
       console.log(`🔍 FIXED: Searching learning plans: "${searchText}"`);
       
@@ -693,7 +693,7 @@ export class DoceboAPI {
       
       // Fallback: get all and filter manually
       const allResult = await this.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
-        page_size: Math.min(limit * 2, 200)
+        page_size: Math.min(limit * 5, 200)
         // No sort_attr to avoid 400 error
       });
       
