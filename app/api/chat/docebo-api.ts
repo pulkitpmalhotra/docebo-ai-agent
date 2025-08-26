@@ -1,4 +1,4 @@
-// app/api/chat/docebo-api.ts - COMPLETE Version 5 with Fixed Learning Plan Enrollment
+// app/api/chat/docebo-api.ts - FIXED TypeScript types
 
 import { DoceboConfig, UserDetails, EnrollmentData, FormattedEnrollment } from './types';
 
@@ -158,130 +158,141 @@ export class DoceboAPI {
 
   // FIXED: Enroll user in a course using correct API endpoints and parameters
   async enrollUserInCourse(
-  userId: string, 
-  courseId: string, 
-  options: {
-    level?: string;
-    assignmentType?: string;
-    startValidity?: string;
-    endValidity?: string;
-  } = {}
-): Promise<any> {
-  try {
-    console.log(`🔄 FIXED: Attempting to enroll user ${userId} in course ${courseId}`);
+    userId: string, 
+    courseId: string, 
+    options: {
+      level?: string;
+      assignmentType?: string;
+      startValidity?: string;
+      endValidity?: string;
+    } = {}
+  ): Promise<any> {
+    try {
+      console.log(`🔄 FIXED: Attempting to enroll user ${userId} in course ${courseId}`);
 
-    let levelValue: string | number = 3;
-    if (options.level === 'tutor') levelValue = 4;
-    else if (options.level === 'instructor') levelValue = 6;
-    else levelValue = 3; // student
+      let levelValue: string | number = 3;
+      if (options.level === 'tutor') levelValue = 4;
+      else if (options.level === 'instructor') levelValue = 6;
+      else levelValue = 3; // student
 
-    const enrollmentData: any = {
-      course_ids: [parseInt(courseId)],
-      user_ids: [parseInt(userId)],
-      level: levelValue.toString()
-    };
-
-    // FIXED: Only add assignment_type if it's explicitly provided and valid
-    if (options.assignmentType && options.assignmentType !== 'none') {
-      // Map assignment types to correct Docebo values
-      const assignmentTypeMap: { [key: string]: string } = {
-        'mandatory': 'mandatory',
-        'required': 'mandatory',  // Map required to mandatory
-        'recommended': 'recommended',
-        'optional': 'optional'
+      const enrollmentData: any = {
+        course_ids: [parseInt(courseId)],
+        user_ids: [parseInt(userId)],
+        level: levelValue.toString()
       };
-      
-      const mappedType = assignmentTypeMap[options.assignmentType.toLowerCase()];
-      if (mappedType) {
-        enrollmentData.assignment_type = mappedType;
+
+      // FIXED: Only add assignment_type if it's explicitly provided and valid
+      if (options.assignmentType && options.assignmentType !== 'none') {
+        // Map assignment types to correct Docebo values
+        const assignmentTypeMap: { [key: string]: string } = {
+          'mandatory': 'mandatory',
+          'required': 'mandatory',  // Map required to mandatory
+          'recommended': 'recommended',
+          'optional': 'optional'
+        };
+        
+        const mappedType = assignmentTypeMap[options.assignmentType.toLowerCase()];
+        if (mappedType) {
+          enrollmentData.assignment_type = mappedType;
+        }
       }
-    }
 
-    // FIXED: Only add validity dates if provided
-    if (options.startValidity) {
-      enrollmentData.date_begin_validity = options.startValidity;
-    }
-    if (options.endValidity) {
-      enrollmentData.date_expire_validity = options.endValidity;
-    }
+      // FIXED: Only add validity dates if provided
+      if (options.startValidity) {
+        enrollmentData.date_begin_validity = options.startValidity;
+      }
+      if (options.endValidity) {
+        enrollmentData.date_expire_validity = options.endValidity;
+      }
 
-    console.log(`📋 FIXED: Course enrollment data:`, enrollmentData);
-    
-    const result = await this.apiRequest('/learn/v1/enrollments', 'POST', enrollmentData);
-    console.log(`✅ FIXED: Course enrollment successful:`, result);
-    return result;
+      console.log(`📋 FIXED: Course enrollment data:`, enrollmentData);
+      
+      const result = await this.apiRequest('/learn/v1/enrollments', 'POST', enrollmentData);
+      console.log(`✅ FIXED: Course enrollment successful:`, result);
+      return result;
 
-  } catch (error) {
-    console.error(`❌ FIXED: Error enrolling user ${userId} in course ${courseId}:`, error);
-    throw error;
+    } catch (error) {
+      console.error(`❌ FIXED: Error enrolling user ${userId} in course ${courseId}:`, error);
+      throw error;
+    }
   }
-}
 
-// FIXED: Learning Plan enrollment method
-async enrollUserInLearningPlan(
-  userId: string, 
-  learningPlanId: string, 
-  options: {
-    assignmentType?: string;
-    startValidity?: string;
-    endValidity?: string;
-  } = {}
-): Promise<any> {
-  try {
-    console.log(`🔄 FIXED LP: Individual enrollment - user ${userId} in learning plan ${learningPlanId}`);
-    console.log(`🔧 FIXED LP: Options:`, options);
+  // FIXED: Learning Plan enrollment method with proper typing
+  async enrollUserInLearningPlan(
+    userId: string, 
+    learningPlanId: string, 
+    options: {
+      assignmentType?: string;
+      startValidity?: string;
+      endValidity?: string;
+    } = {}
+  ): Promise<any> {
+    try {
+      console.log(`🔄 FIXED LP: Individual enrollment - user ${userId} in learning plan ${learningPlanId}`);
+      console.log(`🔧 FIXED LP: Options:`, options);
 
-    const enrollmentData = {
-      items: {
-        user_ids: [parseInt(userId)]
-      },
-      options: {}
-    };
-
-    // FIXED: Support ALL assignment types or default to empty (no assignment type)
-    if (options.assignmentType && options.assignmentType.toLowerCase() !== 'none') {
-      const assignmentTypeMap: { [key: string]: string } = {
-        'mandatory': 'mandatory',
-        'required': 'required',
-        'recommended': 'recommended',
-        'optional': 'optional'
+      // FIXED: Properly typed enrollment data with explicit interface
+      const enrollmentData: {
+        items: {
+          user_ids: number[];
+        };
+        options: {
+          assignment_type?: string;
+          validity_start_at?: string;
+          validity_end_at?: string;
+        };
+      } = {
+        items: {
+          user_ids: [parseInt(userId)]
+        },
+        options: {}
       };
-      
-      const mappedType = assignmentTypeMap[options.assignmentType.toLowerCase()];
-      if (mappedType) {
-        enrollmentData.options.assignment_type = mappedType;
-        console.log(`📋 FIXED LP: Using assignment type: ${mappedType}`);
+
+      // FIXED: Support ALL assignment types or default to empty (no assignment type)
+      if (options.assignmentType && options.assignmentType.toLowerCase() !== 'none') {
+        const assignmentTypeMap: { [key: string]: string } = {
+          'mandatory': 'mandatory',
+          'required': 'required',
+          'recommended': 'recommended',
+          'optional': 'optional'
+        };
+        
+        const mappedType = assignmentTypeMap[options.assignmentType.toLowerCase()];
+        if (mappedType) {
+          enrollmentData.options.assignment_type = mappedType;
+          console.log(`📋 FIXED LP: Using assignment type: ${mappedType}`);
+        }
+      } else {
+        console.log(`📋 FIXED LP: No assignment type specified - using default (empty)`);
       }
-    } else {
-      console.log(`📋 FIXED LP: No assignment type specified - using default (empty)`);
-    }
 
-    // Add validity dates with correct UTC format
-    if (options.startValidity) {
-      enrollmentData.options.validity_start_at = `${options.startValidity} 00:00:00`;
-      console.log(`📅 FIXED LP: Start validity: ${enrollmentData.options.validity_start_at}`);
-    }
-    if (options.endValidity) {
-      enrollmentData.options.validity_end_at = `${options.endValidity} 23:59:59`;
-      console.log(`📅 FIXED LP: End validity: ${enrollmentData.options.validity_end_at}`);
-    }
+      // Add validity dates with correct UTC format
+      if (options.startValidity) {
+        enrollmentData.options.validity_start_at = `${options.startValidity} 00:00:00`;
+        console.log(`📅 FIXED LP: Start validity: ${enrollmentData.options.validity_start_at}`);
+      }
+      if (options.endValidity) {
+        enrollmentData.options.validity_end_at = `${options.endValidity} 23:59:59`;
+        console.log(`📅 FIXED LP: End validity: ${enrollmentData.options.validity_end_at}`);
+      }
 
-    console.log(`📋 FIXED LP: Final enrollment data:`, JSON.stringify(enrollmentData, null, 2));
-    
-    const result = await this.apiRequest(
-      `/learningplan/v1/learningplans/${learningPlanId}/enrollments/bulk`, 
-      'POST', 
-      enrollmentData
-    );
-    
-    console.log(`✅ FIXED LP: Individual enrollment successful:`, result);
-    return result;
+      console.log(`📋 FIXED LP: Final enrollment data:`, JSON.stringify(enrollmentData, null, 2));
+      
+      const result = await this.apiRequest(
+        `/learningplan/v1/learningplans/${learningPlanId}/enrollments/bulk`, 
+        'POST', 
+        enrollmentData
+      );
+      
+      console.log(`✅ FIXED LP: Individual enrollment successful:`, result);
+      return result;
 
-  } catch (error) {
-    console.error(`❌ FIXED LP: Individual enrollment error for user ${userId}:`, error);
-    throw error;
+    } catch (error) {
+      console.error(`❌ FIXED LP: Individual enrollment error for user ${userId}:`, error);
+      throw error;
+    }
   }
-}
+
   // FIXED: Unenroll user from course using the correct endpoint
   async unenrollUserFromCourse(userId: string, courseId: string): Promise<any> {
     try {
@@ -453,126 +464,126 @@ async enrollUserInLearningPlan(
 
   // FIXED: Enhanced learning plan search with EXACT matching and duplicate detection
   async findLearningPlanByIdentifier(identifier: string): Promise<any> {
-  try {
-    console.log(`🔍 ENHANCED LP SEARCH: Finding learning plan: "${identifier}"`);
-    
-    // Method 1: Direct ID lookup if it's numeric
-    if (/^\d+$/.test(identifier)) {
-      try {
-        console.log(`🆔 ENHANCED LP: Direct lookup by ID: ${identifier}`);
-        const directResult = await this.apiRequest(`/learningplan/v1/learningplans/${identifier}`, 'GET');
-        if (directResult.data) {
-          console.log(`✅ ENHANCED LP: Found by direct ID lookup`);
-          return directResult.data;
-        }
-      } catch (directError) {
-        console.log(`❌ ENHANCED LP: Direct ID lookup failed for ${identifier}, trying search...`);
-      }
-    }
-
-    // Method 2: Search by name/keyword
-    console.log(`🔍 ENHANCED LP: Searching by name/keyword: "${identifier}"`);
-    let searchResult;
-    
     try {
-      searchResult = await this.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
-        search_text: identifier,
-        page_size: 200
-      });
-    } catch (searchError) {
-      console.log('ENHANCED LP: Direct search failed, trying fallback method...');
+      console.log(`🔍 ENHANCED LP SEARCH: Finding learning plan: "${identifier}"`);
       
-      // Fallback: Get all and filter manually
-      searchResult = await this.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
-        page_size: 200
-      });
-      
-      const allItems = searchResult.data?.items || [];
-      const filteredItems = allItems.filter((lp: any) => {
-        const name = this.getLearningPlanName(lp).toLowerCase();
-        const description = (lp.description || '').toLowerCase();
-        const code = (lp.code || '').toLowerCase();
-        const searchLower = identifier.toLowerCase();
-        
-        return name.includes(searchLower) || 
-               description.includes(searchLower) ||
-               code === searchLower;
-      });
-      
-      searchResult = {
-        data: {
-          items: filteredItems,
-          total_count: filteredItems.length
+      // Method 1: Direct ID lookup if it's numeric
+      if (/^\d+$/.test(identifier)) {
+        try {
+          console.log(`🆔 ENHANCED LP: Direct lookup by ID: ${identifier}`);
+          const directResult = await this.apiRequest(`/learningplan/v1/learningplans/${identifier}`, 'GET');
+          if (directResult.data) {
+            console.log(`✅ ENHANCED LP: Found by direct ID lookup`);
+            return directResult.data;
+          }
+        } catch (directError) {
+          console.log(`❌ ENHANCED LP: Direct ID lookup failed for ${identifier}, trying search...`);
         }
-      };
-    }
-    
-    const learningPlans = searchResult.data?.items || [];
-    console.log(`📊 ENHANCED LP: Found ${learningPlans.length} learning plans from search`);
-    
-    if (learningPlans.length === 0) {
-      throw new Error(`No learning plans found matching: "${identifier}"`);
-    }
+      }
 
-    // PRIORITY 1: Find EXACT matches (ID, name, or code)
-    const exactMatches = learningPlans.filter((lp: any) => {
-      const lpName = this.getLearningPlanName(lp);
-      const lpId = (lp.learning_plan_id || lp.id)?.toString();
-      const lpCode = lp.code || '';
+      // Method 2: Search by name/keyword
+      console.log(`🔍 ENHANCED LP: Searching by name/keyword: "${identifier}"`);
+      let searchResult;
       
-      // Exact matches
-      return lpId === identifier ||
-             lpName.toLowerCase() === identifier.toLowerCase() ||
-             lpCode.toLowerCase() === identifier.toLowerCase();
-    });
+      try {
+        searchResult = await this.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
+          search_text: identifier,
+          page_size: 200
+        });
+      } catch (searchError) {
+        console.log('ENHANCED LP: Direct search failed, trying fallback method...');
+        
+        // Fallback: Get all and filter manually
+        searchResult = await this.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
+          page_size: 200
+        });
+        
+        const allItems = searchResult.data?.items || [];
+        const filteredItems = allItems.filter((lp: any) => {
+          const name = this.getLearningPlanName(lp).toLowerCase();
+          const description = (lp.description || '').toLowerCase();
+          const code = (lp.code || '').toLowerCase();
+          const searchLower = identifier.toLowerCase();
+          
+          return name.includes(searchLower) || 
+                 description.includes(searchLower) ||
+                 code === searchLower;
+        });
+        
+        searchResult = {
+          data: {
+            items: filteredItems,
+            total_count: filteredItems.length
+          }
+        };
+      }
+      
+      const learningPlans = searchResult.data?.items || [];
+      console.log(`📊 ENHANCED LP: Found ${learningPlans.length} learning plans from search`);
+      
+      if (learningPlans.length === 0) {
+        throw new Error(`No learning plans found matching: "${identifier}"`);
+      }
 
-    console.log(`🎯 ENHANCED LP: Found ${exactMatches.length} exact matches`);
+      // PRIORITY 1: Find EXACT matches (ID, name, or code)
+      const exactMatches = learningPlans.filter((lp: any) => {
+        const lpName = this.getLearningPlanName(lp);
+        const lpId = (lp.learning_plan_id || lp.id)?.toString();
+        const lpCode = lp.code || '';
+        
+        // Exact matches
+        return lpId === identifier ||
+               lpName.toLowerCase() === identifier.toLowerCase() ||
+               lpCode.toLowerCase() === identifier.toLowerCase();
+      });
 
-    if (exactMatches.length === 1) {
-      const match = exactMatches[0];
-      console.log(`✅ ENHANCED LP: Single exact match found: "${this.getLearningPlanName(match)}" (ID: ${match.learning_plan_id || match.id}, Code: ${match.code || 'N/A'})`);
-      return match;
-    } else if (exactMatches.length > 1) {
-      const lpNames = exactMatches.map((lp: any) => 
+      console.log(`🎯 ENHANCED LP: Found ${exactMatches.length} exact matches`);
+
+      if (exactMatches.length === 1) {
+        const match = exactMatches[0];
+        console.log(`✅ ENHANCED LP: Single exact match found: "${this.getLearningPlanName(match)}" (ID: ${match.learning_plan_id || match.id}, Code: ${match.code || 'N/A'})`);
+        return match;
+      } else if (exactMatches.length > 1) {
+        const lpNames = exactMatches.map((lp: any) => 
+          `"${this.getLearningPlanName(lp)}" (ID: ${lp.learning_plan_id || lp.id}, Code: ${lp.code || 'N/A'})`
+        );
+        console.log(`❌ ENHANCED LP: Multiple exact matches found`);
+        throw new Error(`Multiple learning plans found matching "${identifier}". Please be more specific. Found: ${lpNames.join(', ')}`);
+      }
+
+      // PRIORITY 2: Partial matches for names (but not for numeric IDs)
+      if (!/^\d+$/.test(identifier)) {
+        const partialMatches = learningPlans.filter((lp: any) => {
+          const lpName = this.getLearningPlanName(lp);
+          return lpName.toLowerCase().includes(identifier.toLowerCase());
+        });
+
+        if (partialMatches.length === 1) {
+          const match = partialMatches[0];
+          console.log(`✅ ENHANCED LP: Single partial match found: "${this.getLearningPlanName(match)}"`);
+          return match;
+        }
+      }
+
+      // NO EXACT MATCHES FOUND - Return error with suggestions
+      console.log(`❌ ENHANCED LP: No exact matches found for "${identifier}"`);
+      
+      // Show best matches as suggestions
+      const suggestions = learningPlans.slice(0, 5).map((lp: any) => 
         `"${this.getLearningPlanName(lp)}" (ID: ${lp.learning_plan_id || lp.id}, Code: ${lp.code || 'N/A'})`
       );
-      console.log(`❌ ENHANCED LP: Multiple exact matches found`);
-      throw new Error(`Multiple learning plans found matching "${identifier}". Please be more specific. Found: ${lpNames.join(', ')}`);
-    }
 
-    // PRIORITY 2: Partial matches for names (but not for numeric IDs)
-    if (!/^\d+$/.test(identifier)) {
-      const partialMatches = learningPlans.filter((lp: any) => {
-        const lpName = this.getLearningPlanName(lp);
-        return lpName.toLowerCase().includes(identifier.toLowerCase());
-      });
-
-      if (partialMatches.length === 1) {
-        const match = partialMatches[0];
-        console.log(`✅ ENHANCED LP: Single partial match found: "${this.getLearningPlanName(match)}"`);
-        return match;
+      if (suggestions.length > 0) {
+        throw new Error(`No exact match found for learning plan "${identifier}". Did you mean one of these?\n${suggestions.join('\n')}\n\nFor exact matching, use the complete learning plan name, ID, or code.`);
       }
+
+      throw new Error(`Learning plan "${identifier}" not found. Please check the name, ID, or code.`);
+
+    } catch (error) {
+      console.error(`❌ ENHANCED LP: Error in findLearningPlanByIdentifier: ${identifier}`, error);
+      throw error;
     }
-
-    // NO EXACT MATCHES FOUND - Return error with suggestions
-    console.log(`❌ ENHANCED LP: No exact matches found for "${identifier}"`);
-    
-    // Show best matches as suggestions
-    const suggestions = learningPlans.slice(0, 5).map((lp: any) => 
-      `"${this.getLearningPlanName(lp)}" (ID: ${lp.learning_plan_id || lp.id}, Code: ${lp.code || 'N/A'})`
-    );
-
-    if (suggestions.length > 0) {
-      throw new Error(`No exact match found for learning plan "${identifier}". Did you mean one of these?\n${suggestions.join('\n')}\n\nFor exact matching, use the complete learning plan name, ID, or code.`);
-    }
-
-    throw new Error(`Learning plan "${identifier}" not found. Please check the name, ID, or code.`);
-
-  } catch (error) {
-    console.error(`❌ ENHANCED LP: Error in findLearningPlanByIdentifier: ${identifier}`, error);
-    throw error;
   }
-}
 
   // Enhanced user search with better email matching
   async findUserByEmail(email: string): Promise<any> {
