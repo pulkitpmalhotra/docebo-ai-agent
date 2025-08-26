@@ -158,46 +158,67 @@ export class DoceboAPI {
 
   // FIXED: Enroll user in a course using correct API endpoints and parameters
   async enrollUserInCourse(
-    userId: string, 
-    courseId: string, 
-    options: {
-      level?: string;
-      assignmentType?: string;
-      startValidity?: string;
-      endValidity?: string;
-    } = {}
-  ): Promise<any> {
-    try {
-      console.log(`🔄 FIXED: Attempting to enroll user ${userId} in course ${courseId}`);
+  userId: string, 
+  courseId: string, 
+  options: {
+    level?: string;
+    assignmentType?: string;
+    startValidity?: string;
+    endValidity?: string;
+  } = {}
+): Promise<any> {
+  try {
+    console.log(`🔄 FIXED: Attempting to enroll user ${userId} in course ${courseId}`);
 
-      let levelValue: string | number = 3;
-      if (options.level === 'tutor') levelValue = 4;
-      else if (options.level === 'instructor') levelValue = 6;
-      else levelValue = 3; // student
+    let levelValue: string | number = 3;
+    if (options.level === 'tutor') levelValue = 4;
+    else if (options.level === 'instructor') levelValue = 6;
+    else levelValue = 3; // student
 
-      const enrollmentData = {
-        course_ids: [parseInt(courseId)],
-        user_ids: [parseInt(userId)],
-        level: levelValue.toString(),
-        assignment_type: options.assignmentType || 'none',
-        ...(options.startValidity && { date_begin_validity: options.startValidity }),
-        ...(options.endValidity && { date_expire_validity: options.endValidity })
+    const enrollmentData: any = {
+      course_ids: [parseInt(courseId)],
+      user_ids: [parseInt(userId)],
+      level: levelValue.toString()
+    };
+
+    // FIXED: Only add assignment_type if it's explicitly provided and valid
+    if (options.assignmentType && options.assignmentType !== 'none') {
+      // Map assignment types to correct Docebo values
+      const assignmentTypeMap: { [key: string]: string } = {
+        'mandatory': 'mandatory',
+        'required': 'mandatory',  // Map required to mandatory
+        'recommended': 'recommended',
+        'optional': 'optional'
       };
-
-      console.log(`📋 FIXED: Course enrollment data:`, enrollmentData);
       
-      const result = await this.apiRequest('/learn/v1/enrollments', 'POST', enrollmentData);
-      console.log(`✅ FIXED: Course enrollment successful:`, result);
-      return result;
-
-    } catch (error) {
-      console.error(`❌ FIXED: Error enrolling user ${userId} in course ${courseId}:`, error);
-      throw error;
+      const mappedType = assignmentTypeMap[options.assignmentType.toLowerCase()];
+      if (mappedType) {
+        enrollmentData.assignment_type = mappedType;
+      }
     }
-  }
 
-  // FIXED: Enroll user in learning plan using multiple fallback endpoints
- async enrollUserInLearningPlan(
+    // FIXED: Only add validity dates if provided
+    if (options.startValidity) {
+      enrollmentData.date_begin_validity = options.startValidity;
+    }
+    if (options.endValidity) {
+      enrollmentData.date_expire_validity = options.endValidity;
+    }
+
+    console.log(`📋 FIXED: Course enrollment data:`, enrollmentData);
+    
+    const result = await this.apiRequest('/learn/v1/enrollments', 'POST', enrollmentData);
+    console.log(`✅ FIXED: Course enrollment successful:`, result);
+    return result;
+
+  } catch (error) {
+    console.error(`❌ FIXED: Error enrolling user ${userId} in course ${courseId}:`, error);
+    throw error;
+  }
+}
+
+// FIXED: Learning Plan enrollment method
+async enrollUserInLearningPlan(
   userId: string, 
   learningPlanId: string, 
   options: {
@@ -209,14 +230,33 @@ export class DoceboAPI {
   try {
     console.log(`🔄 FIXED LP: Attempting to enroll user ${userId} in learning plan ${learningPlanId}`);
 
-    // CORRECT: Use learningplan_ids instead of course_ids
-    const enrollmentData = {
+    const enrollmentData: any = {
       user_ids: [parseInt(userId)],
-      learningplan_ids: [parseInt(learningPlanId)], // This was the missing piece!
-      assignment_type: options.assignmentType || 'required',
-      ...(options.startValidity && { date_begin_validity: options.startValidity }),
-      ...(options.endValidity && { date_expire_validity: options.endValidity })
+      learningplan_ids: [parseInt(learningPlanId)]
     };
+
+    // FIXED: Only add assignment_type if explicitly provided and valid
+    if (options.assignmentType && options.assignmentType !== 'none') {
+      const assignmentTypeMap: { [key: string]: string } = {
+        'mandatory': 'mandatory',
+        'required': 'mandatory',  // Map required to mandatory
+        'recommended': 'recommended', 
+        'optional': 'optional'
+      };
+      
+      const mappedType = assignmentTypeMap[options.assignmentType.toLowerCase()];
+      if (mappedType) {
+        enrollmentData.assignment_type = mappedType;
+      }
+    }
+
+    // FIXED: Only add validity dates if provided
+    if (options.startValidity) {
+      enrollmentData.date_begin_validity = options.startValidity;
+    }
+    if (options.endValidity) {
+      enrollmentData.date_expire_validity = options.endValidity;
+    }
 
     console.log(`📋 FIXED LP: Using correct enrollment data:`, enrollmentData);
     
@@ -231,9 +271,23 @@ export class DoceboAPI {
       // Alternative endpoint format (some Docebo instances use this)
       const alternativeData = {
         users: [parseInt(userId)],
-        learning_plans: [parseInt(learningPlanId)],
-        assignment_type: options.assignmentType || 'required'
+        learning_plans: [parseInt(learningPlanId)]
       };
+      
+      // Only add assignment_type if provided
+      if (options.assignmentType && options.assignmentType !== 'none') {
+        const assignmentTypeMap: { [key: string]: string } = {
+          'mandatory': 'mandatory',
+          'required': 'mandatory',
+          'recommended': 'recommended',
+          'optional': 'optional'
+        };
+        
+        const mappedType = assignmentTypeMap[options.assignmentType.toLowerCase()];
+        if (mappedType) {
+          alternativeData.assignment_type = mappedType;
+        }
+      }
       
       try {
         const result = await this.apiRequest('/learningplan/v1/enrollments', 'POST', alternativeData);
@@ -245,11 +299,24 @@ export class DoceboAPI {
         // Final fallback: some instances use the general enrollment endpoint differently
         const fallbackData = {
           learningplan_ids: [parseInt(learningPlanId)],
-          user_ids: [parseInt(userId)],
-          assignment_type: options.assignmentType || 'required'
+          user_ids: [parseInt(userId)]
         };
         
-        // DO NOT use /learn/v1/enrollments for learning plans - that's for courses only!
+        // Only add assignment_type if provided
+        if (options.assignmentType && options.assignmentType !== 'none') {
+          const assignmentTypeMap: { [key: string]: string } = {
+            'mandatory': 'mandatory',
+            'required': 'mandatory',
+            'recommended': 'recommended',
+            'optional': 'optional'
+          };
+          
+          const mappedType = assignmentTypeMap[options.assignmentType.toLowerCase()];
+          if (mappedType) {
+            fallbackData.assignment_type = mappedType;
+          }
+        }
+        
         const result = await this.apiRequest('/learningplan/v1/bulk', 'POST', fallbackData);
         console.log(`✅ FIXED LP: Learning plan enrollment successful via fallback endpoint:`, result);
         return result;
