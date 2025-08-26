@@ -179,7 +179,7 @@ export class DoceboAPI {
         course_ids: [parseInt(courseId)],
         user_ids: [parseInt(userId)],
         level: levelValue.toString(),
-        assignment_type: options.assignmentType || 'mandatory',
+        assignment_type: options.assignmentType || 'none',
         ...(options.startValidity && { date_begin_validity: options.startValidity }),
         ...(options.endValidity && { date_expire_validity: options.endValidity })
       };
