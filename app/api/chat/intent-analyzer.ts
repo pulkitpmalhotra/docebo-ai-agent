@@ -366,11 +366,20 @@ export class IntentAnalyzer {
     /(?:course enrollment|course assign)\s+(.+?)\s+(?:to|in)\s+(.+)/i
   ],
   extractEntities: () => {
-    const enrollMatch = message.match(/(?:enroll|add|assign|register)\s+(.+?)\s+(?:in|to|for)\s+(?:course|training)\s+(.+?)(?:\s|$)/i);
+    console.log(`🔍 INDIVIDUAL COURSE: Analyzing message: "${message}"`);
+    
+    const enrollMatch = message.match(/(?:enroll|add|assign|register)\s+(.+?)\s+(?:in|to|for)\s+(?:course|training)\s+(.+?)(?:\s+with\s+assignment|\s+as\s+|\s+from\s+|\s*$)/i);
     
     if (enrollMatch) {
       const userPart = enrollMatch[1].trim();
-      const coursePart = enrollMatch[2].trim();
+      let coursePart = enrollMatch[2].trim();
+      
+      // FIXED: Clean up course name properly
+      coursePart = coursePart.replace(/\s+(with|as|from).*$/i, '');
+      coursePart = coursePart.replace(/[\.!?]*$/, '');
+      
+      console.log(`👤 INDIVIDUAL COURSE: User part: "${userPart}"`);
+      console.log(`📚 INDIVIDUAL COURSE: Course part: "${coursePart}"`);
       
       // Check if this is actually bulk (multiple emails)
       const allEmails = this.extractMultipleEmails(message);
@@ -381,7 +390,7 @@ export class IntentAnalyzer {
         courseName: coursePart,
         resourceType: 'course',
         action: 'enroll',
-        // FIXED: Extract assignment type and dates
+        // Extract assignment type and dates
         assignmentType: this.extractAssignmentType(message),
         startValidity: this.extractStartDate(message),
         endValidity: this.extractEndDate(message)
@@ -390,10 +399,9 @@ export class IntentAnalyzer {
     
     return {
       email: email,
-      courseName: courseName,
+      courseName: this.extractCourseName(message),
       resourceType: 'course',
       action: 'enroll',
-      // FIXED: Extract assignment type and dates
       assignmentType: this.extractAssignmentType(message),
       startValidity: this.extractStartDate(message),
       endValidity: this.extractEndDate(message)
@@ -766,33 +774,47 @@ export class IntentAnalyzer {
   }
   
   static extractCourseName(message: string): string | null {
-    const patterns = [
-      /(?:course\s+info\s+|course\s+details\s+|course\s+information\s+)(.+?)(?:\s*$|\s+id|\s+\d+)/i,
-      /(?:tell me about course\s+|info about course\s+)(.+?)(?:\s*$|\s+id|\s+\d+)/i,
-      /(?:in|to|for)\s+(?:course|training)\s+(.+?)(?:\s*$|\s+with|\s+as)/i,
-      /(?:course|training)\s+(?:named|called)\s+(.+?)(?:\s*$|\s+with|\s+as)/i,
-      /"([^"]+)"/,
-      /\[([^\]]+)\]/,
-      /course\s+(.+?)(?:\s*$|\?|!|\.)/i
-    ];
+  const patterns = [
+    // FIXED: Better course name extraction patterns that capture full names
+    /(?:enroll\s+.+?\s+(?:in|to|for)\s+(?:course|training)\s+)(.+?)(?:\s+with\s+assignment|\s+as\s+|\s+from\s+|\s*$|\?|!|\.)/i,
+    /(?:course\s+info\s+|course\s+details\s+|course\s+information\s+)(.+?)(?:\s*$|\s+id|\s+\d+|\?|!|\.)/i,
+    /(?:tell me about course\s+|info about course\s+)(.+?)(?:\s*$|\s+id|\s+\d+|\?|!|\.)/i,
+    /(?:find\s+course\s+|search\s+course\s+)(.+?)(?:\s*$|\?|!|\.)/i,
     
-    for (const pattern of patterns) {
-      const match = message.match(pattern);
-      if (match && match[1] && match[1].trim().length > 1) {
-        let name = match[1].trim();
-        
-        // Clean up common prefixes/suffixes
-        name = name.replace(/^(info|details|about|course|training)\s+/i, '');
-        name = name.replace(/\s+(info|details|course|training)$/i, '');
-        
-        // Don't return very short or generic terms
-        if (name.length > 1 && !name.match(/^(the|a|an|in|to|for|with|as)$/i)) {
-          return name;
-        }
+    // FIXED: Quoted content - highest priority
+    /"([^"]+)"/,
+    /\[([^\]]+)\]/,
+    
+    // FIXED: Generic patterns - more flexible
+    /(?:course|training)\s+(?:named|called)\s+(.+?)(?:\s+with\s+assignment|\s+as\s+|\s+from\s+|\s*$|\?|!|\.)/i,
+    /(?:in|to|for)\s+(?:course|training)\s+(.+?)(?:\s+with\s+assignment|\s+as\s+|\s+from\s+|\s*$|\?|!|\.)/i
+  ];
+  
+  console.log(`🔍 COURSE NAME: Extracting from: "${message}"`);
+  
+  for (const pattern of patterns) {
+    const match = message.match(pattern);
+    if (match && match[1] && match[1].trim().length > 1) {
+      let name = match[1].trim();
+      
+      console.log(`🎯 COURSE NAME: Pattern matched: ${pattern.source} -> "${name}"`);
+      
+      // Clean up common prefixes/suffixes but preserve the full name
+      name = name.replace(/^(info|details|about|course|training)\s+/i, '');
+      name = name.replace(/\s+(info|details|course|training)$/i, '');
+      
+      // Don't return very short or generic terms
+      if (name.length > 1 && !name.match(/^(the|a|an|in|to|for|with|as)$/i)) {
+        console.log(`✅ COURSE NAME: Final extracted: "${name}"`);
+        return name;
       }
     }
-    return null;
   }
+  
+  console.log(`❌ COURSE NAME: Could not extract course name from: "${message}"`);
+  return null;
+}
+
   static extractAssignmentType(message: string): string | null {
   const patterns = [
     /(?:assignment type|as)\s+(mandatory|required|recommended|optional)/i,
