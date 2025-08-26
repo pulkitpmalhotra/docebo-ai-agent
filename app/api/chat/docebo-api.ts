@@ -1,3 +1,5 @@
+// app/api/chat/docebo-api.ts - COMPLETE Version 5 with Fixed Learning Plan Enrollment
+
 import { DoceboConfig, UserDetails, EnrollmentData, FormattedEnrollment } from './types';
 
 export class DoceboAPI {
@@ -154,7 +156,7 @@ export class DoceboAPI {
     };
   }
 
-  // Enroll user in a course using correct API endpoints and parameters
+  // FIXED: Enroll user in a course using correct API endpoints and parameters
   async enrollUserInCourse(
     userId: string, 
     courseId: string, 
@@ -194,7 +196,7 @@ export class DoceboAPI {
     }
   }
 
-  // Enroll user in learning plan using the correct endpoint
+  // FIXED: Enroll user in learning plan using multiple fallback endpoints
   async enrollUserInLearningPlan(
     userId: string, 
     learningPlanId: string, 
@@ -205,29 +207,60 @@ export class DoceboAPI {
     } = {}
   ): Promise<any> {
     try {
-      console.log(`🔄 FIXED: Attempting to enroll user ${userId} in learning plan ${learningPlanId}`);
+      console.log(`🔄 FIXED LP: Attempting to enroll user ${userId} in learning plan ${learningPlanId}`);
 
       const enrollmentData = {
         user_ids: [parseInt(userId)],
         learningplan_ids: [parseInt(learningPlanId)],
-        assignment_type: options.assignmentType || 'mandatory',
+        assignment_type: options.assignmentType || 'required',
         ...(options.startValidity && { date_begin_validity: options.startValidity }),
         ...(options.endValidity && { date_expire_validity: options.endValidity })
       };
 
-      console.log(`📋 FIXED: LP enrollment data:`, enrollmentData);
+      console.log(`📋 FIXED LP: LP enrollment data:`, enrollmentData);
       
-      const result = await this.apiRequest('/learn/v1/enrollments', 'POST', enrollmentData);
-      console.log(`✅ FIXED: Learning plan enrollment successful:`, result);
-      return result;
+      // Try the primary learning plan enrollment endpoint
+      try {
+        const result = await this.apiRequest('/learningplan/v1/learningplans/enrollments', 'POST', enrollmentData);
+        console.log(`✅ FIXED LP: Learning plan enrollment successful via primary endpoint:`, result);
+        return result;
+      } catch (primaryError) {
+        console.log(`❌ Primary LP endpoint failed, trying alternative:`, primaryError);
+        
+        // Try alternative endpoint format
+        const alternativeData = {
+          users: [parseInt(userId)],
+          learning_plans: [parseInt(learningPlanId)],
+          assignment_type: options.assignmentType || 'required'
+        };
+        
+        try {
+          const result = await this.apiRequest('/learningplan/v1/enrollments', 'POST', alternativeData);
+          console.log(`✅ FIXED LP: Learning plan enrollment successful via alternative endpoint:`, result);
+          return result;
+        } catch (alternativeError) {
+          console.log(`❌ Alternative LP endpoint also failed:`, alternativeError);
+          
+          // Try the generic enrollment endpoint with learning plan parameters
+          const genericData = {
+            learningplan_ids: [parseInt(learningPlanId)],
+            user_ids: [parseInt(userId)],
+            assignment_type: options.assignmentType || 'required'
+          };
+          
+          const result = await this.apiRequest('/learn/v1/enrollments', 'POST', genericData);
+          console.log(`✅ FIXED LP: Learning plan enrollment successful via generic endpoint:`, result);
+          return result;
+        }
+      }
 
     } catch (error) {
-      console.error(`❌ FIXED: Error enrolling user ${userId} in learning plan ${learningPlanId}:`, error);
+      console.error(`❌ FIXED LP: Error enrolling user ${userId} in learning plan ${learningPlanId}:`, error);
       throw error;
     }
   }
 
-  // Unenroll user from course using the correct endpoint
+  // FIXED: Unenroll user from course using the correct endpoint
   async unenrollUserFromCourse(userId: string, courseId: string): Promise<any> {
     try {
       console.log(`🔄 FIXED: Attempting to unenroll user ${userId} from course ${courseId}`);
@@ -251,10 +284,10 @@ export class DoceboAPI {
     }
   }
 
-  // Unenroll user from learning plan using the correct endpoint
+  // FIXED: Unenroll user from learning plan using multiple fallback endpoints
   async unenrollUserFromLearningPlan(userId: string, learningPlanId: string): Promise<any> {
     try {
-      console.log(`🔄 FIXED: Attempting to unenroll user ${userId} from learning plan ${learningPlanId}`);
+      console.log(`🔄 FIXED LP UNENROLL: Attempting to unenroll user ${userId} from learning plan ${learningPlanId}`);
       
       const unenrollmentBody = {
         user_ids: [parseInt(userId)],
@@ -264,20 +297,45 @@ export class DoceboAPI {
         delete_issued_certificates: false
       };
 
-      console.log(`📋 FIXED: Using DELETE /learningplan/v1/learningplans/enrollments with body:`, unenrollmentBody);
+      console.log(`📋 FIXED LP UNENROLL: Using DELETE /learningplan/v1/learningplans/enrollments with body:`, unenrollmentBody);
       
-      const result = await this.apiRequest('/learningplan/v1/learningplans/enrollments', 'DELETE', unenrollmentBody);
-      console.log(`✅ FIXED: Learning plan unenrollment successful:`, result);
-      return result;
+      // Try the primary learning plan unenrollment endpoint
+      try {
+        const result = await this.apiRequest('/learningplan/v1/learningplans/enrollments', 'DELETE', unenrollmentBody);
+        console.log(`✅ FIXED LP UNENROLL: Learning plan unenrollment successful via primary endpoint:`, result);
+        return result;
+      } catch (primaryError) {
+        console.log(`❌ Primary LP unenroll endpoint failed, trying alternative:`, primaryError);
+        
+        // Try alternative endpoint format
+        try {
+          const result = await this.apiRequest('/learningplan/v1/enrollments', 'DELETE', unenrollmentBody);
+          console.log(`✅ FIXED LP UNENROLL: Learning plan unenrollment successful via alternative endpoint:`, result);
+          return result;
+        } catch (alternativeError) {
+          console.log(`❌ Alternative LP unenroll endpoint also failed:`, alternativeError);
+          
+          // Try the generic unenrollment endpoint
+          const genericBody = {
+            learningplan_ids: [parseInt(learningPlanId)],
+            user_ids: [parseInt(userId)],
+            reset_tracks: false
+          };
+          
+          const result = await this.apiRequest('/learn/v1/enrollments', 'DELETE', genericBody);
+          console.log(`✅ FIXED LP UNENROLL: Learning plan unenrollment successful via generic endpoint:`, result);
+          return result;
+        }
+      }
 
     } catch (error) {
-      console.error(`❌ FIXED: Error unenrolling user ${userId} from learning plan ${learningPlanId}:`, error);
+      console.error(`❌ FIXED LP UNENROLL: Error unenrolling user ${userId} from learning plan ${learningPlanId}:`, error);
       throw error;
     }
   }
 
-  // Enhanced course search with EXACT matching priority
- async findCourseByIdentifier(identifier: string): Promise<any> {
+  // FIXED: Enhanced course search with EXACT matching and duplicate detection
+  async findCourseByIdentifier(identifier: string): Promise<any> {
     try {
       console.log(`🔍 EXACT COURSE SEARCH: Finding course: "${identifier}"`);
       
@@ -490,18 +548,6 @@ export class DoceboAPI {
       console.error(`❌ Error in findLearningPlanByIdentifier: ${identifier}`, error);
       throw error;
     }
-  }
-
-  // Helper method to map enrollment levels
-  private mapEnrollmentLevel(level: string): number {
-    const levelMap: { [key: string]: number } = {
-      'student': 3,
-      'learner': 3,
-      'tutor': 4,
-      'instructor': 6
-    };
-    
-    return levelMap[level.toLowerCase()] || 3;
   }
 
   // Enhanced user search with better email matching
