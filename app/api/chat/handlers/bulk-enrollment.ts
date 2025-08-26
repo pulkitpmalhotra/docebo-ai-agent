@@ -25,36 +25,47 @@ interface BulkEnrollmentResult {
 export class BulkEnrollmentHandlers {
   
   static async handleBulkCourseEnrollment(entities: any, api: DoceboAPI): Promise<NextResponse> {
+  try {
+    const { emails, courseName } = entities;
+    
+    // FIXED: Extract assignment type and dates from the original message
+    const assignmentType = entities.assignmentType;
+    const startValidity = entities.startValidity;
+    const endValidity = entities.endValidity;
+    
+    console.log(`🎯 BULK COURSE: Processing entities:`, { 
+      emails, 
+      courseName, 
+      assignmentType, 
+      startValidity, 
+      endValidity 
+    });
+    
+    if (!emails || !Array.isArray(emails) || emails.length === 0) {
+      return NextResponse.json({
+        response: '❌ **Missing Information**: I need a list of user emails for bulk enrollment.\n\n**Examples**: \n• "Enroll john@co.com,sarah@co.com,mike@co.com in course Python Programming"\n• "Bulk enroll marketing team in learning plan Leadership Development with assignment type mandatory"',
+        success: false,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    if (!courseName) {
+      return NextResponse.json({
+        response: '❌ **Missing Course**: Please specify which course to enroll users in.\n\n**Example**: "Enroll john@co.com,sarah@co.com in course Python Programming with assignment type mandatory"',
+        success: false,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    console.log(`🎯 BULK COURSE: Processing bulk course enrollment: ${emails.length} users -> ${courseName}`);
+
+    // Find the course first with EXACT matching
+    let course;
     try {
-      const { emails, courseName } = entities;
-      
-      console.log(`🎯 BULK COURSE: Processing entities:`, { emails, courseName });
-      
-      if (!emails || !Array.isArray(emails) || emails.length === 0) {
-        return NextResponse.json({
-          response: '❌ **Missing Information**: I need a list of user emails for bulk enrollment.\n\n**Examples**: \n• "Enroll john@co.com,sarah@co.com,mike@co.com in course Python Programming"\n• "Bulk enroll marketing team in course Excel Training"',
-          success: false,
-          timestamp: new Date().toISOString()
-        });
-      }
-
-      if (!courseName) {
-        return NextResponse.json({
-          response: '❌ **Missing Course**: Please specify which course to enroll users in.\n\n**Example**: "Enroll john@co.com,sarah@co.com in course Python Programming"',
-          success: false,
-          timestamp: new Date().toISOString()
-        });
-      }
-
-      console.log(`🎯 BULK COURSE: Processing bulk course enrollment: ${emails.length} users -> ${courseName}`);
-
-      // Find the course first with EXACT matching
-      let course;
-      try {
-        course = await api.findCourseByIdentifier(courseName);
-      } catch (courseError) {
-        return NextResponse.json({
-          response: `❌ **Course Not Found for Bulk Enrollment**: ${courseError instanceof Error ? courseError.message : 'Unknown error'}
+      course = await api.findCourseByIdentifier(courseName);
+    } catch (courseError) {
+      return NextResponse.json({
+        response: `❌ **Course Not Found for Bulk Enrollment**: ${courseError instanceof Error ? courseError.message : 'Unknown error'}
 
 **💡 For bulk operations, exact course matching is critical:**
 • Use the complete, exact course name
@@ -63,40 +74,48 @@ export class BulkEnrollmentHandlers {
 • If multiple courses exist with similar names, use course ID
 
 **⚠️ Important**: Bulk enrollment requires exact matching to prevent enrolling users in the wrong course.`,
-          success: false,
-          timestamp: new Date().toISOString()
-        });
-      }
-
-      const courseId = (course.id || course.course_id || course.idCourse).toString();
-      const displayCourseName = api.getCourseName(course);
-
-      console.log(`📚 BULK COURSE: Found exact course match "${displayCourseName}" (ID: ${courseId}) for ${emails.length} users`);
-
-      // Process bulk enrollment for ALL emails
-      const result = await this.processBulkCourseEnrollment(emails, courseId, displayCourseName, api);
-
-      return this.formatBulkResponse(result, displayCourseName, 'course');
-
-    } catch (error) {
-      console.error('❌ Bulk course enrollment error:', error);
-      
-      return NextResponse.json({
-        response: `❌ **Bulk Course Enrollment Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
-
-Please check:
-• All email addresses are correct
-• Course name is **exact** and matches exactly one course
-• You have permission to enroll users
-• Users don't already have conflicting enrollments
-
-**💡 Pro Tip**: For bulk operations, use course IDs when dealing with courses that have similar names to ensure exact matching.`,
         success: false,
         timestamp: new Date().toISOString()
       });
     }
-  }
 
+    const courseId = (course.id || course.course_id || course.idCourse).toString();
+    const displayCourseName = api.getCourseName(course);
+
+    console.log(`📚 BULK COURSE: Found exact course match "${displayCourseName}" (ID: ${courseId}) for ${emails.length} users`);
+
+    // FIXED: Process bulk enrollment with assignment type and dates
+    const result = await this.processBulkCourseEnrollment(
+      emails, 
+      courseId, 
+      displayCourseName, 
+      api, 
+      assignmentType,
+      startValidity,
+      endValidity
+    );
+
+    return this.formatBulkResponse(result, displayCourseName, 'course');
+
+  } catch (error) {
+    console.error('❌ Bulk course enrollment error:', error);
+    
+    return NextResponse.json({
+      response: `❌ **Bulk Course Enrollment Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
+
+Please check:
+• All email addresses are correct
+• Course name is **exact** and matches exactly one course
+• Assignment type is one of: mandatory, required, recommended, optional
+• Dates are in YYYY-MM-DD format
+• You have permission to enroll users
+
+**💡 Pro Tip**: For bulk operations, use course IDs when dealing with courses that have similar names to ensure exact matching.`,
+      success: false,
+      timestamp: new Date().toISOString()
+    });
+  }
+}
   static async handleBulkLearningPlanEnrollment(entities: any, api: DoceboAPI): Promise<NextResponse> {
     try {
       const { emails, learningPlanName } = entities;
@@ -244,89 +263,103 @@ Please check:
 
   // Enhanced private methods with improved error handling
   private static async processBulkCourseEnrollment(
-    emails: string[], 
-    courseId: string, 
-    courseName: string,
-    api: DoceboAPI
-  ): Promise<BulkEnrollmentResult> {
-    const result: BulkEnrollmentResult = {
-      successful: [],
-      failed: [],
-      summary: {
-        total: emails.length,
-        successful: 0,
-        failed: 0
-      }
-    };
+  emails: string[], 
+  courseId: string, 
+  courseName: string,
+  api: DoceboAPI,
+  assignmentType?: string,
+  startValidity?: string,
+  endValidity?: string
+): Promise<BulkEnrollmentResult> {
+  const result: BulkEnrollmentResult = {
+    successful: [],
+    failed: [],
+    summary: {
+      total: emails.length,
+      successful: 0,
+      failed: 0
+    }
+  };
 
-    console.log(`🔄 BULK COURSE: Processing ${emails.length} course enrollments for course ${courseId}`);
+  console.log(`🔄 BULK COURSE: Processing ${emails.length} course enrollments for course ${courseId}`);
 
-    // Process enrollments in batches to be API-friendly
-    const batchSize = 3;
-    for (let i = 0; i < emails.length; i += batchSize) {
-      const batch = emails.slice(i, i + batchSize);
+  // Process enrollments in batches to be API-friendly
+  const batchSize = 3;
+  for (let i = 0; i < emails.length; i += batchSize) {
+    const batch = emails.slice(i, i + batchSize);
+    
+    await Promise.all(batch.map(async (email, index) => {
+      const globalIndex = i + index + 1;
+      console.log(`📧 BULK COURSE [${globalIndex}/${emails.length}]: Processing ${email}`);
       
-      await Promise.all(batch.map(async (email, index) => {
-        const globalIndex = i + index + 1;
-        console.log(`📧 BULK COURSE [${globalIndex}/${emails.length}]: Processing ${email}`);
+      try {
+        // Find user
+        const users = await api.searchUsers(email, 5);
+        const user = users.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
         
-        try {
-          // Find user
-          const users = await api.searchUsers(email, 5);
-          const user = users.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
-          
-          if (!user) {
-            console.log(`❌ BULK COURSE [${globalIndex}]: User not found: ${email}`);
-            result.failed.push({
-              email: email,
-              error: 'User not found',
-              resourceName: courseName
-            });
-            return;
-          }
-
-          const userId = (user.user_id || user.id).toString();
-          console.log(`👤 BULK COURSE [${globalIndex}]: Found user ${user.fullname} (ID: ${userId})`);
-
-          // Enroll user in course
-          await api.enrollUserInCourse(userId, courseId, { 
-            level: 'student', 
-            assignmentType: 'none' 
-          });
-          
-          result.successful.push({
-            email: email,
-            userId: userId,
-            resourceName: courseName,
-            resourceId: courseId
-          });
-
-          console.log(`✅ BULK COURSE [${globalIndex}]: Successfully enrolled ${email} in ${courseName}`);
-
-        } catch (error) {
-          console.error(`❌ BULK COURSE [${globalIndex}]: Failed to enroll ${email}:`, error);
+        if (!user) {
+          console.log(`❌ BULK COURSE [${globalIndex}]: User not found: ${email}`);
           result.failed.push({
             email: email,
-            error: error instanceof Error ? error.message : 'Enrollment failed',
+            error: 'User not found',
             resourceName: courseName
           });
+          return;
         }
-      }));
 
-      // Small delay between batches to be API-friendly
-      if (i + batchSize < emails.length) {
-        console.log(`⏸️ BULK COURSE: Pausing between batches (processed ${Math.min(i + batchSize, emails.length)}/${emails.length})`);
-        await new Promise(resolve => setTimeout(resolve, 500));
+        const userId = (user.user_id || user.id).toString();
+        console.log(`👤 BULK COURSE [${globalIndex}]: Found user ${user.fullname} (ID: ${userId})`);
+
+        // FIXED: Pass assignment type and dates only if provided
+        const enrollmentOptions: any = { 
+          level: 'student'
+        };
+        
+        if (assignmentType && assignmentType !== 'none') {
+          enrollmentOptions.assignmentType = assignmentType;
+        }
+        if (startValidity) {
+          enrollmentOptions.startValidity = startValidity;
+        }
+        if (endValidity) {
+          enrollmentOptions.endValidity = endValidity;
+        }
+
+        // Enroll user in course
+        await api.enrollUserInCourse(userId, courseId, enrollmentOptions);
+        
+        result.successful.push({
+          email: email,
+          userId: userId,
+          resourceName: courseName,
+          resourceId: courseId
+        });
+
+        console.log(`✅ BULK COURSE [${globalIndex}]: Successfully enrolled ${email} in ${courseName}`);
+
+      } catch (error) {
+        console.error(`❌ BULK COURSE [${globalIndex}]: Failed to enroll ${email}:`, error);
+        result.failed.push({
+          email: email,
+          error: error instanceof Error ? error.message : 'Enrollment failed',
+          resourceName: courseName
+        });
       }
+    }));
+
+    // Small delay between batches to be API-friendly
+    if (i + batchSize < emails.length) {
+      console.log(`⏸️ BULK COURSE: Pausing between batches (processed ${Math.min(i + batchSize, emails.length)}/${emails.length})`);
+      await new Promise(resolve => setTimeout(resolve, 500));
     }
-
-    result.summary.successful = result.successful.length;
-    result.summary.failed = result.failed.length;
-
-    console.log(`📊 BULK COURSE: Completed - ${result.summary.successful}/${result.summary.total} successful enrollments`);
-    return result;
   }
 
+  result.summary.successful = result.successful.length;
+  result.summary.failed = result.failed.length;
+
+  console.log(`📊 BULK COURSE: Completed - ${result.summary.successful}/${result.summary.total} successful enrollments`);
+  return result;
+}
   private static async processBulkLearningPlanEnrollment(
     emails: string[], 
     learningPlanId: string, 
