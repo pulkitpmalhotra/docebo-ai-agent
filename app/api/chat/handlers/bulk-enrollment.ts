@@ -413,12 +413,6 @@ private static async processBulkLearningPlanEnrollment(
           });
         }
       };
-
-      // Small delay between batches to be API-friendly
-      if (i + batchSize < emails.length) {
-        console.log(`⏸️ BULK LP: Pausing between batches (processed ${Math.min(i + batchSize, emails.length)}/${emails.length})`);
-        await new Promise(resolve => setTimeout(resolve, 500));
-      }
     }
 
     result.summary.successful = result.successful.length;
