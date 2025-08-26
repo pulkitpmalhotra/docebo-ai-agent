@@ -360,65 +360,49 @@ Please check:
   console.log(`📊 BULK COURSE: Completed - ${result.summary.successful}/${result.summary.total} successful enrollments`);
   return result;
 }
-  private static async processBulkLearningPlanEnrollment(
-    emails: string[], 
-    learningPlanId: string, 
-    learningPlanName: string,
-    api: DoceboAPI
-  ): Promise<BulkEnrollmentResult> {
-    const result: BulkEnrollmentResult = {
-      successful: [],
-      failed: [],
-      summary: {
-        total: emails.length,
-        successful: 0,
-        failed: 0
+private static async processBulkLearningPlanEnrollment(
+  emails: string[], 
+  learningPlanId: string, 
+  learningPlanName: string,
+  api: DoceboAPI
+): Promise<BulkEnrollmentResult> {
+  
+  // Collect all user IDs first
+  const userIds: number[] = [];
+  const failedUsers: Array<{email: string, error: string}> = [];
+  
+  for (const email of emails) {
+    try {
+      const users = await api.searchUsers(email, 5);
+      const user = users.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
+      
+      if (user) {
+        userIds.push(parseInt(user.user_id || user.id));
+      } else {
+        failedUsers.push({email, error: 'User not found'});
+      }
+    } catch (error) {
+      failedUsers.push({email, error: 'User lookup failed'});
+    }
+  }
+  
+  // Use the new bulk API endpoint
+  try {
+    const bulkEnrollmentData = {
+      items: {
+        user_ids: userIds
+      },
+      options: {
+        propagate_to_courses: true,
+        status: "subscribed"
       }
     };
-
-    console.log(`🔄 BULK LP: Processing ${emails.length} learning plan enrollments for LP ${learningPlanId}`);
-
-    // Process enrollments in batches to be API-friendly
-    const batchSize = 3;
-    for (let i = 0; i < emails.length; i += batchSize) {
-      const batch = emails.slice(i, i + batchSize);
-      
-      await Promise.all(batch.map(async (email, index) => {
-        const globalIndex = i + index + 1;
-        console.log(`📧 BULK LP [${globalIndex}/${emails.length}]: Processing ${email}`);
-        
-        try {
-          // Find user
-          const users = await api.searchUsers(email, 5);
-          const user = users.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
-          
-          if (!user) {
-            console.log(`❌ BULK LP [${globalIndex}]: User not found: ${email}`);
-            result.failed.push({
-              email: email,
-              error: 'User not found',
-              resourceName: learningPlanName
-            });
-            return;
-          }
-
-          const userId = (user.user_id || user.id).toString();
-          console.log(`👤 BULK LP [${globalIndex}]: Found user ${user.fullname} (ID: ${userId})`);
-
-          // Enroll user in learning plan
-          await api.enrollUserInLearningPlan(userId, learningPlanId, { 
-            assignmentType: 'none' 
-          });
-          
-          result.successful.push({
-            email: email,
-            userId: userId,
-            resourceName: learningPlanName,
-            resourceId: learningPlanId
-          });
-
-          console.log(`✅ BULK LP [${globalIndex}]: Successfully enrolled ${email} in ${learningPlanName}`);
-
+    
+    const result = await api.apiRequest(
+      `/learningplan/v1/learningplans/${learningPlanId}/enrollments/bulk`, 
+      'POST', 
+      bulkEnrollmentData
+    );
         } catch (error) {
           console.error(`❌ BULK LP [${globalIndex}]: Failed to enroll ${email}:`, error);
           result.failed.push({
