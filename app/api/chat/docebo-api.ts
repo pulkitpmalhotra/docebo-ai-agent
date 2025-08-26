@@ -277,7 +277,7 @@ export class DoceboAPI {
   }
 
   // Enhanced course search with EXACT matching priority
-  async findCourseByIdentifier(identifier: string): Promise<any> {
+ async findCourseByIdentifier(identifier: string): Promise<any> {
     try {
       console.log(`🔍 EXACT COURSE SEARCH: Finding course: "${identifier}"`);
       
@@ -325,7 +325,7 @@ export class DoceboAPI {
         return this.enrichCourseData(exactMatches[0]);
       } else if (exactMatches.length > 1) {
         // Multiple exact matches - this is an error condition
-        const courseNames = exactMatches.map(course => `"${this.getCourseName(course)}" (ID: ${course.id || course.course_id})`);
+        const courseNames = exactMatches.map((course: any) => `"${this.getCourseName(course)}" (ID: ${course.id || course.course_id})`);
         console.log(`❌ MULTIPLE EXACT MATCHES: Found ${exactMatches.length} courses with same name`);
         throw new Error(`Multiple courses found with the exact name "${identifier}". Please use course ID instead. Found courses: ${courseNames.join(', ')}`);
       }
@@ -342,7 +342,7 @@ export class DoceboAPI {
         console.log(`✅ SINGLE CODE MATCH: Found exact code match: "${this.getCourseName(exactCodeMatches[0])}" (${exactCodeMatches[0].code})`);
         return this.enrichCourseData(exactCodeMatches[0]);
       } else if (exactCodeMatches.length > 1) {
-        const courseNames = exactCodeMatches.map(course => `"${this.getCourseName(course)}" (Code: ${course.code})`);
+        const courseNames = exactCodeMatches.map((course: any) => `"${this.getCourseName(course)}" (Code: ${course.code})`);
         console.log(`❌ MULTIPLE CODE MATCHES: Found ${exactCodeMatches.length} courses with same code`);
         throw new Error(`Multiple courses found with the exact code "${identifier}". Please use course ID instead. Found courses: ${courseNames.join(', ')}`);
       }
@@ -357,7 +357,7 @@ export class DoceboAPI {
       }).slice(0, 5);
 
       if (partialMatches.length > 0) {
-        const suggestions = partialMatches.map(course => 
+        const suggestions = partialMatches.map((course: any) => 
           `"${this.getCourseName(course)}" (ID: ${course.id || course.course_id})`
         );
         throw new Error(`No exact match found for course "${identifier}". Did you mean one of these? ${suggestions.join(', ')}. For exact matching, use the complete course name or course ID.`);
@@ -445,7 +445,7 @@ export class DoceboAPI {
         return exactMatches[0];
       } else if (exactMatches.length > 1) {
         // Multiple exact matches - this is an error condition
-        const lpNames = exactMatches.map(lp => 
+        const lpNames = exactMatches.map((lp: any) => 
           `"${this.getLearningPlanName(lp)}" (ID: ${lp.learning_plan_id || lp.id})`
         );
         console.log(`❌ MULTIPLE EXACT MATCHES: Found ${exactMatches.length} learning plans with same name`);
@@ -462,7 +462,7 @@ export class DoceboAPI {
         console.log(`✅ SINGLE ID MATCH: Found exact ID match: "${this.getLearningPlanName(exactIdMatches[0])}"`);
         return exactIdMatches[0];
       } else if (exactIdMatches.length > 1) {
-        const lpNames = exactIdMatches.map(lp => 
+        const lpNames = exactIdMatches.map((lp: any) => 
           `"${this.getLearningPlanName(lp)}" (ID: ${lp.learning_plan_id || lp.id})`
         );
         throw new Error(`Multiple learning plans found with the ID "${identifier}". This should not happen. Found plans: ${lpNames.join(', ')}`);
@@ -478,7 +478,7 @@ export class DoceboAPI {
       }).slice(0, 5);
 
       if (partialMatches.length > 0) {
-        const suggestions = partialMatches.map(lp => 
+        const suggestions = partialMatches.map((lp: any) => 
           `"${this.getLearningPlanName(lp)}" (ID: ${lp.learning_plan_id || lp.id})`
         );
         throw new Error(`No exact match found for learning plan "${identifier}". Did you mean one of these? ${suggestions.join(', ')}. For exact matching, use the complete learning plan name or ID.`);
