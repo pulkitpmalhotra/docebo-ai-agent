@@ -50,7 +50,7 @@ export class EnrollmentHandlers {
       // Prepare enrollment options with enhanced parameters
       const enrollmentOptions = {
         level: 'student',
-        assignmentType: assignmentType || 'required',
+        assignmentType: assignmentType || 'none',
         startValidity: startValidity,
         endValidity: endValidity
       };
@@ -159,7 +159,7 @@ Please check:
 
       // Prepare enrollment options with enhanced parameters
       const enrollmentOptions = {
-        assignmentType: assignmentType || 'required',
+        assignmentType: assignmentType || 'none',
         startValidity: startValidity,
         endValidity: endValidity
       };
