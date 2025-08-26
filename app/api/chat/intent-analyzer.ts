@@ -359,7 +359,7 @@ export class IntentAnalyzer {
       },
 
       // Individual Course and Learning Plan enrollment (UPDATED - lower priority than bulk)
-      {
+     {
   intent: 'enroll_user_in_course',
   patterns: [
     /(?:enroll|add|assign|register)\s+(.+?)\s+(?:in|to|for)\s+(?:course|training)\s+(.+)/i,
