@@ -996,28 +996,3 @@ static extractEndDate(message: string): string | null {
   confidence: 0.90
 }
     ];
-
-    // Process enhanced patterns
-    for (const pattern of enhancedLearningPlanPatterns) {
-      for (const regex of pattern.patterns) {
-        if (regex.test(message)) {
-          const entities = pattern.extractEntities();
-          console.log(`🎯 ENHANCED: Matched learning plan intent with entities:`, entities);
-          
-          return {
-            intent: pattern.intent,
-            entities: entities,
-            confidence: pattern.confidence
-          };
-        }
-      }
-    }
-
-    // Return default analysis for other intents...
-    return {
-      intent: 'unknown',
-      entities: {},
-      confidence: 0
-    };
-  }
-}
