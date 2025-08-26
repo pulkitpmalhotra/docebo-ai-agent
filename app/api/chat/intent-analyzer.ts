@@ -360,74 +360,91 @@ export class IntentAnalyzer {
 
       // Individual Course and Learning Plan enrollment (UPDATED - lower priority than bulk)
       {
-        intent: 'enroll_user_in_course',
-        patterns: [
-          /(?:enroll|add|assign|register)\s+(.+?)\s+(?:in|to|for)\s+(?:course|training)\s+(.+)/i,
-          /(?:course enrollment|course assign)\s+(.+?)\s+(?:to|in)\s+(.+)/i
-        ],
-        extractEntities: () => {
-          const enrollMatch = message.match(/(?:enroll|add|assign|register)\s+(.+?)\s+(?:in|to|for)\s+(?:course|training)\s+(.+?)(?:\s|$)/i);
-          
-          if (enrollMatch) {
-            const userPart = enrollMatch[1].trim();
-            const coursePart = enrollMatch[2].trim();
-            
-            // Check if this is actually bulk (multiple emails)
-            const allEmails = this.extractMultipleEmails(message);
-            
-            return {
-              email: this.extractEmailFromText(userPart) || userPart,
-              emails: allEmails.length > 1 ? allEmails : null, // Pass emails for bulk detection
-              courseName: coursePart,
-              resourceType: 'course',
-              action: 'enroll'
-            };
-          }
-          
-          return {
-            email: email,
-            courseName: courseName,
-            resourceType: 'course',
-            action: 'enroll'
-          };
-        },
-        confidence: 0.90
-      },
+  intent: 'enroll_user_in_course',
+  patterns: [
+    /(?:enroll|add|assign|register)\s+(.+?)\s+(?:in|to|for)\s+(?:course|training)\s+(.+)/i,
+    /(?:course enrollment|course assign)\s+(.+?)\s+(?:to|in)\s+(.+)/i
+  ],
+  extractEntities: () => {
+    const enrollMatch = message.match(/(?:enroll|add|assign|register)\s+(.+?)\s+(?:in|to|for)\s+(?:course|training)\s+(.+?)(?:\s|$)/i);
+    
+    if (enrollMatch) {
+      const userPart = enrollMatch[1].trim();
+      const coursePart = enrollMatch[2].trim();
+      
+      // Check if this is actually bulk (multiple emails)
+      const allEmails = this.extractMultipleEmails(message);
+      
+      return {
+        email: this.extractEmailFromText(userPart) || userPart,
+        emails: allEmails.length > 1 ? allEmails : null,
+        courseName: coursePart,
+        resourceType: 'course',
+        action: 'enroll',
+        // FIXED: Extract assignment type and dates
+        assignmentType: this.extractAssignmentType(message),
+        startValidity: this.extractStartDate(message),
+        endValidity: this.extractEndDate(message)
+      };
+    }
+    
+    return {
+      email: email,
+      courseName: courseName,
+      resourceType: 'course',
+      action: 'enroll',
+      // FIXED: Extract assignment type and dates
+      assignmentType: this.extractAssignmentType(message),
+      startValidity: this.extractStartDate(message),
+      endValidity: this.extractEndDate(message)
+    };
+  },
+  confidence: 0.90
+},
 
-      {
-        intent: 'enroll_user_in_learning_plan',
-        patterns: [
-          /(?:enroll|add|assign|register)\s+(.+?)\s+(?:in|to|for)\s+(?:learning plan|lp|learning path)\s+(.+)/i,
-          /(?:learning plan enrollment|lp assign)\s+(.+?)\s+(?:to|in)\s+(.+)/i
-        ],
-        extractEntities: () => {
-          const enrollMatch = message.match(/(?:enroll|add|assign|register)\s+(.+?)\s+(?:in|to|for)\s+(?:learning plan|lp|learning path)\s+(.+?)(?:\s|$)/i);
-          
-          if (enrollMatch) {
-            const userPart = enrollMatch[1].trim();
-            const lpPart = enrollMatch[2].trim();
-            
-            // Check if this is actually bulk (multiple emails)
-            const allEmails = this.extractMultipleEmails(message);
-            
-            return {
-              email: this.extractEmailFromText(userPart) || userPart,
-              emails: allEmails.length > 1 ? allEmails : null, // Pass emails for bulk detection
-              learningPlanName: lpPart,
-              resourceType: 'learning_plan',
-              action: 'enroll'
-            };
-          }
-          
-          return {
-            email: email,
-            learningPlanName: learningPlanName,
-            resourceType: 'learning_plan',
-            action: 'enroll'
-          };
-        },
-        confidence: 0.90
-      },
+// Update the individual learning plan enrollment pattern:
+{
+  intent: 'enroll_user_in_learning_plan',
+  patterns: [
+    /(?:enroll|add|assign|register)\s+(.+?)\s+(?:in|to|for)\s+(?:learning plan|lp|learning path)\s+(.+)/i,
+    /(?:learning plan enrollment|lp assign)\s+(.+?)\s+(?:to|in)\s+(.+)/i
+  ],
+  extractEntities: () => {
+    const enrollMatch = message.match(/(?:enroll|add|assign|register)\s+(.+?)\s+(?:in|to|for)\s+(?:learning plan|lp|learning path)\s+(.+?)(?:\s|$)/i);
+    
+    if (enrollMatch) {
+      const userPart = enrollMatch[1].trim();
+      const lpPart = enrollMatch[2].trim();
+      
+      // Check if this is actually bulk (multiple emails)
+      const allEmails = this.extractMultipleEmails(message);
+      
+      return {
+        email: this.extractEmailFromText(userPart) || userPart,
+        emails: allEmails.length > 1 ? allEmails : null,
+        learningPlanName: lpPart,
+        resourceType: 'learning_plan',
+        action: 'enroll',
+        // FIXED: Extract assignment type and dates
+        assignmentType: this.extractAssignmentType(message),
+        startValidity: this.extractStartDate(message),
+        endValidity: this.extractEndDate(message)
+      };
+    }
+    
+    return {
+      email: email,
+      learningPlanName: learningPlanName,
+      resourceType: 'learning_plan',
+      action: 'enroll',
+      // FIXED: Extract assignment type and dates
+      assignmentType: this.extractAssignmentType(message),
+      startValidity: this.extractStartDate(message),
+      endValidity: this.extractEndDate(message)
+    };
+  },
+  confidence: 0.90
+},
 
       // Unenrollment patterns
       {
@@ -776,7 +793,55 @@ export class IntentAnalyzer {
     }
     return null;
   }
+  static extractAssignmentType(message: string): string | null {
+  const patterns = [
+    /(?:assignment type|as)\s+(mandatory|required|recommended|optional)/i,
+    /(?:with|using)\s+assignment\s+type\s+(mandatory|required|recommended|optional)/i,
+    /(?:make\s+it|set\s+as)\s+(mandatory|required|recommended|optional)/i,
+    /(mandatory|required|recommended|optional)\s+assignment/i
+  ];
   
+  for (const pattern of patterns) {
+    const match = message.match(pattern);
+    if (match && match[1]) {
+      return match[1].toLowerCase();
+    }
+  }
+  return null;
+}
+
+static extractStartDate(message: string): string | null {
+  const patterns = [
+    /(?:start\s+(?:validity|date)|from)\s+(\d{4}-\d{2}-\d{2})/i,
+    /(?:beginning|starts?)\s+(\d{4}-\d{2}-\d{2})/i,
+    /(?:valid\s+from)\s+(\d{4}-\d{2}-\d{2})/i
+  ];
+  
+  for (const pattern of patterns) {
+    const match = message.match(pattern);
+    if (match && match[1]) {
+      return match[1];
+    }
+  }
+  return null;
+}
+
+static extractEndDate(message: string): string | null {
+  const patterns = [
+    /(?:end\s+(?:validity|date)|until|to)\s+(\d{4}-\d{2}-\d{2})/i,
+    /(?:expires?|ending)\s+(\d{4}-\d{2}-\d{2})/i,
+    /(?:valid\s+(?:until|to))\s+(\d{4}-\d{2}-\d{2})/i,
+    /(?:due\s+date?)\s+(\d{4}-\d{2}-\d{2})/i
+  ];
+  
+  for (const pattern of patterns) {
+    const match = message.match(pattern);
+    if (match && match[1]) {
+      return match[1];
+    }
+  }
+  return null;
+}
   static extractLearningPlanName(message: string): string | null {
     const patterns = [
       // FIXED: Handle numbered learning plans like "4. Navigate Your Workflows Effectively"
