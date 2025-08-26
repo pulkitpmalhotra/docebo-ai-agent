@@ -419,11 +419,11 @@ private static async processBulkLearningPlanEnrollment(
     result.summary.failed = result.failed.length;
 
     console.log(`📊 BULK LP: Completed - ${result.summary.successful}/${result.summary.total} successful enrollments`);
-    return result;
-  }
+  return result;
+}
   private static async processBulkUnenrollment(
-    emails: string[], 
-    resourceName: string, 
+  emails: string[],
+  resourceName: string,
     resourceType: 'course' | 'learning_plan',
     api: DoceboAPI
   ): Promise<BulkEnrollmentResult> {
