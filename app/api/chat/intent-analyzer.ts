@@ -777,33 +777,46 @@ export class IntentAnalyzer {
     return null;
   }
   
-  static extractLearningPlanName(message: string): string | null {
-    const patterns = [
-      /(?:learning plan info\s+|lp info\s+|plan info\s+)(.+?)(?:\s*$|\s+id|\s+\d+)/i,
-      /(?:tell me about learning plan\s+|info about learning plan\s+)(.+?)(?:\s*$|\s+id|\s+\d+)/i,
-      /(?:in|to|for)\s+(?:learning plan|lp|learning path)\s+(.+?)(?:\s*$|\s+with|\s+as)/i,
-      /(?:learning plan|lp)\s+(?:named|called)\s+(.+?)(?:\s*$|\s+with|\s+as)/i,
-      /"([^"]+)"/,
-      /\[([^\]]+)\]/,
-      /(?:learning plan|lp)\s+(.+?)(?:\s*$|\?|!|\.)/i,
-      /^(?:info|details)\s+(.+?)(?:\s*$|\?|!|\.)/i
-    ];
+ static extractLearningPlanName(message: string): string | null {
+  const patterns = [
+    // FIXED: Handle numbered learning plans like "4. Navigate Your Workflows Effectively"
+    /(?:learning plan info\s+|lp info\s+|plan info\s+)(.+?)(?:\s*$|\s+id|\s+\d+)/i,
+    /(?:tell me about learning plan\s+|info about learning plan\s+)(.+?)(?:\s*$|\s+id|\s+\d+)/i,
+    /(?:in|to|for)\s+(?:learning plan|lp|learning path)\s+(.+?)(?:\s*$|\s+with|\s+as)/i,
+    /(?:learning plan|lp)\s+(?:named|called)\s+(.+?)(?:\s*$|\s+with|\s+as)/i,
     
-    for (const pattern of patterns) {
-      const match = message.match(pattern);
-      if (match && match[1] && match[1].trim().length > 1) {
-        let name = match[1].trim();
-        
-        // Clean up common prefixes/suffixes
-        name = name.replace(/^(info|details|about|learning plan|lp|plan)\s+/i, '');
-        name = name.replace(/\s+(info|details|learning plan|lp|plan)$/i, '');
-        
-        // Don't return very short or generic terms
-        if (name.length > 1 && !name.match(/^(the|a|an|in|to|for|with|as)$/i)) {
-          return name;
-        }
+    // FIXED: Better quoted content extraction
+    /"([^"]+)"/,
+    /\[([^\]]+)\]/,
+    
+    // FIXED: More flexible learning plan extraction that handles numbers and periods
+    /(?:learning plan|lp)\s+(.+?)(?:\s*$|\?|!|\.(?:\s|$))/i,
+    
+    // FIXED: Handle cases where learning plan name starts with numbers/periods
+    /(?:enroll\s+.+?\s+(?:in|to|for)\s+(?:learning plan|lp)\s+)(.+?)(?:\s*$|\?|!)/i,
+    
+    // FIXED: Generic info extraction that preserves full names
+    /^(?:info|details)\s+(.+?)(?:\s*$|\?|!)/i
+  ];
+  
+  for (const pattern of patterns) {
+    const match = message.match(pattern);
+    if (match && match[1] && match[1].trim().length > 1) {
+      let name = match[1].trim();
+      
+      // FIXED: Don't remove numbers and periods from learning plan names
+      // Only clean up actual prefixes/suffixes, not content
+      name = name.replace(/^(info|details|about)\s+/i, '');
+      name = name.replace(/\s+(info|details)$/i, '');
+      
+      // FIXED: Don't reject names that start with numbers (like "4. Navigate...")
+      if (name.length > 1) {
+        console.log(`📋 FIXED: Extracted learning plan name: "${name}"`);
+        return name;
       }
     }
-    return null;
   }
+  
+  console.log(`❌ FIXED: Could not extract learning plan name from: "${message}"`);
+  return null;
 }
