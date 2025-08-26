@@ -269,7 +269,7 @@ async enrollUserInLearningPlan(
       console.log(`❌ Primary LP endpoint failed, trying alternative:`, primaryError);
       
       // Alternative endpoint format (some Docebo instances use this)
-      const alternativeData = {
+      const alternativeData: any = {
         users: [parseInt(userId)],
         learning_plans: [parseInt(learningPlanId)]
       };
@@ -297,7 +297,7 @@ async enrollUserInLearningPlan(
         console.log(`❌ Alternative LP endpoint also failed:`, alternativeError);
         
         // Final fallback: some instances use the general enrollment endpoint differently
-        const fallbackData = {
+        const fallbackData: any = {
           learningplan_ids: [parseInt(learningPlanId)],
           user_ids: [parseInt(userId)]
         };
