@@ -1,4 +1,4 @@
-// app/api/chat/handlers/enrollment.ts - Enhanced with better error handling for exact matching
+// REPLACE in app/api/chat/handlers/enrollment.ts
 
 import { NextResponse } from 'next/server';
 import { DoceboAPI } from '../docebo-api';
@@ -19,6 +19,7 @@ export class EnrollmentHandlers {
       }
 
       console.log(`🎯 Processing course enrollment: ${email} -> ${courseName}`);
+      console.log(`🔧 Assignment type: ${assignmentType || 'none'}, Start: ${startValidity || 'none'}, End: ${endValidity || 'none'}`);
 
       // Find user first
       const users = await api.searchUsers(email, 5);
@@ -47,13 +48,25 @@ export class EnrollmentHandlers {
       const courseId = (course.id || course.course_id || course.idCourse).toString();
       const displayCourseName = api.getCourseName(course);
 
-      // Prepare enrollment options with enhanced parameters
-      const enrollmentOptions = {
-        level: 'student',
-        assignmentType: assignmentType || 'none',
-        startValidity: startValidity,
-        endValidity: endValidity
+      // Prepare enrollment options with enhanced parameters - FIXED: Only include if provided
+      const enrollmentOptions: any = {
+        level: 'student'
       };
+
+      // FIXED: Only add assignment type if explicitly provided and not 'none'
+      if (assignmentType && assignmentType !== 'none') {
+        enrollmentOptions.assignmentType = assignmentType;
+      }
+
+      // FIXED: Only add validity dates if provided
+      if (startValidity) {
+        enrollmentOptions.startValidity = startValidity;
+      }
+      if (endValidity) {
+        enrollmentOptions.endValidity = endValidity;
+      }
+
+      console.log(`🔧 FIXED: Final enrollment options:`, enrollmentOptions);
 
       // Enroll user
       const enrollmentResult = await api.enrollUserInCourse(user.user_id || user.id, courseId, enrollmentOptions);
@@ -62,9 +75,14 @@ export class EnrollmentHandlers {
 
 👤 **User**: ${user.fullname} (${email})
 📚 **Course**: ${displayCourseName}
-🔗 **Course ID**: ${courseId}
-📋 **Assignment Type**: ${enrollmentOptions.assignmentType.toUpperCase()}
-📅 **Enrolled**: ${new Date().toLocaleDateString()}`;
+🔗 **Course ID**: ${courseId}`;
+
+      // Only show assignment type if it was specified
+      if (assignmentType && assignmentType !== 'none') {
+        responseMessage += `\n📋 **Assignment Type**: ${assignmentType.toUpperCase()}`;
+      }
+
+      responseMessage += `\n📅 **Enrolled**: ${new Date().toLocaleDateString()}`;
 
       // Add validity information if provided
       if (startValidity) {
@@ -104,12 +122,18 @@ export class EnrollmentHandlers {
 Please check:
 • User email exists in the system
 • Course name is **exact** and complete
-• Assignment type is "required" or "optional"
+• Assignment type is "mandatory", "required", "recommended", or "optional"
 • Validity dates are in YYYY-MM-DD format
 • End validity is after start validity
 • You have permission to enroll users
 
-**💡 Pro Tip**: Use course IDs (numbers) for guaranteed exact matching when dealing with courses that have similar names.`,
+**💡 Pro Tip**: Use course IDs (numbers) for guaranteed exact matching when dealing with courses that have similar names.
+
+**📝 Valid Command Formats**:
+• "Enroll user@email.com in course Course Name"
+• "Enroll user@email.com in course Course Name with assignment type mandatory"
+• "Enroll user@email.com in course Course Name from 2025-01-15 to 2025-12-31"
+• "Enroll user@email.com in course Course Name as required with due date 2025-06-30"`,
         success: false,
         timestamp: new Date().toISOString()
       });
@@ -129,6 +153,7 @@ Please check:
       }
 
       console.log(`🎯 Processing learning plan enrollment: ${email} -> ${learningPlanName}`);
+      console.log(`🔧 Assignment type: ${assignmentType || 'none'}, Start: ${startValidity || 'none'}, End: ${endValidity || 'none'}`);
 
       // Find user first
       const users = await api.searchUsers(email, 5);
@@ -157,12 +182,23 @@ Please check:
       const learningPlanId = (learningPlan.learning_plan_id || learningPlan.id).toString();
       const displayLearningPlanName = api.getLearningPlanName(learningPlan);
 
-      // Prepare enrollment options with enhanced parameters
-      const enrollmentOptions = {
-        assignmentType: assignmentType || 'none',
-        startValidity: startValidity,
-        endValidity: endValidity
-      };
+      // Prepare enrollment options with enhanced parameters - FIXED: Only include if provided
+      const enrollmentOptions: any = {};
+
+      // FIXED: Only add assignment type if explicitly provided and not 'none'
+      if (assignmentType && assignmentType !== 'none') {
+        enrollmentOptions.assignmentType = assignmentType;
+      }
+
+      // FIXED: Only add validity dates if provided
+      if (startValidity) {
+        enrollmentOptions.startValidity = startValidity;
+      }
+      if (endValidity) {
+        enrollmentOptions.endValidity = endValidity;
+      }
+
+      console.log(`🔧 FIXED: Final LP enrollment options:`, enrollmentOptions);
 
       // Enroll user
       const enrollmentResult = await api.enrollUserInLearningPlan(user.user_id || user.id, learningPlanId, enrollmentOptions);
@@ -171,9 +207,14 @@ Please check:
 
 👤 **User**: ${user.fullname} (${email})
 📋 **Learning Plan**: ${displayLearningPlanName}
-🔗 **Learning Plan ID**: ${learningPlanId}
-📋 **Assignment Type**: ${enrollmentOptions.assignmentType.toUpperCase()}
-📅 **Enrolled**: ${new Date().toLocaleDateString()}`;
+🔗 **Learning Plan ID**: ${learningPlanId}`;
+
+      // Only show assignment type if it was specified
+      if (assignmentType && assignmentType !== 'none') {
+        responseMessage += `\n📋 **Assignment Type**: ${assignmentType.toUpperCase()}`;
+      }
+
+      responseMessage += `\n📅 **Enrolled**: ${new Date().toLocaleDateString()}`;
 
       // Add validity information if provided
       if (startValidity) {
@@ -213,18 +254,25 @@ Please check:
 Please check:
 • User email exists in the system
 • Learning plan name is **exact** and complete
-• Assignment type is "required" or "optional"
+• Assignment type is "mandatory", "required", "recommended", or "optional"
 • Validity dates are in YYYY-MM-DD format
 • End validity is after start validity
 • You have permission to enroll users in learning plans
 
-**💡 Pro Tip**: Use learning plan IDs (numbers) for guaranteed exact matching when dealing with learning plans that have similar names.`,
+**💡 Pro Tip**: Use learning plan IDs (numbers) for guaranteed exact matching when dealing with learning plans that have similar names.
+
+**📝 Valid Command Formats**:
+• "Enroll user@email.com in learning plan Plan Name"
+• "Enroll user@email.com in learning plan Plan Name with assignment type mandatory"
+• "Enroll user@email.com in learning plan Plan Name from 2025-01-15 to 2025-12-31"
+• "Enroll user@email.com in learning plan Plan Name as required with due date 2025-06-30"`,
         success: false,
         timestamp: new Date().toISOString()
       });
     }
   }
 
+  // Keep the existing unenroll methods unchanged
   static async handleUnenrollUserFromCourse(entities: any, api: DoceboAPI): Promise<NextResponse> {
     try {
       const { email, courseName, action } = entities;
