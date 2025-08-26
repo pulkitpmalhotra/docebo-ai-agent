@@ -99,21 +99,7 @@ export class EnrollmentHandlers {
       console.error('❌ Course enrollment error:', error);
       
       return NextResponse.json({
-        response: `❌ **Learning Plan Unenrollment Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
-
-Please check:
-• User email exists in the system
-• Learning plan name is **exact** and matches a single learning plan
-• User is currently enrolled in the learning plan
-• You have permission to unenroll users from learning plans
-
-**💡 Pro Tip**: For unenrollment operations, exact learning plan name matching is critical to prevent accidental unenrollments from wrong learning plans.`,
-        success: false,
-        timestamp: new Date().toISOString()
-      });
-    }
-  }
-}❌ **Enrollment Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
+        response: `❌ **Enrollment Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
 
 Please check:
 • User email exists in the system
@@ -400,4 +386,18 @@ The user has been successfully unenrolled from the learning plan.`,
       console.error('❌ Learning plan unenrollment error:', error);
       
       return NextResponse.json({
-        response: `
+        response: `❌ **Learning Plan Unenrollment Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
+
+Please check:
+• User email exists in the system
+• Learning plan name is **exact** and matches a single learning plan
+• User is currently enrolled in the learning plan
+• You have permission to unenroll users from learning plans
+
+**💡 Pro Tip**: For unenrollment operations, exact learning plan name matching is critical to prevent accidental unenrollments from wrong learning plans.`,
+        success: false,
+        timestamp: new Date().toISOString()
+      });
+    }
+  }
+}
