@@ -197,69 +197,70 @@ export class DoceboAPI {
   }
 
   // FIXED: Enroll user in learning plan using multiple fallback endpoints
-  async enrollUserInLearningPlan(
-    userId: string, 
-    learningPlanId: string, 
-    options: {
-      assignmentType?: string;
-      startValidity?: string;
-      endValidity?: string;
-    } = {}
-  ): Promise<any> {
+ async enrollUserInLearningPlan(
+  userId: string, 
+  learningPlanId: string, 
+  options: {
+    assignmentType?: string;
+    startValidity?: string;
+    endValidity?: string;
+  } = {}
+): Promise<any> {
+  try {
+    console.log(`🔄 FIXED LP: Attempting to enroll user ${userId} in learning plan ${learningPlanId}`);
+
+    // CORRECT: Use learningplan_ids instead of course_ids
+    const enrollmentData = {
+      user_ids: [parseInt(userId)],
+      learningplan_ids: [parseInt(learningPlanId)], // This was the missing piece!
+      assignment_type: options.assignmentType || 'required',
+      ...(options.startValidity && { date_begin_validity: options.startValidity }),
+      ...(options.endValidity && { date_expire_validity: options.endValidity })
+    };
+
+    console.log(`📋 FIXED LP: Using correct enrollment data:`, enrollmentData);
+    
+    // Try the correct learning plan enrollment endpoint first
     try {
-      console.log(`🔄 FIXED LP: Attempting to enroll user ${userId} in learning plan ${learningPlanId}`);
-
-      const enrollmentData = {
-        user_ids: [parseInt(userId)],
-        learningplan_ids: [parseInt(learningPlanId)],
-        assignment_type: options.assignmentType || 'required',
-        ...(options.startValidity && { date_begin_validity: options.startValidity }),
-        ...(options.endValidity && { date_expire_validity: options.endValidity })
-      };
-
-      console.log(`📋 FIXED LP: LP enrollment data:`, enrollmentData);
+      const result = await this.apiRequest('/learningplan/v1/learningplans/enrollments', 'POST', enrollmentData);
+      console.log(`✅ FIXED LP: Learning plan enrollment successful via primary endpoint:`, result);
+      return result;
+    } catch (primaryError) {
+      console.log(`❌ Primary LP endpoint failed, trying alternative:`, primaryError);
       
-      // Try the primary learning plan enrollment endpoint
+      // Alternative endpoint format (some Docebo instances use this)
+      const alternativeData = {
+        users: [parseInt(userId)],
+        learning_plans: [parseInt(learningPlanId)],
+        assignment_type: options.assignmentType || 'required'
+      };
+      
       try {
-        const result = await this.apiRequest('/learningplan/v1/learningplans/enrollments', 'POST', enrollmentData);
-        console.log(`✅ FIXED LP: Learning plan enrollment successful via primary endpoint:`, result);
+        const result = await this.apiRequest('/learningplan/v1/enrollments', 'POST', alternativeData);
+        console.log(`✅ FIXED LP: Learning plan enrollment successful via alternative endpoint:`, result);
         return result;
-      } catch (primaryError) {
-        console.log(`❌ Primary LP endpoint failed, trying alternative:`, primaryError);
+      } catch (alternativeError) {
+        console.log(`❌ Alternative LP endpoint also failed:`, alternativeError);
         
-        // Try alternative endpoint format
-        const alternativeData = {
-          users: [parseInt(userId)],
-          learning_plans: [parseInt(learningPlanId)],
+        // Final fallback: some instances use the general enrollment endpoint differently
+        const fallbackData = {
+          learningplan_ids: [parseInt(learningPlanId)],
+          user_ids: [parseInt(userId)],
           assignment_type: options.assignmentType || 'required'
         };
         
-        try {
-          const result = await this.apiRequest('/learningplan/v1/enrollments', 'POST', alternativeData);
-          console.log(`✅ FIXED LP: Learning plan enrollment successful via alternative endpoint:`, result);
-          return result;
-        } catch (alternativeError) {
-          console.log(`❌ Alternative LP endpoint also failed:`, alternativeError);
-          
-          // Try the generic enrollment endpoint with learning plan parameters
-          const genericData = {
-            learningplan_ids: [parseInt(learningPlanId)],
-            user_ids: [parseInt(userId)],
-            assignment_type: options.assignmentType || 'required'
-          };
-          
-          const result = await this.apiRequest('/learn/v1/enrollments', 'POST', genericData);
-          console.log(`✅ FIXED LP: Learning plan enrollment successful via generic endpoint:`, result);
-          return result;
-        }
+        // DO NOT use /learn/v1/enrollments for learning plans - that's for courses only!
+        const result = await this.apiRequest('/learningplan/v1/bulk', 'POST', fallbackData);
+        console.log(`✅ FIXED LP: Learning plan enrollment successful via fallback endpoint:`, result);
+        return result;
       }
-
-    } catch (error) {
-      console.error(`❌ FIXED LP: Error enrolling user ${userId} in learning plan ${learningPlanId}:`, error);
-      throw error;
     }
-  }
 
+  } catch (error) {
+    console.error(`❌ FIXED LP: Error enrolling user ${userId} in learning plan ${learningPlanId}:`, error);
+    throw error;
+  }
+}
   // FIXED: Unenroll user from course using the correct endpoint
   async unenrollUserFromCourse(userId: string, courseId: string): Promise<any> {
     try {
