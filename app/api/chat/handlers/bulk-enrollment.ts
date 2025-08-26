@@ -412,7 +412,7 @@ private static async processBulkLearningPlanEnrollment(
             operation: result.summary.operation
           });
         }
-      });
+      };
 
       // Small delay between batches to be API-friendly
       if (i + batchSize < emails.length) {
