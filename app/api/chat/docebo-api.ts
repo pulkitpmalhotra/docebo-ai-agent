@@ -185,11 +185,11 @@ export class DoceboAPI {
       if (options.assignmentType && options.assignmentType !== 'none') {
         // Map assignment types to correct Docebo values
         const assignmentTypeMap: { [key: string]: string } = {
-          'mandatory': 'mandatory',
-          'required': 'mandatory',  // Map required to mandatory
-          'recommended': 'recommended',
-          'optional': 'optional'
-        };
+  'mandatory': 'mandatory',
+  'required': 'required',  // Keep as required, don't map to mandatory
+  'recommended': 'recommended',
+  'optional': 'optional'
+};
         
         const mappedType = assignmentTypeMap[options.assignmentType.toLowerCase()];
         if (mappedType) {
