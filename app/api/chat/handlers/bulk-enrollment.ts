@@ -405,13 +405,14 @@ private static async processBulkLearningPlanEnrollment(
     );
         } catch (error) {
           console.error(`❌ BULK LP [${globalIndex}]: Failed to enroll ${email}:`, error);
-          result.failed.push({
+         result.failed.push({
             email: email,
             error: error instanceof Error ? error.message : 'Enrollment failed',
-            resourceName: learningPlanName
+            resourceName: learningPlanName,  // <- Add comma here if this was missing
+            operation: result.summary.operation
           });
         }
-      }));
+      })); // <- This closing should match an opening Promise.all or similar
 
       // Small delay between batches to be API-friendly
       if (i + batchSize < emails.length) {
@@ -426,7 +427,6 @@ private static async processBulkLearningPlanEnrollment(
     console.log(`📊 BULK LP: Completed - ${result.summary.successful}/${result.summary.total} successful enrollments`);
     return result;
   }
-
   private static async processBulkUnenrollment(
     emails: string[], 
     resourceName: string, 
