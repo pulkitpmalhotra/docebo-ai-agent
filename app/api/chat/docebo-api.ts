@@ -225,24 +225,21 @@ async enrollUserInLearningPlan(
     assignmentType?: string;
     startValidity?: string;
     endValidity?: string;
-    enrolledAt?: string;
   } = {}
 ): Promise<any> {
   try {
-    console.log(`🔄 FIXED LP: Using correct bulk enrollment endpoint for user ${userId} in learning plan ${learningPlanId}`);
+    console.log(`🔄 FIXED LP: Individual enrollment - user ${userId} in learning plan ${learningPlanId}`);
+    console.log(`🔧 FIXED LP: Options:`, options);
 
     const enrollmentData = {
       items: {
         user_ids: [parseInt(userId)]
       },
-      options: {
-        propagate_to_courses: true,
-        status: "subscribed"
-      }
+      options: {}
     };
 
-    // Only add assignment_type if provided
-    if (options.assignmentType && options.assignmentType !== 'none') {
+    // FIXED: Support ALL assignment types or default to empty (no assignment type)
+    if (options.assignmentType && options.assignmentType.toLowerCase() !== 'none') {
       const assignmentTypeMap: { [key: string]: string } = {
         'mandatory': 'mandatory',
         'required': 'required',
@@ -253,34 +250,35 @@ async enrollUserInLearningPlan(
       const mappedType = assignmentTypeMap[options.assignmentType.toLowerCase()];
       if (mappedType) {
         enrollmentData.options.assignment_type = mappedType;
+        console.log(`📋 FIXED LP: Using assignment type: ${mappedType}`);
       }
+    } else {
+      console.log(`📋 FIXED LP: No assignment type specified - using default (empty)`);
     }
 
-    // Only add validity dates if provided (format: YYYY-MM-DD)
+    // Add validity dates with correct UTC format
     if (options.startValidity) {
-      enrollmentData.options.validity_start_at = options.startValidity;
+      enrollmentData.options.validity_start_at = `${options.startValidity} 00:00:00`;
+      console.log(`📅 FIXED LP: Start validity: ${enrollmentData.options.validity_start_at}`);
     }
     if (options.endValidity) {
-      enrollmentData.options.validity_end_at = options.endValidity;
-    }
-    if (options.enrolledAt) {
-      enrollmentData.options.enrolled_at = options.enrolledAt;
+      enrollmentData.options.validity_end_at = `${options.endValidity} 23:59:59`;
+      console.log(`📅 FIXED LP: End validity: ${enrollmentData.options.validity_end_at}`);
     }
 
-    console.log(`📋 FIXED LP: Using correct enrollment data:`, enrollmentData);
+    console.log(`📋 FIXED LP: Final enrollment data:`, JSON.stringify(enrollmentData, null, 2));
     
-    // Use the correct endpoint format
     const result = await this.apiRequest(
       `/learningplan/v1/learningplans/${learningPlanId}/enrollments/bulk`, 
       'POST', 
       enrollmentData
     );
     
-    console.log(`✅ FIXED LP: Learning plan enrollment successful:`, result);
+    console.log(`✅ FIXED LP: Individual enrollment successful:`, result);
     return result;
 
   } catch (error) {
-    console.error(`❌ FIXED LP: Error enrolling user ${userId} in learning plan ${learningPlanId}:`, error);
+    console.error(`❌ FIXED LP: Individual enrollment error for user ${userId}:`, error);
     throw error;
   }
 }
@@ -456,49 +454,52 @@ async enrollUserInLearningPlan(
   // FIXED: Enhanced learning plan search with EXACT matching and duplicate detection
   async findLearningPlanByIdentifier(identifier: string): Promise<any> {
   try {
-    console.log(`🔍 EXACT LP SEARCH: Finding learning plan: "${identifier}"`);
+    console.log(`🔍 ENHANCED LP SEARCH: Finding learning plan: "${identifier}"`);
     
-    // Try direct ID lookup if it's numeric
+    // Method 1: Direct ID lookup if it's numeric
     if (/^\d+$/.test(identifier)) {
       try {
-        console.log(`🆔 Direct learning plan lookup by ID: ${identifier}`);
+        console.log(`🆔 ENHANCED LP: Direct lookup by ID: ${identifier}`);
         const directResult = await this.apiRequest(`/learningplan/v1/learningplans/${identifier}`, 'GET');
         if (directResult.data) {
-          console.log(`✅ Found learning plan by direct ID lookup`);
+          console.log(`✅ ENHANCED LP: Found by direct ID lookup`);
           return directResult.data;
         }
       } catch (directError) {
-        console.log(`❌ Direct learning plan lookup failed for ID ${identifier}`);
-        throw new Error(`Learning plan with ID ${identifier} not found`);
+        console.log(`❌ ENHANCED LP: Direct ID lookup failed for ${identifier}, trying search...`);
       }
     }
 
-    // Search by name/keyword
-    console.log(`🔍 Searching learning plans by name: "${identifier}"`);
-    let result;
+    // Method 2: Search by name/keyword
+    console.log(`🔍 ENHANCED LP: Searching by name/keyword: "${identifier}"`);
+    let searchResult;
+    
     try {
-      result = await this.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
+      searchResult = await this.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
         search_text: identifier,
         page_size: 200
       });
     } catch (searchError) {
-      console.log('Direct search failed, trying fallback method...');
+      console.log('ENHANCED LP: Direct search failed, trying fallback method...');
       
       // Fallback: Get all and filter manually
-      result = await this.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
+      searchResult = await this.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
         page_size: 200
       });
       
-      const allItems = result.data?.items || [];
+      const allItems = searchResult.data?.items || [];
       const filteredItems = allItems.filter((lp: any) => {
         const name = this.getLearningPlanName(lp).toLowerCase();
         const description = (lp.description || '').toLowerCase();
+        const code = (lp.code || '').toLowerCase();
         const searchLower = identifier.toLowerCase();
         
-        return name.includes(searchLower) || description.includes(searchLower);
+        return name.includes(searchLower) || 
+               description.includes(searchLower) ||
+               code === searchLower;
       });
       
-      result = {
+      searchResult = {
         data: {
           items: filteredItems,
           total_count: filteredItems.length
@@ -506,65 +507,69 @@ async enrollUserInLearningPlan(
       };
     }
     
-    const learningPlans = result.data?.items || [];
-    console.log(`📊 Found ${learningPlans.length} learning plans from search`);
+    const learningPlans = searchResult.data?.items || [];
+    console.log(`📊 ENHANCED LP: Found ${learningPlans.length} learning plans from search`);
     
     if (learningPlans.length === 0) {
       throw new Error(`No learning plans found matching: "${identifier}"`);
     }
 
-    // FIXED: Better matching logic for numbered learning plans
-    // PRIORITY 1: Find EXACT name matches (case-insensitive)
+    // PRIORITY 1: Find EXACT matches (ID, name, or code)
     const exactMatches = learningPlans.filter((lp: any) => {
       const lpName = this.getLearningPlanName(lp);
-      return lpName.toLowerCase() === identifier.toLowerCase();
+      const lpId = (lp.learning_plan_id || lp.id)?.toString();
+      const lpCode = lp.code || '';
+      
+      // Exact matches
+      return lpId === identifier ||
+             lpName.toLowerCase() === identifier.toLowerCase() ||
+             lpCode.toLowerCase() === identifier.toLowerCase();
     });
 
-    console.log(`🎯 EXACT MATCHES: Found ${exactMatches.length} exact matches`);
+    console.log(`🎯 ENHANCED LP: Found ${exactMatches.length} exact matches`);
 
     if (exactMatches.length === 1) {
-      console.log(`✅ SINGLE EXACT MATCH: Found exact learning plan match: "${this.getLearningPlanName(exactMatches[0])}"`);
-      return exactMatches[0];
+      const match = exactMatches[0];
+      console.log(`✅ ENHANCED LP: Single exact match found: "${this.getLearningPlanName(match)}" (ID: ${match.learning_plan_id || match.id}, Code: ${match.code || 'N/A'})`);
+      return match;
     } else if (exactMatches.length > 1) {
       const lpNames = exactMatches.map((lp: any) => 
-        `"${this.getLearningPlanName(lp)}" (ID: ${lp.learning_plan_id || lp.id})`
+        `"${this.getLearningPlanName(lp)}" (ID: ${lp.learning_plan_id || lp.id}, Code: ${lp.code || 'N/A'})`
       );
-      console.log(`❌ MULTIPLE EXACT MATCHES: Found ${exactMatches.length} learning plans with same name`);
-      throw new Error(`Multiple learning plans found with the exact name "${identifier}". Please use learning plan ID instead. Found plans: ${lpNames.join(', ')}`);
+      console.log(`❌ ENHANCED LP: Multiple exact matches found`);
+      throw new Error(`Multiple learning plans found matching "${identifier}". Please be more specific. Found: ${lpNames.join(', ')}`);
     }
 
-    // FIXED: Better partial matching for numbered names
-    const partialMatches = learningPlans.filter((lp: any) => {
-      const lpName = this.getLearningPlanName(lp);
-      const lpNameLower = lpName.toLowerCase();
-      const identifierLower = identifier.toLowerCase();
-      
-      // Check if the identifier is contained in the learning plan name
-      // This handles cases like "4." matching "4. Navigate Your Workflows Effectively"
-      return lpNameLower.includes(identifierLower) || identifierLower.includes(lpNameLower);
-    });
+    // PRIORITY 2: Partial matches for names (but not for numeric IDs)
+    if (!/^\d+$/.test(identifier)) {
+      const partialMatches = learningPlans.filter((lp: any) => {
+        const lpName = this.getLearningPlanName(lp);
+        return lpName.toLowerCase().includes(identifier.toLowerCase());
+      });
 
-    if (partialMatches.length === 1) {
-      console.log(`✅ SINGLE PARTIAL MATCH: Found learning plan: "${this.getLearningPlanName(partialMatches[0])}"`);
-      return partialMatches[0];
+      if (partialMatches.length === 1) {
+        const match = partialMatches[0];
+        console.log(`✅ ENHANCED LP: Single partial match found: "${this.getLearningPlanName(match)}"`);
+        return match;
+      }
     }
 
     // NO EXACT MATCHES FOUND - Return error with suggestions
-    console.log(`❌ NO EXACT MATCHES: No exact matches found for "${identifier}"`);
+    console.log(`❌ ENHANCED LP: No exact matches found for "${identifier}"`);
     
     // Show best matches as suggestions
-    const suggestions = partialMatches.slice(0, 5).map((lp: any) => 
-      `"${this.getLearningPlanName(lp)}" (ID: ${lp.learning_plan_id || lp.id})`
+    const suggestions = learningPlans.slice(0, 5).map((lp: any) => 
+      `"${this.getLearningPlanName(lp)}" (ID: ${lp.learning_plan_id || lp.id}, Code: ${lp.code || 'N/A'})`
     );
 
     if (suggestions.length > 0) {
-      throw new Error(`No exact match found for learning plan "${identifier}". Did you mean one of these? ${suggestions.join(', ')}. For exact matching, use the complete learning plan name or ID.`);
+      throw new Error(`No exact match found for learning plan "${identifier}". Did you mean one of these?\n${suggestions.join('\n')}\n\nFor exact matching, use the complete learning plan name, ID, or code.`);
     }
 
-    throw new Error(`Learning plan "${identifier}" not found. Please check the learning plan name spelling or use the learning plan ID for exact matching.`);
+    throw new Error(`Learning plan "${identifier}" not found. Please check the name, ID, or code.`);
 
   } catch (error) {
-    console.error(`❌ Error in findLearningPlanByIdentifier: ${identifier}`, error);
+    console.error(`❌ ENHANCED LP: Error in findLearningPlanByIdentifier: ${identifier}`, error);
     throw error;
   }
 }
