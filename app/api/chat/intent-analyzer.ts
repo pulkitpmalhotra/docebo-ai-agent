@@ -949,4 +949,4 @@ static extractEndDate(message: string): string | null {
     console.log(`❌ ENHANCED LP NAME: Could not extract learning plan name from: "${message}"`);
     return null;
   }
- 
+}
