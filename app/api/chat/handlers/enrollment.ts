@@ -1,159 +1,40 @@
-// REPLACE in app/api/chat/handlers/enrollment.ts
-
-import { NextResponse } from 'next/server';
-import { DoceboAPI } from '../docebo-api';
-import { APIResponse } from '../types';
+// ENHANCED: Enrollment Handlers with Full Learning Plan Support
+// File: app/api/chat/handlers/enrollment.ts
 
 export class EnrollmentHandlers {
   
-  static async handleEnrollUserInCourse(entities: any, api: DoceboAPI): Promise<NextResponse> {
-    try {
-      const { email, courseName, assignmentType, startValidity, endValidity } = entities;
-      
-      if (!email || !courseName) {
-        return NextResponse.json({
-          response: '❌ **Missing Information**: I need both a user email and course name to process enrollment.\n\n**Enhanced Example**: "Enroll john@company.com in course Python Programming with assignment type required from 2024-01-15 to 2024-12-31"',
-          success: false,
-          timestamp: new Date().toISOString()
-        });
-      }
-
-      console.log(`🎯 Processing course enrollment: ${email} -> ${courseName}`);
-      console.log(`🔧 Assignment type: ${assignmentType || 'none'}, Start: ${startValidity || 'none'}, End: ${endValidity || 'none'}`);
-
-      // Find user first
-      const users = await api.searchUsers(email, 5);
-      const user = users.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
-      
-      if (!user) {
-        return NextResponse.json({
-          response: `❌ **User Not Found**: ${email}\n\nNo user found with that email address.`,
-          success: false,
-          timestamp: new Date().toISOString()
-        });
-      }
-
-      // Find course with enhanced error handling
-      let course;
-      try {
-        course = await api.findCourseByIdentifier(courseName);
-      } catch (courseError) {
-        return NextResponse.json({
-          response: `❌ **Course Search Error**: ${courseError instanceof Error ? courseError.message : 'Unknown error'}\n\n**💡 Tips for exact matching:**\n• Use the complete, exact course name\n• Check spelling and capitalization\n• Use course ID if you know it (e.g., "12345")\n• If multiple courses exist with similar names, use course ID`,
-          success: false,
-          timestamp: new Date().toISOString()
-        });
-      }
-
-      const courseId = (course.id || course.course_id || course.idCourse).toString();
-      const displayCourseName = api.getCourseName(course);
-
-      // Prepare enrollment options with enhanced parameters - FIXED: Only include if provided
-      const enrollmentOptions: any = {
-        level: 'student'
-      };
-
-      // FIXED: Only add assignment type if explicitly provided and not 'none'
-      if (assignmentType && assignmentType !== 'none') {
-        enrollmentOptions.assignmentType = assignmentType;
-      }
-
-      // FIXED: Only add validity dates if provided
-      if (startValidity) {
-        enrollmentOptions.startValidity = startValidity;
-      }
-      if (endValidity) {
-        enrollmentOptions.endValidity = endValidity;
-      }
-
-      console.log(`🔧 FIXED: Final enrollment options:`, enrollmentOptions);
-
-      // Enroll user
-      const enrollmentResult = await api.enrollUserInCourse(user.user_id || user.id, courseId, enrollmentOptions);
-
-      let responseMessage = `✅ **Course Enrollment Successful**
-
-👤 **User**: ${user.fullname} (${email})
-📚 **Course**: ${displayCourseName}
-🔗 **Course ID**: ${courseId}`;
-
-      // Only show assignment type if it was specified
-      if (assignmentType && assignmentType !== 'none') {
-        responseMessage += `\n📋 **Assignment Type**: ${assignmentType.toUpperCase()}`;
-      }
-
-      responseMessage += `\n📅 **Enrolled**: ${new Date().toLocaleDateString()}`;
-
-      // Add validity information if provided
-      if (startValidity) {
-        responseMessage += `\n📅 **Start Validity**: ${startValidity}`;
-      }
-      if (endValidity) {
-        responseMessage += `\n📅 **End Validity**: ${endValidity}`;
-      }
-
-      responseMessage += '\n\nThe user has been successfully enrolled in the course with the specified parameters.';
-
-      return NextResponse.json({
-        response: responseMessage,
-        success: true,
-        data: {
-          user: {
-            id: user.user_id || user.id,
-            fullname: user.fullname,
-            email: user.email
-          },
-          course: {
-            id: courseId,
-            name: displayCourseName
-          },
-          enrollmentOptions: enrollmentOptions,
-          enrollmentResult: enrollmentResult
-        },
-        timestamp: new Date().toISOString()
-      });
-
-    } catch (error) {
-      console.error('❌ Course enrollment error:', error);
-      
-      return NextResponse.json({
-        response: `❌ **Enrollment Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
-
-Please check:
-• User email exists in the system
-• Course name is **exact** and complete
-• Assignment type is "mandatory", "required", "recommended", or "optional"
-• Validity dates are in YYYY-MM-DD format
-• End validity is after start validity
-• You have permission to enroll users
-
-**💡 Pro Tip**: Use course IDs (numbers) for guaranteed exact matching when dealing with courses that have similar names.
-
-**📝 Valid Command Formats**:
-• "Enroll user@email.com in course Course Name"
-• "Enroll user@email.com in course Course Name with assignment type mandatory"
-• "Enroll user@email.com in course Course Name from 2025-01-15 to 2025-12-31"
-• "Enroll user@email.com in course Course Name as required with due date 2025-06-30"`,
-        success: false,
-        timestamp: new Date().toISOString()
-      });
-    }
-  }
-
+  // ENHANCED: Individual Learning Plan Enrollment Handler
   static async handleEnrollUserInLearningPlan(entities: any, api: DoceboAPI): Promise<NextResponse> {
     try {
       const { email, learningPlanName, assignmentType, startValidity, endValidity } = entities;
       
       if (!email || !learningPlanName) {
         return NextResponse.json({
-          response: '❌ **Missing Information**: I need both a user email and learning plan name to process enrollment.\n\n**Enhanced Example**: "Enroll sarah@company.com in learning plan Data Science with assignment type optional from 2024-02-01 to 2024-11-30"',
+          response: `❌ **Missing Information**: I need both a user email and learning plan identifier.
+
+**📋 Enhanced Examples:**
+• "Enroll sarah@company.com in learning plan Data Science" (by name)
+• "Enroll sarah@company.com in learning plan 190" (by ID)  
+• "Enroll sarah@company.com in learning plan DS-2024" (by code)
+• "Enroll sarah@company.com in learning plan Data Science with assignment type mandatory"
+• "Enroll user@co.com in learning plan 190 as optional from 2025-01-15 to 2025-12-31"
+
+**✅ Supported Assignment Types:**
+• **mandatory** - Required for completion
+• **required** - Same as mandatory  
+• **recommended** - Suggested but not required
+• **optional** - Completely optional
+• **none specified** - Uses default (no assignment type)`,
           success: false,
           timestamp: new Date().toISOString()
         });
       }
 
-      console.log(`🎯 Processing learning plan enrollment: ${email} -> ${learningPlanName}`);
-      console.log(`🔧 Assignment type: ${assignmentType || 'none'}, Start: ${startValidity || 'none'}, End: ${endValidity || 'none'}`);
+      console.log(`🎯 ENHANCED LP: Processing individual learning plan enrollment:`);
+      console.log(`👤 User: ${email}`);
+      console.log(`📋 Learning Plan: ${learningPlanName}`);
+      console.log(`🔧 Assignment Type: ${assignmentType || 'default (empty)'}`);
+      console.log(`📅 Validity: ${startValidity || 'none'} to ${endValidity || 'none'}`);
 
       // Find user first
       const users = await api.searchUsers(email, 5);
@@ -161,19 +42,33 @@ Please check:
       
       if (!user) {
         return NextResponse.json({
-          response: `❌ **User Not Found**: ${email}\n\nNo user found with that email address.`,
+          response: `❌ **User Not Found**: ${email}
+
+No user found with that email address. Please verify the email is correct and the user exists in Docebo.`,
           success: false,
           timestamp: new Date().toISOString()
         });
       }
 
-      // Find learning plan with enhanced error handling
+      // Enhanced learning plan search with name/ID/code support
       let learningPlan;
       try {
         learningPlan = await api.findLearningPlanByIdentifier(learningPlanName);
       } catch (lpError) {
         return NextResponse.json({
-          response: `❌ **Learning Plan Search Error**: ${lpError instanceof Error ? lpError.message : 'Unknown error'}\n\n**💡 Tips for exact matching:**\n• Use the complete, exact learning plan name\n• Check spelling and capitalization\n• Use learning plan ID if you know it (e.g., "274")\n• If multiple learning plans exist with similar names, use learning plan ID`,
+          response: `❌ **Learning Plan Search Error**: ${lpError instanceof Error ? lpError.message : 'Unknown error'}
+
+**💡 Learning Plan Identification Tips:**
+• **By Name**: Use the exact, complete learning plan name
+• **By ID**: Use the numeric ID (e.g., "190", "274")  
+• **By Code**: Use the learning plan code (e.g., "DS-2024", "LEAD-101")
+• **Check spelling and capitalization** for name-based searches
+• **Use ID for guaranteed exact matching** when dealing with similar names
+
+**📋 Example Commands:**
+• "Enroll user@co.com in learning plan 190" (by ID - most reliable)
+• "Enroll user@co.com in learning plan Data Science Program" (exact name)
+• "Enroll user@co.com in learning plan DS-2024" (by code)`,
           success: false,
           timestamp: new Date().toISOString()
         });
@@ -181,16 +76,14 @@ Please check:
 
       const learningPlanId = (learningPlan.learning_plan_id || learningPlan.id).toString();
       const displayLearningPlanName = api.getLearningPlanName(learningPlan);
+      const lpCode = learningPlan.code || 'N/A';
 
-      // Prepare enrollment options with enhanced parameters - FIXED: Only include if provided
+      // Enhanced enrollment options
       const enrollmentOptions: any = {};
 
-      // FIXED: Only add assignment type if explicitly provided and not 'none'
       if (assignmentType && assignmentType !== 'none') {
         enrollmentOptions.assignmentType = assignmentType;
       }
-
-      // FIXED: Only add validity dates if provided
       if (startValidity) {
         enrollmentOptions.startValidity = startValidity;
       }
@@ -198,20 +91,23 @@ Please check:
         enrollmentOptions.endValidity = endValidity;
       }
 
-      console.log(`🔧 FIXED: Final LP enrollment options:`, enrollmentOptions);
+      console.log(`🔧 ENHANCED LP: Final enrollment options:`, enrollmentOptions);
 
-      // Enroll user
+      // Enroll user using the enhanced method
       const enrollmentResult = await api.enrollUserInLearningPlan(user.user_id || user.id, learningPlanId, enrollmentOptions);
 
       let responseMessage = `✅ **Learning Plan Enrollment Successful**
 
 👤 **User**: ${user.fullname} (${email})
 📋 **Learning Plan**: ${displayLearningPlanName}
-🔗 **Learning Plan ID**: ${learningPlanId}`;
+🔗 **Learning Plan ID**: ${learningPlanId}
+🏷️ **Learning Plan Code**: ${lpCode}`;
 
-      // Only show assignment type if it was specified
+      // Show assignment type if specified
       if (assignmentType && assignmentType !== 'none') {
         responseMessage += `\n📋 **Assignment Type**: ${assignmentType.toUpperCase()}`;
+      } else {
+        responseMessage += `\n📋 **Assignment Type**: Default (no specific assignment type)`;
       }
 
       responseMessage += `\n📅 **Enrolled**: ${new Date().toLocaleDateString()}`;
@@ -224,7 +120,11 @@ Please check:
         responseMessage += `\n📅 **End Validity**: ${endValidity}`;
       }
 
-      responseMessage += '\n\nThe user has been successfully enrolled in the learning plan with the specified parameters.';
+      responseMessage += `\n\n🎯 **Enrollment Details:**
+• User has been successfully enrolled in the learning plan
+• Assignment type: ${assignmentType ? assignmentType.toUpperCase() : 'Default (no assignment type)'}
+• Learning plan courses will be automatically assigned based on plan settings
+• User will receive notifications according to platform settings`;
 
       return NextResponse.json({
         response: responseMessage,
@@ -237,7 +137,8 @@ Please check:
           },
           learningPlan: {
             id: learningPlanId,
-            name: displayLearningPlanName
+            name: displayLearningPlanName,
+            code: lpCode
           },
           enrollmentOptions: enrollmentOptions,
           enrollmentResult: enrollmentResult
@@ -246,154 +147,101 @@ Please check:
       });
 
     } catch (error) {
-      console.error('❌ Learning plan enrollment error:', error);
+      console.error('❌ Enhanced learning plan enrollment error:', error);
       
       return NextResponse.json({
         response: `❌ **Learning Plan Enrollment Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
 
-Please check:
-• User email exists in the system
-• Learning plan name is **exact** and complete
-• Assignment type is "mandatory", "required", "recommended", or "optional"
-• Validity dates are in YYYY-MM-DD format
-• End validity is after start validity
-• You have permission to enroll users in learning plans
+**🔍 Troubleshooting Checklist:**
+• **User Email**: Verify the user exists and email is spelled correctly
+• **Learning Plan**: Check name/ID/code is exact and learning plan exists
+• **Assignment Types**: Use "mandatory", "required", "recommended", or "optional"
+• **Date Format**: Use YYYY-MM-DD format for validity dates
+• **Permissions**: Ensure you have permission to enroll users in learning plans
+• **Learning Plan Status**: Verify the learning plan is published and available
 
-**💡 Pro Tip**: Use learning plan IDs (numbers) for guaranteed exact matching when dealing with learning plans that have similar names.
+**✅ Supported Identifiers:**
+• **By ID**: Most reliable - "190", "274", etc.
+• **By Name**: Exact match - "Data Science Program"  
+• **By Code**: If available - "DS-2024", "LEAD-101"
 
-**📝 Valid Command Formats**:
-• "Enroll user@email.com in learning plan Plan Name"
-• "Enroll user@email.com in learning plan Plan Name with assignment type mandatory"
-• "Enroll user@email.com in learning plan Plan Name from 2025-01-15 to 2025-12-31"
-• "Enroll user@email.com in learning plan Plan Name as required with due date 2025-06-30"`,
+**📝 Valid Command Formats:**
+• "Enroll user@email.com in learning plan 190"
+• "Enroll user@email.com in learning plan Data Science as mandatory"
+• "Enroll user@email.com in learning plan DS-2024 from 2025-01-15 to 2025-12-31"`,
         success: false,
         timestamp: new Date().toISOString()
       });
     }
   }
 
-  // Keep the existing unenroll methods unchanged
-  static async handleUnenrollUserFromCourse(entities: any, api: DoceboAPI): Promise<NextResponse> {
+  // ENHANCED: Bulk Learning Plan Enrollment Handler
+  static async handleBulkLearningPlanEnrollment(entities: any, api: DoceboAPI): Promise<NextResponse> {
     try {
-      const { email, courseName, action } = entities;
+      const { emails, learningPlanName, assignmentType, startValidity, endValidity } = entities;
       
-      if (!email || !courseName) {
-        return NextResponse.json({
-          response: '❌ **Missing Information**: I need both a user email and course name to process unenrollment.\n\n**Example**: "Unenroll mike@company.com from course Excel Training"',
-          success: false,
-          timestamp: new Date().toISOString()
-        });
-      }
-
-      console.log(`🎯 Processing course unenrollment: ${email} -> ${courseName}`);
-
-      // Find user first
-      const users = await api.searchUsers(email, 5);
-      const user = users.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
-      
-      if (!user) {
-        return NextResponse.json({
-          response: `❌ **User Not Found**: ${email}\n\nNo user found with that email address.`,
-          success: false,
-          timestamp: new Date().toISOString()
-        });
-      }
-
-      // Find course with enhanced error handling
-      let course;
-      try {
-        course = await api.findCourseByIdentifier(courseName);
-      } catch (courseError) {
-        return NextResponse.json({
-          response: `❌ **Course Search Error for Unenrollment**: ${courseError instanceof Error ? courseError.message : 'Unknown error'}\n\n**💡 For unenrollment, exact matching is required:**\n• Use the complete, exact course name\n• Check spelling and capitalization carefully\n• Use course ID if you know it (e.g., "12345")\n• If multiple courses exist with similar names, use course ID`,
-          success: false,
-          timestamp: new Date().toISOString()
-        });
-      }
-
-      const courseId = (course.id || course.course_id || course.idCourse).toString();
-      const displayCourseName = api.getCourseName(course);
-
-      // Unenroll user
-      const unenrollmentResult = await api.unenrollUserFromCourse(user.user_id || user.id, courseId);
-
-      return NextResponse.json({
-        response: `✅ **Course Unenrollment Successful**
-
-👤 **User**: ${user.fullname} (${email})
-📚 **Course**: ${displayCourseName}
-🔗 **Course ID**: ${courseId}
-📅 **Unenrolled**: ${new Date().toLocaleDateString()}
-
-The user has been successfully unenrolled from the course.`,
-        success: true,
-        data: {
-          user: {
-            id: user.user_id || user.id,
-            fullname: user.fullname,
-            email: user.email
-          },
-          course: {
-            id: courseId,
-            name: displayCourseName
-          },
-          unenrollmentResult: unenrollmentResult
-        },
-        timestamp: new Date().toISOString()
+      console.log(`🎯 ENHANCED BULK LP: Processing entities:`, { 
+        emails: emails?.length || 0, 
+        learningPlanName, 
+        assignmentType: assignmentType || 'default', 
+        startValidity, 
+        endValidity 
       });
-
-    } catch (error) {
-      console.error('❌ Course unenrollment error:', error);
       
-      return NextResponse.json({
-        response: `❌ **Unenrollment Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
-
-Please check:
-• User email exists in the system
-• Course name is **exact** and matches a single course
-• User is currently enrolled in the course
-• You have permission to unenroll users
-
-**💡 Pro Tip**: For unenrollment operations, exact course name matching is critical to prevent accidental unenrollments from wrong courses.`,
-        success: false,
-        timestamp: new Date().toISOString()
-      });
-    }
-  }
-
-  static async handleUnenrollUserFromLearningPlan(entities: any, api: DoceboAPI): Promise<NextResponse> {
-    try {
-      const { email, learningPlanName, action } = entities;
-      
-      if (!email || !learningPlanName) {
+      if (!emails || !Array.isArray(emails) || emails.length === 0) {
         return NextResponse.json({
-          response: '❌ **Missing Information**: I need both a user email and learning plan name to process unenrollment.\n\n**Example**: "Remove user@company.com from learning plan Leadership"',
+          response: `❌ **Missing Information**: I need a list of user emails for bulk learning plan enrollment.
+
+**📋 Enhanced Bulk Examples:**
+• "Enroll alice@co.com,bob@co.com,charlie@co.com in learning plan 190"
+• "Enroll marketing team in learning plan Data Science Program" 
+• "Bulk enroll sales@co.com,support@co.com in learning plan LEAD-2024 as mandatory"
+• "Enroll team@co.com,mgr@co.com in learning plan 274 from 2025-01-15 to 2025-12-31"
+
+**✅ Supported Assignment Types:**
+• **mandatory** / **required** - Required for completion
+• **recommended** - Suggested but not required  
+• **optional** - Completely optional
+• **none specified** - Uses default (no assignment type)`,
           success: false,
           timestamp: new Date().toISOString()
         });
       }
 
-      console.log(`🎯 Processing learning plan unenrollment: ${email} -> ${learningPlanName}`);
-
-      // Find user first
-      const users = await api.searchUsers(email, 5);
-      const user = users.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
-      
-      if (!user) {
+      if (!learningPlanName) {
         return NextResponse.json({
-          response: `❌ **User Not Found**: ${email}\n\nNo user found with that email address.`,
+          response: `❌ **Missing Learning Plan**: Please specify which learning plan to enroll users in.
+
+**📋 Learning Plan Identification:**
+• **By ID**: "190", "274" (most reliable)
+• **By Name**: "Data Science Program" (exact match)
+• **By Code**: "DS-2024", "LEAD-101" (if available)
+
+**Example**: "Enroll alice@co.com,bob@co.com in learning plan 190 as mandatory"`,
           success: false,
           timestamp: new Date().toISOString()
         });
       }
 
-      // Find learning plan with enhanced error handling
+      console.log(`🎯 ENHANCED BULK LP: Processing bulk learning plan enrollment: ${emails.length} users -> ${learningPlanName}`);
+
+      // Enhanced learning plan search with name/ID/code support
       let learningPlan;
       try {
         learningPlan = await api.findLearningPlanByIdentifier(learningPlanName);
       } catch (lpError) {
         return NextResponse.json({
-          response: `❌ **Learning Plan Search Error for Unenrollment**: ${lpError instanceof Error ? lpError.message : 'Unknown error'}\n\n**💡 For unenrollment, exact matching is required:**\n• Use the complete, exact learning plan name\n• Check spelling and capitalization carefully\n• Use learning plan ID if you know it (e.g., "274")\n• If multiple learning plans exist with similar names, use learning plan ID`,
+          response: `❌ **Learning Plan Not Found for Bulk Enrollment**: ${lpError instanceof Error ? lpError.message : 'Unknown error'}
+
+**💡 For bulk operations, exact learning plan matching is critical:**
+• **Use ID when possible**: "190", "274" (most reliable for bulk operations)
+• **Use exact name**: Complete learning plan name with correct spelling
+• **Use code**: Learning plan code if available (e.g., "DS-2024")
+• **Check capitalization**: Names are case-sensitive
+
+**⚠️ Important**: Bulk enrollment requires exact matching to prevent enrolling users in the wrong learning plan.
+
+**🔧 Recommendation**: Use learning plan ID for bulk operations to ensure accuracy.`,
           success: false,
           timestamp: new Date().toISOString()
         });
@@ -402,50 +250,216 @@ Please check:
       const learningPlanId = (learningPlan.learning_plan_id || learningPlan.id).toString();
       const displayLearningPlanName = api.getLearningPlanName(learningPlan);
 
-      // Unenroll user
-      const unenrollmentResult = await api.unenrollUserFromLearningPlan(user.user_id || user.id, learningPlanId);
+      console.log(`📋 ENHANCED BULK LP: Found learning plan "${displayLearningPlanName}" (ID: ${learningPlanId}) for ${emails.length} users`);
 
-      return NextResponse.json({
-        response: `✅ **Learning Plan Unenrollment Successful**
+      // Process bulk enrollment with enhanced support
+      const result = await this.processBulkLearningPlanEnrollment(
+        emails, 
+        learningPlanId, 
+        displayLearningPlanName, 
+        api,
+        assignmentType,
+        startValidity,
+        endValidity
+      );
 
-👤 **User**: ${user.fullname} (${email})
-📋 **Learning Plan**: ${displayLearningPlanName}
-🔗 **Learning Plan ID**: ${learningPlanId}
-📅 **Unenrolled**: ${new Date().toLocaleDateString()}
-
-The user has been successfully unenrolled from the learning plan.`,
-        success: true,
-        data: {
-          user: {
-            id: user.user_id || user.id,
-            fullname: user.fullname,
-            email: user.email
-          },
-          learningPlan: {
-            id: learningPlanId,
-            name: displayLearningPlanName
-          },
-          unenrollmentResult: unenrollmentResult
-        },
-        timestamp: new Date().toISOString()
-      });
+      return this.formatBulkResponse(result, displayLearningPlanName, 'learning_plan');
 
     } catch (error) {
-      console.error('❌ Learning plan unenrollment error:', error);
+      console.error('❌ Enhanced bulk learning plan enrollment error:', error);
       
       return NextResponse.json({
-        response: `❌ **Learning Plan Unenrollment Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
+        response: `❌ **Bulk Learning Plan Enrollment Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
 
-Please check:
-• User email exists in the system
-• Learning plan name is **exact** and matches a single learning plan
-• User is currently enrolled in the learning plan
-• You have permission to unenroll users from learning plans
+**🔍 Common Issues & Solutions:**
+• **User Emails**: Check all email addresses are correct and users exist
+• **Learning Plan**: Verify name/ID/code is exact and matches exactly one learning plan  
+• **Assignment Types**: Use "mandatory", "required", "recommended", or "optional"
+• **Bulk Size**: Consider smaller batches for very large enrollments
+• **Permissions**: Ensure you have permission to perform bulk enrollments
 
-**💡 Pro Tip**: For unenrollment operations, exact learning plan name matching is critical to prevent accidental unenrollments from wrong learning plans.`,
+**💡 Pro Tips:**
+• **Use learning plan IDs** for bulk operations (most reliable)
+• **Test with 2-3 users first** before running large bulk operations
+• **Check for existing enrollments** - some users might already be enrolled
+
+**📝 Valid Bulk Command Format:**
+"Enroll user1@co.com,user2@co.com,user3@co.com in learning plan 190 as mandatory"`,
         success: false,
         timestamp: new Date().toISOString()
       });
     }
+  }
+
+  // Helper method to format bulk responses (shared with other bulk operations)
+  private static formatBulkResponse(
+    result: any, 
+    resourceName: string, 
+    resourceType: string,
+    action: string = 'enroll'
+  ): NextResponse {
+    const actionText = action === 'enroll' ? 'Enrollment' : 'Unenrollment';
+    const actionPastTense = action === 'enroll' ? 'enrolled' : 'unenrolled';
+    const resourceIcon = resourceType === 'course' ? '📚' : '📋';
+    const resourceTypeText = resourceType === 'course' ? 'Course' : 'Learning Plan';
+
+    let responseMessage = `📊 **Bulk ${resourceTypeText} ${actionText} Results**
+
+${resourceIcon} **${resourceTypeText}**: ${resourceName}
+🎯 **Enhanced Matching**: Used exact identifier matching (name/ID/code)
+📈 **Summary**: ${result.summary.successful}/${result.summary.total} users ${actionPastTense} successfully
+
+`;
+
+    // Show successful enrollments
+    if (result.successful.length > 0) {
+      responseMessage += `✅ **Successful (${result.successful.length})**:\n`;
+      result.successful.slice(0, 10).forEach((success: any, index: number) => {
+        responseMessage += `${index + 1}. ${success.email}\n`;
+      });
+      
+      if (result.successful.length > 10) {
+        responseMessage += `... and ${result.successful.length - 10} more users\n`;
+      }
+      responseMessage += '\n';
+    }
+
+    // Show failed enrollments
+    if (result.failed.length > 0) {
+      responseMessage += `❌ **Failed (${result.failed.length})**:\n`;
+      result.failed.slice(0, 5).forEach((failure: any, index: number) => {
+        responseMessage += `${index + 1}. ${failure.email} - ${failure.error}\n`;
+      });
+      
+      if (result.failed.length > 5) {
+        responseMessage += `... and ${result.failed.length - 5} more failures\n`;
+      }
+      responseMessage += '\n';
+    }
+
+    // Add recommendations based on results
+    if (result.failed.length > 0) {
+      responseMessage += `💡 **Next Steps for Failed Enrollments**:
+• **User Not Found**: Check email spelling and verify users exist in system
+• **Already Enrolled**: Users may already be enrolled (this is not an error)
+• **Permission Issues**: Verify you have rights to enroll users in this ${resourceTypeText.toLowerCase()}
+• **Learning Plan Issues**: Ensure learning plan is published and accessible
+• **Try Individual**: Process failed users individually for detailed error messages`;
+    } else {
+      responseMessage += `🎉 **Perfect Results - All users successfully ${actionPastTense}!**
+
+✅ **Enhanced Features Used:**
+• **Exact ${resourceTypeText} Matching**: Identified resource by name/ID/code
+• **Assignment Type Support**: Applied appropriate assignment requirements  
+• **Validity Dates**: Set enrollment validity periods as specified
+• **Bulk API Optimization**: Used efficient bulk enrollment endpoint
+• **Error Handling**: Comprehensive validation and error reporting`;
+    }
+
+    responseMessage += `\n\n📅 **Completed**: ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}`;
+
+    return NextResponse.json({
+      response: responseMessage,
+      success: result.summary.successful > 0,
+      data: {
+        bulkResult: result,
+        resourceName: resourceName,
+        resourceType: resourceType,
+        action: action,
+        enhancedMatching: true,
+        assignmentTypeSupport: true
+      },
+      totalCount: result.summary.total,
+      successCount: result.summary.successful,
+      failureCount: result.summary.failed,
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  // ENHANCED: CSV Learning Plan Enrollment Support
+  static async processCSVLearningPlanEnrollment(
+    csvData: any, 
+    api: DoceboAPI
+  ): Promise<any> {
+    const result: any = {
+      successful: [],
+      failed: [],
+      summary: {
+        total: csvData.validRows.length,
+        successful: 0,
+        failed: 0,
+        operation: 'csv_lp_enrollment'
+      }
+    };
+
+    console.log(`📊 ENHANCED CSV LP: Processing ${csvData.validRows.length} CSV learning plan enrollments`);
+
+    // Process each row
+    for (let i = 0; i < csvData.validRows.length; i++) {
+      const row = csvData.validRows[i];
+      const email = row[csvData.headers.indexOf('email')];
+      const learningPlanIdentifier = row[csvData.headers.indexOf('learning_plan')];
+      const assignmentType = row[csvData.headers.indexOf('assignment_type')] || null;
+
+      console.log(`📋 ENHANCED CSV LP [${i + 1}/${csvData.validRows.length}]: Processing ${email} -> ${learningPlanIdentifier}`);
+
+      try {
+        // Find user
+        const users = await api.searchUsers(email, 5);
+        const user = users.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
+        
+        if (!user) {
+          result.failed.push({
+            email: email,
+            error: 'User not found',
+            resourceName: learningPlanIdentifier,
+            operation: 'csv_lp_enrollment'
+          });
+          continue;
+        }
+
+        // Enhanced learning plan search
+        const learningPlan = await api.findLearningPlanByIdentifier(learningPlanIdentifier);
+        const learningPlanId = (learningPlan.learning_plan_id || learningPlan.id).toString();
+
+        // Enroll with enhanced support
+        const enrollmentOptions: any = {};
+        if (assignmentType && assignmentType.toLowerCase() !== 'none') {
+          enrollmentOptions.assignmentType = assignmentType;
+        }
+
+        await api.enrollUserInLearningPlan(user.user_id || user.id, learningPlanId, enrollmentOptions);
+        
+        result.successful.push({
+          email: email,
+          userId: user.user_id || user.id,
+          resourceName: api.getLearningPlanName(learningPlan),
+          resourceId: learningPlanId,
+          operation: 'csv_lp_enrollment'
+        });
+
+        console.log(`✅ ENHANCED CSV LP [${i + 1}]: Success - ${email}`);
+
+      } catch (error) {
+        console.error(`❌ ENHANCED CSV LP [${i + 1}]: Failed - ${email}:`, error);
+        result.failed.push({
+          email: email,
+          error: error instanceof Error ? error.message : 'Enrollment failed',
+          resourceName: learningPlanIdentifier,
+          operation: 'csv_lp_enrollment'
+        });
+      }
+
+      // Small delay to be API-friendly
+      if (i < csvData.validRows.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+    }
+
+    result.summary.successful = result.successful.length;
+    result.summary.failed = result.failed.length;
+
+    console.log(`📊 ENHANCED CSV LP: Completed - ${result.summary.successful}/${result.summary.total} successful`);
+    return result;
   }
 }
