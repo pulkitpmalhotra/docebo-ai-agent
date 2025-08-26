@@ -225,103 +225,59 @@ async enrollUserInLearningPlan(
     assignmentType?: string;
     startValidity?: string;
     endValidity?: string;
+    enrolledAt?: string;
   } = {}
 ): Promise<any> {
   try {
-    console.log(`🔄 FIXED LP: Attempting to enroll user ${userId} in learning plan ${learningPlanId}`);
+    console.log(`🔄 FIXED LP: Using correct bulk enrollment endpoint for user ${userId} in learning plan ${learningPlanId}`);
 
-    const enrollmentData: any = {
-      user_ids: [parseInt(userId)],
-      learningplan_ids: [parseInt(learningPlanId)]
+    const enrollmentData = {
+      items: {
+        user_ids: [parseInt(userId)]
+      },
+      options: {
+        propagate_to_courses: true,
+        status: "subscribed"
+      }
     };
 
-    // FIXED: Only add assignment_type if explicitly provided and valid
+    // Only add assignment_type if provided
     if (options.assignmentType && options.assignmentType !== 'none') {
       const assignmentTypeMap: { [key: string]: string } = {
         'mandatory': 'mandatory',
-        'required': 'mandatory',  // Map required to mandatory
-        'recommended': 'recommended', 
+        'required': 'required',
+        'recommended': 'recommended',
         'optional': 'optional'
       };
       
       const mappedType = assignmentTypeMap[options.assignmentType.toLowerCase()];
       if (mappedType) {
-        enrollmentData.assignment_type = mappedType;
+        enrollmentData.options.assignment_type = mappedType;
       }
     }
 
-    // FIXED: Only add validity dates if provided
+    // Only add validity dates if provided (format: YYYY-MM-DD)
     if (options.startValidity) {
-      enrollmentData.date_begin_validity = options.startValidity;
+      enrollmentData.options.validity_start_at = options.startValidity;
     }
     if (options.endValidity) {
-      enrollmentData.date_expire_validity = options.endValidity;
+      enrollmentData.options.validity_end_at = options.endValidity;
+    }
+    if (options.enrolledAt) {
+      enrollmentData.options.enrolled_at = options.enrolledAt;
     }
 
     console.log(`📋 FIXED LP: Using correct enrollment data:`, enrollmentData);
     
-    // Try the correct learning plan enrollment endpoint first
-    try {
-      const result = await this.apiRequest('/learningplan/v1/learningplans/enrollments', 'POST', enrollmentData);
-      console.log(`✅ FIXED LP: Learning plan enrollment successful via primary endpoint:`, result);
-      return result;
-    } catch (primaryError) {
-      console.log(`❌ Primary LP endpoint failed, trying alternative:`, primaryError);
-      
-      // Alternative endpoint format (some Docebo instances use this)
-      const alternativeData: any = {
-        users: [parseInt(userId)],
-        learning_plans: [parseInt(learningPlanId)]
-      };
-      
-      // Only add assignment_type if provided
-      if (options.assignmentType && options.assignmentType !== 'none') {
-        const assignmentTypeMap: { [key: string]: string } = {
-          'mandatory': 'mandatory',
-          'required': 'mandatory',
-          'recommended': 'recommended',
-          'optional': 'optional'
-        };
-        
-        const mappedType = assignmentTypeMap[options.assignmentType.toLowerCase()];
-        if (mappedType) {
-          alternativeData.assignment_type = mappedType;
-        }
-      }
-      
-      try {
-        const result = await this.apiRequest('/learningplan/v1/enrollments', 'POST', alternativeData);
-        console.log(`✅ FIXED LP: Learning plan enrollment successful via alternative endpoint:`, result);
-        return result;
-      } catch (alternativeError) {
-        console.log(`❌ Alternative LP endpoint also failed:`, alternativeError);
-        
-        // Final fallback: some instances use the general enrollment endpoint differently
-        const fallbackData: any = {
-          learningplan_ids: [parseInt(learningPlanId)],
-          user_ids: [parseInt(userId)]
-        };
-        
-        // Only add assignment_type if provided
-        if (options.assignmentType && options.assignmentType !== 'none') {
-          const assignmentTypeMap: { [key: string]: string } = {
-            'mandatory': 'mandatory',
-            'required': 'mandatory',
-            'recommended': 'recommended',
-            'optional': 'optional'
-          };
-          
-          const mappedType = assignmentTypeMap[options.assignmentType.toLowerCase()];
-          if (mappedType) {
-            fallbackData.assignment_type = mappedType;
-          }
-        }
-        
-        const result = await this.apiRequest('/learningplan/v1/bulk', 'POST', fallbackData);
-        console.log(`✅ FIXED LP: Learning plan enrollment successful via fallback endpoint:`, result);
-        return result;
-      }
-    }
+    // Use the correct endpoint format
+    const result = await this.apiRequest(
+      `/learningplan/v1/learningplans/${learningPlanId}/enrollments/bulk`, 
+      'POST', 
+      enrollmentData
+    );
+    
+    console.log(`✅ FIXED LP: Learning plan enrollment successful:`, result);
+    return result;
 
   } catch (error) {
     console.error(`❌ FIXED LP: Error enrolling user ${userId} in learning plan ${learningPlanId}:`, error);
