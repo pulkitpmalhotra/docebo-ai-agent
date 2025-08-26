@@ -464,7 +464,7 @@ export class IntentAnalyzer {
       {
         intent: 'unenroll_user_from_course',
         patterns: [
-          /(?:unenroll|remove|drop)\s+(.+?)\s+(?:from|out of)\s+(?:course|training)\s+(.+)/i,
+          /(?:unenroll|remove|drop)\s+(.+?)\s+(?:from|out of)\s+(?:course|training)\s+(.+?)(?:\s*$|\?|!|\.)/i,
           /(?:course unenrollment|remove from course)\s+(.+?)\s+(?:from|out of)\s+(.+)/i
         ],
         extractEntities: () => {
@@ -875,20 +875,36 @@ export class IntentAnalyzer {
   }
 
   static extractEndDate(message: string): string | null {
-    const patterns = [
-      /(?:end\s+(?:validity|date)|until|to|ending|expires?)\s+(\d{4}-\d{2}-\d{2})/i,
-      /(?:valid\s+(?:until|to)|effective\s+until|active\s+until)\s+(\d{4}-\d{2}-\d{2})/i,
-      /(?:due\s+date?|deadline)\s+(\d{4}-\d{2}-\d{2})/i
-    ];
-    
-    for (const pattern of patterns) {
-      const match = message.match(pattern);
-      if (match && match[1]) {
-        return match[1];
-      }
+  // Handle natural language dates
+  const naturalDatePatterns = [
+    /(?:due date?|deadline|until|expires?)\s+([A-Za-z]+\s+\d{1,2}(?:st|nd|rd|th)?\s+\d{4})/i,
+    /(?:due date?|deadline|until|expires?)\s+(\d{1,2}\/\d{1,2}\/\d{4})/i,
+    /(?:due date?|deadline|until|expires?)\s+(\d{4}-\d{2}-\d{2})/i
+  ];
+  
+  for (const pattern of naturalDatePatterns) {
+    const match = message.match(pattern);
+    if (match && match[1]) {
+      // Convert natural date to YYYY-MM-DD
+      const dateStr = this.parseNaturalDate(match[1]);
+      if (dateStr) return dateStr;
     }
-    return null;
   }
+  return null;
+}
+
+static parseNaturalDate(dateStr: string): string | null {
+  try {
+    // Convert "Sept 30th 2025" to "2025-09-30"
+    const date = new Date(dateStr.replace(/(\d+)(st|nd|rd|th)/g, '$1'));
+    if (!isNaN(date.getTime())) {
+      return date.toISOString().split('T')[0]; // YYYY-MM-DD format
+    }
+  } catch (error) {
+    console.log('Date parsing failed:', error);
+  }
+  return null;
+}
 
   static extractLearningPlanName(message: string): string | null {
     console.log(`🔍 ENHANCED LP NAME: Extracting from: "${message}"`);
