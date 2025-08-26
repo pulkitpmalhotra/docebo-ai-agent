@@ -291,7 +291,7 @@ Please check:
           // Enroll user in course
           await api.enrollUserInCourse(userId, courseId, { 
             level: 'student', 
-            assignmentType: 'mandatory' 
+            assignmentType: 'none' 
           });
           
           result.successful.push({
@@ -374,7 +374,7 @@ Please check:
 
           // Enroll user in learning plan
           await api.enrollUserInLearningPlan(userId, learningPlanId, { 
-            assignmentType: 'mandatory' 
+            assignmentType: 'none' 
           });
           
           result.successful.push({
