@@ -4,13 +4,15 @@ import { SearchHandlers } from './search';
 import { InfoHandlers } from './info';
 import { BulkEnrollmentHandlers } from './bulk-enrollment';
 import { CSVEnrollmentHandlers } from './csv-enrollment';
+import { ILTSessionHandlers } from './ilt-session';
 
 export const handlers = {
   enrollment: EnrollmentHandlers,
   search: SearchHandlers,
   info: InfoHandlers,
   bulkEnrollment: BulkEnrollmentHandlers,
-  csvEnrollment: CSVEnrollmentHandlers
+  csvEnrollment: CSVEnrollmentHandlers,
+  iltSession: ILTSessionHandlers
 };
 
 export { 
@@ -18,5 +20,6 @@ export {
   SearchHandlers, 
   InfoHandlers, 
   BulkEnrollmentHandlers,
-  CSVEnrollmentHandlers 
+  CSVEnrollmentHandlers,
+  ILTSessionHandlers
 };
