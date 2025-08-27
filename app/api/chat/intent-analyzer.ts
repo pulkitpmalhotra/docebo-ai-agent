@@ -193,7 +193,7 @@ export class IntentAnalyzer {
           };
         },
         confidence: email ? 0.85 : 0.7
-      }
+      },
       // CREATE ILT SESSION patterns
 {
   intent: 'create_ilt_session',
