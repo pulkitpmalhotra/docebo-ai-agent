@@ -262,7 +262,65 @@ async function chatHandler(request: NextRequest): Promise<NextResponse> {
             'Learning plan search timeout'
           );
           break;
-          
+          // CREATE ILT SESSION
+case 'create_ilt_session':
+  console.log(`🎓 ROUTING: Creating ILT session`);
+  handlerPromise = withTimeout(
+    handlers.iltSession.handleCreateILTSession(analysis.entities, api),
+    20000,
+    'ILT session creation timeout'
+  );
+  break;
+
+// INDIVIDUAL ILT SESSION ENROLLMENT  
+case 'enroll_user_in_ilt_session':
+  // Check if this is actually a bulk operation that was misclassified
+  if (analysis.entities.emails && Array.isArray(analysis.entities.emails) && analysis.entities.emails.length > 1) {
+    console.log(`🔄 REDIRECT: Single ILT enrollment detected as bulk, redirecting...`);
+    handlerPromise = withTimeout(
+      handlers.iltSession.handleBulkEnrollInILTSession(analysis.entities, api),
+      25000,
+      'Bulk ILT session enrollment timeout'
+    );
+  } else {
+    console.log(`🎓 ROUTING: Individual ILT session enrollment`);
+    handlerPromise = withTimeout(
+      handlers.iltSession.handleEnrollUserInILTSession(analysis.entities, api),
+      15000,
+      'ILT session enrollment timeout'
+    );
+  }
+  break;
+
+// BULK ILT SESSION ENROLLMENT
+case 'bulk_enroll_ilt_session':
+  console.log(`🎓 ROUTING: Bulk ILT session enrollment`);
+  handlerPromise = withTimeout(
+    handlers.iltSession.handleBulkEnrollInILTSession(analysis.entities, api),
+    25000,
+    'Bulk ILT session enrollment timeout'
+  );
+  break;
+
+// UNENROLL FROM ILT SESSION
+case 'unenroll_user_from_ilt_session':
+  console.log(`🎓 ROUTING: ILT session unenrollment`);
+  handlerPromise = withTimeout(
+    handlers.iltSession.handleUnenrollUserFromILTSession(analysis.entities, api),
+    15000,
+    'ILT session unenrollment timeout'
+  );
+  break;
+
+// MARK ATTENDANCE
+case 'mark_session_attendance':
+  console.log(`📋 ROUTING: Marking session attendance`);
+  handlerPromise = withTimeout(
+    handlers.iltSession.handleMarkSessionAttendance(analysis.entities, api),
+    20000,
+    'Session attendance marking timeout'
+  );
+  break;
         // Info Functions
         case 'get_course_info':
           handlerPromise = withTimeout(
@@ -286,25 +344,38 @@ async function chatHandler(request: NextRequest): Promise<NextResponse> {
           break;
           
         default:
-          console.log(`🤔 UNKNOWN INTENT: ${analysis.intent} for message: "${message}"`);
-          handlerPromise = Promise.resolve(NextResponse.json({
-            response: `🤔 **I can help you with enrollment management!**
+  console.log(`🤔 UNKNOWN INTENT: ${analysis.intent} for message: "${message}"`);
+  handlerPromise = Promise.resolve(NextResponse.json({
+    response: `🤔 **I can help you with enrollment and ILT session management!**
+
+**🎓 NEW: ILT Session Management**
+• **Create Session**: "Create ILT session for course Python Programming on 2025-02-15 from 9:00 to 17:00"
+• **Schedule with Events**: "Schedule session 'Python Workshop' for course 2420 from March 1st to March 3rd"
+• **Add Instructor**: "Create ILT session for course Data Science with instructor john@company.com"
+
+**👥 ILT Session Enrollment**
+• **Single User**: "Enroll john@company.com in ILT session 123"
+• **Bulk Enrollment**: "Enroll john@co.com,sarah@co.com,mike@co.com in session 'Python Workshop'"
+• **Unenroll**: "Remove user@company.com from ILT session 123"
+
+**📋 Attendance Management**
+• **Mark Attended**: "Mark john@company.com as attended in session 123"
+• **Mark Completed**: "Mark sarah@company.com as completed in session 'Python Workshop'"
+• **Bulk Attendance**: "Mark user1@co.com,user2@co.com as attended in session 123"
+• **Mark Absent**: "Mark mike@company.com as absent in session 123"
 
 **🔄 Load More Commands:**
 • **Load More Enrollments**: "Load more enrollments for john@company.com"
 • **Show More**: "Show more enrollments for sarah@company.com"
-• **Continue**: "More enrollments for mike@company.com"
 
-**🚀 NEW: Background Processing**
+**🚀 Background Processing**
 • **Heavy Users**: "Load all enrollments in background for john@company.com"
 • **Complete Data**: "Process enrollments in background for sarah@company.com"
-• **Status Check**: "Check background processing status"
 
 **🚀 Bulk Enrollment Features**
 • **Bulk Course Enrollment**: "Enroll john@co.com,sarah@co.com,mike@co.com in course Python Programming"
 • **Bulk Learning Plan Enrollment**: "Enroll marketing team in learning plan Leadership Development"
 • **Bulk Unenrollment**: "Remove john@co.com,sarah@co.com from course Excel Training"
-• **Team Management**: "Enroll sales team in course Customer Service Excellence"
 
 **✅ Individual Enrollment Features**
 • **Enroll in Course**: "Enroll john@company.com in course Python Programming"
@@ -320,16 +391,22 @@ async function chatHandler(request: NextRequest): Promise<NextResponse> {
 • **Find Learning Plans**: "Find Python learning plans"
 • **Course Info**: "Course info Working with Data in Python"
 • **Learning Plan Info**: "Learning plan info Getting Started with Python"
+• **ILT Session Info**: "Session details for session 123"
 • **Docebo Help**: "How to enroll users in Docebo"
 
 **💡 Your message was:** "${message}"
 
+**🎯 ILT Session Examples:**
+• "Create session 'Advanced Python' for course 2420 on 2025-03-15 from 09:00 to 17:00 at Conference Room A with instructor trainer@company.com"
+• "Enroll development team in ILT session 'Advanced Python'"
+• "Mark john@co.com,sarah@co.com as completed in session 123"
+
 **Try one of the examples above!**`,
-            success: false,
-            intent: analysis.intent,
-            confidence: analysis.confidence,
-            timestamp: new Date().toISOString()
-          }));
+    success: false,
+    intent: analysis.intent,
+    confidence: analysis.confidence,
+    timestamp: new Date().toISOString()
+  }));
       }
 
       // Execute handler with timeout
@@ -391,10 +468,14 @@ export const POST = withSecurity(chatHandler, {
 // GET endpoint for API info (with lighter security)
 export const GET = withSecurity(async (request: NextRequest) => {
   return NextResponse.json({
-    status: 'Enhanced Docebo Chat API with FIXED Load More Support',
-    version: '4.3.0',
+    status: 'Enhanced Docebo Chat API with ILT Session Management',
+    version: '5.0.0',
     timestamp: new Date().toISOString(),
     features: [
+      'NEW: Complete ILT Session Management',
+      'NEW: ILT Session Creation with Events',
+      'NEW: ILT Session Enrollment (Individual & Bulk)',
+      'NEW: ILT Session Attendance Tracking',
       'FIXED: Load more enrollments command support',
       'Background processing for heavy enrollment data',
       'Complete enrollment management (enroll/unenroll)',
@@ -407,6 +488,16 @@ export const GET = withSecurity(async (request: NextRequest) => {
       'Pagination with load more functionality',
       'Optimized for serverless deployment'
     ],
+    ilt_session_commands: [
+      'Create ILT session for course [course] on [date] from [time] to [time]',
+      'Schedule session [name] for course [course] with instructor [email]',
+      'Enroll [email] in ILT session [session_id]',
+      'Enroll [email1,email2,email3] in session [session_name]',
+      'Remove [email] from ILT session [session_id]',
+      'Mark [email] as attended in session [session_id]',
+      'Mark [email] as completed in session [session_name]',
+      'Mark [email1,email2] as absent in session [session_id]'
+    ],
     load_more_commands: [
       'Load more enrollments for [email]',
       'Show more enrollments for [email]',
@@ -415,12 +506,43 @@ export const GET = withSecurity(async (request: NextRequest) => {
       'Get more enrollments [email]'
     ],
     timeout_settings: {
+      'ilt_session_creation': '20 seconds',
+      'ilt_session_enrollment': '15 seconds',
+      'bulk_ilt_enrollment': '25 seconds',
+      'attendance_marking': '20 seconds',
       'background_processing': 'No timeout limits',
       'user_enrollments': '25 seconds',
       'load_more_enrollments': '25 seconds',
       'enrollment_check': '20 seconds',
       'search_operations': '15 seconds',
       'info_operations': '10 seconds'
+    },
+    ilt_session_features: {
+      'session_creation': {
+        'description': 'Create ILT sessions with multiple events',
+        'supports': ['Date/time scheduling', 'Instructor assignment', 'Location setup', 'Participant limits'],
+        'examples': [
+          'Create ILT session for course 2420 on 2025-03-15 from 9:00 to 17:00',
+          'Schedule session "Advanced Python" for course Programming with instructor john@company.com'
+        ]
+      },
+      'enrollment_management': {
+        'description': 'Enroll users in ILT sessions (individual and bulk)',
+        'supports': ['Single user enrollment', 'Bulk enrollment', 'Unenrollment'],
+        'examples': [
+          'Enroll john@company.com in ILT session 123',
+          'Enroll team@co.com,lead@co.com,dev@co.com in session "Python Workshop"'
+        ]
+      },
+      'attendance_tracking': {
+        'description': 'Mark and track session attendance',
+        'supports': ['Attended/Absent marking', 'Completion status', 'Bulk attendance'],
+        'statuses': ['attended', 'completed', 'absent', 'no-show'],
+        'examples': [
+          'Mark john@company.com as attended in session 123',
+          'Mark team@co.com,lead@co.com as completed in session "Advanced Training"'
+        ]
+      }
     },
     background_processing: {
       'commands': [
@@ -445,7 +567,10 @@ export const GET = withSecurity(async (request: NextRequest) => {
       'courses': '/course/v1/courses',
       'learning_plans': '/learningplan/v1/learningplans',
       'course_enrollments': '/learn/v1/enrollments',
-      'lp_enrollments': '/learningplan/v1/learningplans/enrollments'
+      'lp_enrollments': '/learningplan/v1/learningplans/enrollments',
+      'ilt_sessions': '/learn/v1/sessions',
+      'ilt_enrollments': '/learn/v1/sessions/enrollments',
+      'ilt_attendance': '/learn/v1/sessions/attendance'
     }
   });
 }, {
