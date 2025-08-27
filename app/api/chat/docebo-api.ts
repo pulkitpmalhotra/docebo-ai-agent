@@ -955,8 +955,7 @@ async findCourseByIdentifier(identifier: string): Promise<any> {
       throw error;
     }
   }
-}
-// Create ILT Session
+  // Create ILT Session
 async createILTSession(sessionData: any): Promise<any> {
   try {
     console.log(`🎓 Creating ILT session:`, sessionData);
@@ -1300,4 +1299,6 @@ async listILTSessions(filters: any = {}): Promise<any> {
     console.error(`❌ Error listing ILT sessions:`, error);
     throw error;
   }
+}
+
 }
