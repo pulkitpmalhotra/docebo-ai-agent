@@ -185,32 +185,20 @@ No user found with that email address. Please verify the email is correct and th
         return NextResponse.json({
           response: `❌ **Missing Information**: I need both a user email and course identifier.
 
-**📚 Course Enrollment Examples:**
+**📚 Course Enrollment Examples**:
 • "Enroll john@company.com in course Python Programming"
 • "Enroll sarah@company.com in course 123" (by ID)
-• "Enroll user@company.com in course Data Science with assignment type mandatory"
-• "Enroll mike@company.com in course Excel Training from 2025-01-15 to 2025-12-31"
-
-**✅ Supported Assignment Types:**
-• **mandatory** - Required for completion
-• **required** - Same as mandatory  
-• **recommended** - Suggested but not required
-• **optional** - Completely optional
-• **none specified** - Uses default`,
+• "Enroll user@company.com in course 'Data Science' with assignment type mandatory"
+• "Enroll mike@company.com in course 'Excel Training' from 2025-01-15 to 2025-12-31"`,
           success: false,
           timestamp: new Date().toISOString()
         });
       }
 
-      console.log(`🎯 COURSE: Processing individual course enrollment:`);
-      console.log(`👤 User: ${email}`);
-      console.log(`📚 Course: ${courseName}`);
-      console.log(`🔧 Assignment Type: ${assignmentType || 'default'}`);
+      console.log(`🎯 ENHANCED ENROLL: Processing course enrollment: ${email} -> "${courseName}"`);
 
       // Find user first
-      const users = await api.searchUsers(email, 5);
-      const user = users.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
-      
+      const user = await api.findUserByEmail(email);
       if (!user) {
         return NextResponse.json({
           response: `❌ **User Not Found**: ${email}
@@ -221,7 +209,7 @@ No user found with that email address. Please verify the email is correct and th
         });
       }
 
-      // Find course with exact matching
+      // Find course with enhanced error handling
       let course;
       try {
         course = await api.findCourseByIdentifier(courseName);
@@ -236,7 +224,10 @@ No user found with that email address. Please verify the email is correct and th
 
 **📚 Example Commands:**
 • "Enroll user@company.com in course 123" (by ID - most reliable)
-• "Enroll user@company.com in course Python Programming" (exact name)`,
+• "Enroll user@company.com in course 'Python Programming'" (exact name)
+
+**🔍 Find the Course First:**
+• "find courses python" (to search for courses)`,
           success: false,
           timestamp: new Date().toISOString()
         });
@@ -245,7 +236,7 @@ No user found with that email address. Please verify the email is correct and th
       const courseId = (course.id || course.course_id || course.idCourse).toString();
       const displayCourseName = api.getCourseName(course);
 
-      // Enhanced enrollment options
+      // Prepare enrollment options
       const enrollmentOptions: any = { level: 'student' };
 
       if (assignmentType && assignmentType !== 'none') {
@@ -258,7 +249,7 @@ No user found with that email address. Please verify the email is correct and th
         enrollmentOptions.endValidity = endValidity;
       }
 
-      console.log(`🔧 COURSE: Final enrollment options:`, enrollmentOptions);
+      console.log(`🔧 ENHANCED ENROLL: Final enrollment options:`, enrollmentOptions);
 
       // Enroll user in course
       const enrollmentResult = await api.enrollUserInCourse(user.user_id || user.id, courseId, enrollmentOptions);
@@ -269,7 +260,6 @@ No user found with that email address. Please verify the email is correct and th
 📚 **Course**: ${displayCourseName}
 🔗 **Course ID**: ${courseId}`;
 
-      // Show assignment type if specified
       if (assignmentType && assignmentType !== 'none') {
         responseMessage += `\n📋 **Assignment Type**: ${assignmentType.toUpperCase()}`;
       } else {
@@ -278,7 +268,6 @@ No user found with that email address. Please verify the email is correct and th
 
       responseMessage += `\n📅 **Enrolled**: ${new Date().toLocaleDateString()}`;
 
-      // Add validity information if provided
       if (startValidity) {
         responseMessage += `\n📅 **Start Validity**: ${startValidity}`;
       }
@@ -312,7 +301,7 @@ No user found with that email address. Please verify the email is correct and th
       });
 
     } catch (error) {
-      console.error('❌ Course enrollment error:', error);
+      console.error('❌ Enhanced course enrollment error:', error);
       
       return NextResponse.json({
         response: `❌ **Course Enrollment Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
@@ -337,63 +326,171 @@ No user found with that email address. Please verify the email is correct and th
       
       if (!email || !courseName) {
         return NextResponse.json({
-          response: `❌ **Missing Information**: I need both a user email and course name to unenroll.
+          response: `❌ **Missing Information**: I need both a user email and course name/ID to unenroll.
 
-**Example**: "Unenroll john@company.com from course Excel Training"`,
+**Examples**: 
+• "Unenroll john@company.com from course Python Programming"
+• "Unenroll sarah@company.com from course 2420" (using course ID)
+• "Remove mike@company.com from course Excel Training"`,
           success: false,
           timestamp: new Date().toISOString()
         });
       }
 
-      // Find user
-      const users = await api.searchUsers(email, 5);
-      const user = users.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
-      
-      if (!user) {
+      console.log(`🔄 ENHANCED UNENROLL: Processing unenrollment: ${email} from course "${courseName}"`);
+
+      // Step 1: Find user with enhanced error handling
+      let user;
+      try {
+        user = await api.findUserByEmail(email);
+        
+        if (!user) {
+          return NextResponse.json({
+            response: `❌ **User Not Found**: ${email}
+
+No user found with that email address. Please verify:
+• Email spelling is correct
+• User exists in the system
+• Email domain is correct`,
+            success: false,
+            timestamp: new Date().toISOString()
+          });
+        }
+      } catch (userError) {
+        console.error(`❌ User search failed:`, userError);
         return NextResponse.json({
-          response: `❌ **User Not Found**: ${email}`,
+          response: `❌ **User Search Failed**: ${userError instanceof Error ? userError.message : 'Unknown error'}
+
+Please verify the email address is correct.`,
           success: false,
           timestamp: new Date().toISOString()
         });
       }
 
-      // Find course
-      const course = await api.findCourseByIdentifier(courseName);
+      // Step 2: Find course with enhanced error handling
+      let course;
+      try {
+        course = await api.findCourseByIdentifier(courseName);
+      } catch (courseError) {
+        console.error(`❌ Course search failed:`, courseError);
+        return NextResponse.json({
+          response: `❌ **Course Search Failed**: ${courseError instanceof Error ? courseError.message : 'Unknown error'}
+
+**💡 Troubleshooting Tips:**
+• **Use Course ID**: If you know the course ID, use "unenroll ${email} from course [ID]"
+• **Check Course Name**: Verify the exact course name from the course search results
+• **Try Searching**: Use "find courses [keyword]" to find the exact course name
+• **Use Quotes**: Try "unenroll ${email} from course 'Exact Course Name'"
+
+**Examples**:
+• "unenroll ${email} from course 2420" (using ID - most reliable)
+• "find courses customer objectives" (to search first)`,
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+
       const courseId = (course.id || course.course_id || course.idCourse).toString();
       const displayCourseName = api.getCourseName(course);
+      const userId = (user.user_id || user.id).toString();
 
-      // Unenroll user
-      await api.unenrollUserFromCourse(user.user_id || user.id, courseId);
+      console.log(`👤 User found: ${user.fullname} (ID: ${userId})`);
+      console.log(`📚 Course found: ${displayCourseName} (ID: ${courseId})`);
 
-      return NextResponse.json({
-        response: `✅ **Course Unenrollment Successful**
+      // Step 3: Attempt unenrollment with enhanced error handling
+      try {
+        await api.unenrollUserFromCourse(userId, courseId);
+        
+        return NextResponse.json({
+          response: `✅ **Course Unenrollment Successful**
 
-👤 **User**: ${user.fullname} (${email})
+👤 **User**: ${user.fullname} (${user.email})
 📚 **Course**: ${displayCourseName}
 🔗 **Course ID**: ${courseId}
 📅 **Unenrolled**: ${new Date().toLocaleDateString()}
 
-The user has been successfully removed from the course.`,
-        success: true,
-        data: {
-          user: {
-            id: user.user_id || user.id,
-            fullname: user.fullname,
-            email: user.email
+**✅ Confirmation**: The user has been successfully removed from the course.
+
+**💡 Next Steps**:
+• User will no longer have access to course materials
+• Course progress will be preserved but inaccessible
+• User can be re-enrolled later if needed`,
+          success: true,
+          data: {
+            user: {
+              id: userId,
+              fullname: user.fullname,
+              email: user.email
+            },
+            course: {
+              id: courseId,
+              name: displayCourseName
+            },
+            operation: 'unenroll',
+            timestamp: new Date().toISOString()
           },
-          course: {
-            id: courseId,
-            name: displayCourseName
-          }
-        },
-        timestamp: new Date().toISOString()
-      });
+          timestamp: new Date().toISOString()
+        });
+
+      } catch (unenrollError) {
+        console.error(`❌ Unenrollment failed:`, unenrollError);
+        
+        // Provide specific error guidance based on common issues
+        let errorGuidance = '';
+        const errorMessage = unenrollError instanceof Error ? unenrollError.message : 'Unknown error';
+        
+        if (errorMessage.includes('not enrolled') || errorMessage.includes('enrollment not found')) {
+          errorGuidance = `**💡 Possible Reason**: The user may not be currently enrolled in this course.
+
+**🔍 Check Enrollment Status**:
+• "Check if ${email} is enrolled in course ${displayCourseName}"
+• "User enrollments ${email}" (to see all enrollments)`;
+        } else if (errorMessage.includes('permission') || errorMessage.includes('unauthorized')) {
+          errorGuidance = `**💡 Possible Reason**: Insufficient permissions to unenroll users.
+
+**🔧 Solutions**:
+• Contact your Docebo administrator
+• Verify your API user has enrollment management permissions`;
+        } else {
+          errorGuidance = `**💡 Alternative Approaches**:
+• Try using the course ID instead: "unenroll ${email} from course ${courseId}"
+• Check if user is actually enrolled: "Check if ${email} is enrolled in course ${displayCourseName}"
+• Contact support if the issue persists`;
+        }
+        
+        return NextResponse.json({
+          response: `❌ **Unenrollment Failed**: ${errorMessage}
+
+👤 **User**: ${user.fullname} (${user.email})
+📚 **Course**: ${displayCourseName} (ID: ${courseId})
+
+${errorGuidance}`,
+          success: false,
+          data: {
+            user: { id: userId, fullname: user.fullname, email: user.email },
+            course: { id: courseId, name: displayCourseName },
+            error: errorMessage,
+            operation: 'unenroll_failed'
+          },
+          timestamp: new Date().toISOString()
+        });
+      }
 
     } catch (error) {
-      console.error('❌ Course unenrollment error:', error);
+      console.error('❌ Enhanced unenrollment handler error:', error);
       
       return NextResponse.json({
-        response: `❌ **Course Unenrollment Failed**: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        response: `❌ **Unenrollment System Error**: ${error instanceof Error ? error.message : 'Unknown error'}
+
+**🔧 Troubleshooting Steps**:
+1. **Verify Input**: Check that both email and course name/ID are correct
+2. **Try Course ID**: Use the numeric course ID for more reliable matching
+3. **Check Enrollment**: Verify the user is actually enrolled in the course
+4. **Simplify Request**: Try with a simpler course name or ID
+
+**💡 Examples of Working Commands**:
+• "unenroll user@email.com from course 2420"
+• "unenroll user@email.com from course 'Exact Course Name'"`,
         success: false,
         timestamp: new Date().toISOString()
       });
