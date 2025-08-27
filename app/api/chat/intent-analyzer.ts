@@ -194,6 +194,98 @@ export class IntentAnalyzer {
         },
         confidence: email ? 0.85 : 0.7
       },
+      // Intent patterns with improved matching
+    const patterns = [
+      // LOAD MORE patterns - HIGH PRIORITY for pagination
+      {
+        intent: 'load_more_enrollments',
+        patterns: [
+          /(?:load more|show more|get more|continue|more)\s+(?:enrollments?)\s+(?:for\s+)?(.+)/i,
+          /(?:more|continue)\s+(?:enrollments?)\s+(.+)/i,
+          /load\s+more\s+(.+)/i
+        ],
+        extractEntities: () => {
+          console.log(`🔄 LOAD MORE: Analyzing message: "${message}"`);
+          
+          const loadMoreMatch = message.match(/(?:load more|show more|get more|continue|more)\s+(?:enrollments?\s+)?(?:for\s+)?(.+?)(?:\s*$|\?|!|\.)/i);
+          
+          if (loadMoreMatch) {
+            const userPart = loadMoreMatch[1].trim();
+            const userEmail = this.extractEmailFromText(userPart) || userPart;
+            
+            console.log(`📧 LOAD MORE: Extracted email: "${userEmail}"`);
+            
+            return {
+              email: userEmail,
+              loadMore: true,
+              offset: this.extractOffset(message) || 20 // Default offset for pagination
+            };
+          }
+          
+          return {
+            email: email,
+            loadMore: true,
+            offset: 20
+          };
+        },
+        confidence: 0.95
+      },
+
+      // BACKGROUND PROCESSING patterns
+      {
+        intent: 'background_user_enrollments',
+        patterns: [
+          /(?:load all|process|get all|fetch all)\s+(?:enrollments?\s+)?(?:in\s+background\s+)?(?:for\s+)?(.+)/i,
+          /(?:background|complete)\s+(?:processing|enrollment)\s+(?:for\s+)?(.+)/i
+        ],
+        extractEntities: () => {
+          const bgMatch = message.match(/(?:load all|process|get all|fetch all)\s+(?:enrollments?\s+)?(?:in\s+background\s+)?(?:for\s+)?(.+?)(?:\s*$|\?|!|\.)/i) ||
+                         message.match(/(?:background|complete)\s+(?:processing|enrollment)\s+(?:for\s+)?(.+?)(?:\s*$|\?|!|\.)/i);
+          
+          return {
+            email: bgMatch ? (this.extractEmailFromText(bgMatch[1]) || bgMatch[1].trim()) : email,
+            backgroundProcessing: true
+          };
+        },
+        confidence: 0.90
+      },
+
+      // USER SUMMARY patterns
+      {
+        intent: 'get_user_summary',
+        patterns: [
+          /(?:user\s+summary|summary\s+for\s+user|overview\s+for)\s+(.+)/i,
+          /(?:summary|overview)\s+(.+@.+)/i
+        ],
+        extractEntities: () => {
+          const summaryMatch = message.match(/(?:user\s+summary|summary\s+for\s+user|overview\s+for)\s+(.+?)(?:\s*$|\?|!|\.)/i) ||
+                              message.match(/(?:summary|overview)\s+(.+@.+?)(?:\s*$|\?|!|\.)/i);
+          
+          return {
+            email: summaryMatch ? (this.extractEmailFromText(summaryMatch[1]) || summaryMatch[1].trim()) : email
+          };
+        },
+        confidence: 0.85
+      },
+
+      // RECENT ENROLLMENTS patterns
+      {
+        intent: 'get_recent_enrollments', 
+        patterns: [
+          /(?:recent|latest)\s+enrollments?\s+(?:for\s+)?(.+)/i,
+          /(?:last|newest)\s+\d*\s*enrollments?\s+(.+)/i
+        ],
+        extractEntities: () => {
+          const recentMatch = message.match(/(?:recent|latest)\s+enrollments?\s+(?:for\s+)?(.+?)(?:\s*$|\?|!|\.)/i) ||
+                             message.match(/(?:last|newest)\s+(\d+)\s*enrollments?\s+(.+?)(?:\s*$|\?|!|\.)/i);
+          
+          return {
+            email: recentMatch ? (this.extractEmailFromText(recentMatch[1]) || recentMatch[1].trim()) : email,
+            limit: recentMatch && recentMatch.length > 2 ? parseInt(recentMatch[1]) : 20
+          };
+        },
+        confidence: 0.88
+      },
       // CREATE ILT SESSION patterns
 {
   intent: 'create_ilt_session',
