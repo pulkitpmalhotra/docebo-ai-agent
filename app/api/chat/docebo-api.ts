@@ -956,3 +956,348 @@ async findCourseByIdentifier(identifier: string): Promise<any> {
     }
   }
 }
+// Create ILT Session
+async createILTSession(sessionData: any): Promise<any> {
+  try {
+    console.log(`🎓 Creating ILT session:`, sessionData);
+    
+    // Primary endpoint for creating classroom sessions
+    const result = await this.apiRequest('/learn/v1/sessions', 'POST', sessionData);
+    
+    console.log(`✅ ILT session created successfully:`, result);
+    return result;
+    
+  } catch (error) {
+    console.error(`❌ Error creating ILT session:`, error);
+    
+    // Try alternative endpoint if primary fails
+    try {
+      console.log(`🔄 Trying alternative ILT session creation endpoint...`);
+      
+      const alternativeResult = await this.apiRequest('/course/v1/courses/sessions', 'POST', sessionData);
+      console.log(`✅ ILT session created via alternative endpoint:`, alternativeResult);
+      return alternativeResult;
+      
+    } catch (alternativeError) {
+      console.error(`❌ Alternative ILT session creation also failed:`, alternativeError);
+      throw error; // Throw original error
+    }
+  }
+}
+
+// Get ILT Session by ID
+async getILTSession(sessionId: string): Promise<any> {
+  try {
+    console.log(`🔍 Getting ILT session: ${sessionId}`);
+    
+    const result = await this.apiRequest(`/learn/v1/sessions/${sessionId}`, 'GET');
+    
+    if (result.data) {
+      console.log(`✅ Found ILT session: ${result.data.name || result.data.session_name}`);
+      return result.data;
+    }
+    
+    throw new Error(`Session ${sessionId} not found`);
+    
+  } catch (error) {
+    console.error(`❌ Error getting ILT session ${sessionId}:`, error);
+    throw error;
+  }
+}
+
+// Find ILT Session by Name
+async findILTSessionByName(sessionName: string): Promise<any> {
+  try {
+    console.log(`🔍 Finding ILT session by name: "${sessionName}"`);
+    
+    // Search for sessions
+    const searchResult = await this.apiRequest('/learn/v1/sessions', 'GET', null, {
+      search_text: sessionName,
+      page_size: 50
+    });
+    
+    const sessions = searchResult.data?.items || [];
+    console.log(`📊 Found ${sessions.length} sessions from search`);
+    
+    if (sessions.length === 0) {
+      throw new Error(`No ILT sessions found matching: "${sessionName}"`);
+    }
+    
+    // Look for exact match first
+    const exactMatch = sessions.find((session: any) => {
+      const name = session.name || session.session_name || '';
+      return name.toLowerCase() === sessionName.toLowerCase();
+    });
+    
+    if (exactMatch) {
+      console.log(`✅ Found exact ILT session match: "${exactMatch.name || exactMatch.session_name}"`);
+      return exactMatch;
+    }
+    
+    // If no exact match, try partial match
+    const partialMatch = sessions.find((session: any) => {
+      const name = session.name || session.session_name || '';
+      return name.toLowerCase().includes(sessionName.toLowerCase());
+    });
+    
+    if (partialMatch) {
+      console.log(`⚠️ Found partial ILT session match: "${partialMatch.name || partialMatch.session_name}"`);
+      return partialMatch;
+    }
+    
+    // Show available sessions for guidance
+    const sessionList = sessions.slice(0, 5).map((s: any) => 
+      `"${s.name || s.session_name}" (ID: ${s.id || s.session_id})`
+    );
+    
+    throw new Error(`No exact match for session "${sessionName}". Available sessions: ${sessionList.join(', ')}`);
+    
+  } catch (error) {
+    console.error(`❌ Error finding ILT session by name: ${sessionName}`, error);
+    throw error;
+  }
+}
+
+// Get ILT Sessions for Course
+async getILTSessionsForCourse(courseIdentifier: string): Promise<any[]> {
+  try {
+    console.log(`🔍 Getting ILT sessions for course: ${courseIdentifier}`);
+    
+    let courseId = courseIdentifier;
+    
+    // If not numeric, find course first
+    if (!/^\d+$/.test(courseIdentifier)) {
+      const course = await this.findCourseByIdentifier(courseIdentifier);
+      courseId = course.id || course.course_id || course.idCourse;
+    }
+    
+    // Get sessions for the course
+    const result = await this.apiRequest('/learn/v1/sessions', 'GET', null, {
+      course_id: courseId,
+      page_size: 100
+    });
+    
+    const sessions = result.data?.items || [];
+    console.log(`📊 Found ${sessions.length} ILT sessions for course ${courseId}`);
+    
+    return sessions;
+    
+  } catch (error) {
+    console.error(`❌ Error getting ILT sessions for course ${courseIdentifier}:`, error);
+    throw error;
+  }
+}
+
+// Enroll User in ILT Session
+async enrollUserInILTSession(userId: string, sessionId: string): Promise<any> {
+  try {
+    console.log(`🎓 Enrolling user ${userId} in ILT session ${sessionId}`);
+    
+    const enrollmentData = {
+      user_ids: [parseInt(userId)],
+      session_id: parseInt(sessionId),
+      enrollment_status: 'enrolled',
+      waiting_list: false
+    };
+    
+    // Try primary enrollment endpoint
+    try {
+      const result = await this.apiRequest('/learn/v1/sessions/enrollments', 'POST', enrollmentData);
+      console.log(`✅ ILT session enrollment successful:`, result);
+      return result;
+      
+    } catch (primaryError) {
+      console.log(`❌ Primary ILT enrollment endpoint failed, trying alternative...`);
+      
+      // Try alternative endpoint structure
+      const alternativeData = {
+        enrollments: [
+          {
+            user_id: parseInt(userId),
+            session_id: parseInt(sessionId),
+            status: 'enrolled'
+          }
+        ]
+      };
+      
+      const result = await this.apiRequest(`/learn/v1/sessions/${sessionId}/enrollments`, 'POST', alternativeData);
+      console.log(`✅ ILT session enrollment successful via alternative endpoint:`, result);
+      return result;
+    }
+    
+  } catch (error) {
+    console.error(`❌ Error enrolling user ${userId} in ILT session ${sessionId}:`, error);
+    throw error;
+  }
+}
+
+// Unenroll User from ILT Session
+async unenrollUserFromILTSession(userId: string, sessionId: string): Promise<any> {
+  try {
+    console.log(`🎓 Unenrolling user ${userId} from ILT session ${sessionId}`);
+    
+    const unenrollmentData = {
+      user_ids: [parseInt(userId)],
+      session_id: parseInt(sessionId)
+    };
+    
+    // Try primary unenrollment endpoint
+    try {
+      const result = await this.apiRequest('/learn/v1/sessions/enrollments', 'DELETE', unenrollmentData);
+      console.log(`✅ ILT session unenrollment successful:`, result);
+      return result;
+      
+    } catch (primaryError) {
+      console.log(`❌ Primary ILT unenrollment endpoint failed, trying alternative...`);
+      
+      // Try alternative endpoint
+      const result = await this.apiRequest(`/learn/v1/sessions/${sessionId}/enrollments/${userId}`, 'DELETE');
+      console.log(`✅ ILT session unenrollment successful via alternative endpoint:`, result);
+      return result;
+    }
+    
+  } catch (error) {
+    console.error(`❌ Error unenrolling user ${userId} from ILT session ${sessionId}:`, error);
+    throw error;
+  }
+}
+
+// Mark ILT Session Attendance
+async markILTSessionAttendance(attendanceData: any): Promise<any> {
+  try {
+    console.log(`📋 Marking ILT session attendance:`, attendanceData);
+    
+    const { user_id, session_id, attendance_status, completion_status, marked_date } = attendanceData;
+    
+    const attendancePayload = {
+      user_id: parseInt(user_id),
+      session_id: parseInt(session_id),
+      attendance_status: attendance_status || 'attended',
+      completion_status: completion_status || 'completed',
+      attendance_date: marked_date || new Date().toISOString(),
+      score: completion_status === 'completed' ? 100 : null
+    };
+    
+    // Try primary attendance marking endpoint
+    try {
+      const result = await this.apiRequest('/learn/v1/sessions/attendance', 'POST', attendancePayload);
+      console.log(`✅ ILT session attendance marked successfully:`, result);
+      return result;
+      
+    } catch (primaryError) {
+      console.log(`❌ Primary attendance endpoint failed, trying alternative...`);
+      
+      // Try alternative endpoint structure
+      const alternativePayload = {
+        attendances: [attendancePayload]
+      };
+      
+      const result = await this.apiRequest(`/learn/v1/sessions/${session_id}/attendance`, 'POST', alternativePayload);
+      console.log(`✅ ILT session attendance marked via alternative endpoint:`, result);
+      return result;
+    }
+    
+  } catch (error) {
+    console.error(`❌ Error marking ILT session attendance:`, error);
+    throw error;
+  }
+}
+
+// Get ILT Session Participants
+async getILTSessionParticipants(sessionId: string): Promise<any> {
+  try {
+    console.log(`👥 Getting participants for ILT session ${sessionId}`);
+    
+    const result = await this.apiRequest(`/learn/v1/sessions/${sessionId}/enrollments`, 'GET', null, {
+      page_size: 200
+    });
+    
+    const participants = result.data?.items || [];
+    console.log(`👥 Found ${participants.length} participants in session ${sessionId}`);
+    
+    return participants;
+    
+  } catch (error) {
+    console.error(`❌ Error getting ILT session participants for ${sessionId}:`, error);
+    throw error;
+  }
+}
+
+// Get ILT Session Attendance
+async getILTSessionAttendance(sessionId: string): Promise<any> {
+  try {
+    console.log(`📋 Getting attendance for ILT session ${sessionId}`);
+    
+    const result = await this.apiRequest(`/learn/v1/sessions/${sessionId}/attendance`, 'GET', null, {
+      page_size: 200
+    });
+    
+    const attendance = result.data?.items || [];
+    console.log(`📋 Found ${attendance.length} attendance records for session ${sessionId}`);
+    
+    return attendance;
+    
+  } catch (error) {
+    console.error(`❌ Error getting ILT session attendance for ${sessionId}:`, error);
+    throw error;
+  }
+}
+
+// Update ILT Session
+async updateILTSession(sessionId: string, updateData: any): Promise<any> {
+  try {
+    console.log(`📝 Updating ILT session ${sessionId}:`, updateData);
+    
+    const result = await this.apiRequest(`/learn/v1/sessions/${sessionId}`, 'PUT', updateData);
+    console.log(`✅ ILT session updated successfully:`, result);
+    return result;
+    
+  } catch (error) {
+    console.error(`❌ Error updating ILT session ${sessionId}:`, error);
+    throw error;
+  }
+}
+
+// Delete ILT Session
+async deleteILTSession(sessionId: string): Promise<any> {
+  try {
+    console.log(`🗑️ Deleting ILT session ${sessionId}`);
+    
+    const result = await this.apiRequest(`/learn/v1/sessions/${sessionId}`, 'DELETE');
+    console.log(`✅ ILT session deleted successfully:`, result);
+    return result;
+    
+  } catch (error) {
+    console.error(`❌ Error deleting ILT session ${sessionId}:`, error);
+    throw error;
+  }
+}
+
+// List All ILT Sessions
+async listILTSessions(filters: any = {}): Promise<any> {
+  try {
+    console.log(`📋 Listing ILT sessions with filters:`, filters);
+    
+    const params = {
+      page_size: filters.limit || 50,
+      page: filters.page || 1,
+      ...filters
+    };
+    
+    const result = await this.apiRequest('/learn/v1/sessions', 'GET', null, params);
+    
+    const sessions = result.data?.items || [];
+    console.log(`📋 Found ${sessions.length} ILT sessions`);
+    
+    return {
+      sessions: sessions,
+      total: result.data?.total_count || sessions.length,
+      page: params.page,
+      pageSize: params.page_size
+    };
+    
+  } catch (error) {
+    console.error(`❌ Error listing ILT sessions:`, error);
+    throw error;
+  }
+}
