@@ -420,11 +420,6 @@ export class IntentAnalyzer {
     };
   },
   confidence: 0.96
-},
-
-static extractTimezone(message: string): string | null {
-  const timezoneMatch = message.match(/\b(UTC|GMT|EST|CST|MST|PST|EDT|CDT|MDT|PDT)\b/i);
-  return timezoneMatch ? timezoneMatch[1].toUpperCase() : null;
 }
     ];
     
@@ -567,7 +562,10 @@ static extractTimezone(message: string): string | null {
     const emails = message.match(emailRegex) || [];
     return [...new Set(emails.map(email => email.toLowerCase()))];
   }
-
+static extractTimezone(message: string): string | null {
+  const timezoneMatch = message.match(/\b(UTC|GMT|EST|CST|MST|PST|EDT|CDT|MDT|PDT)\b/i);
+  return timezoneMatch ? timezoneMatch[1].toUpperCase() : null;
+}
   static extractUserId(message: string): string | null {
     const patterns = [
       /(?:user\s+)?id[:\s]+(\d+)/i,
