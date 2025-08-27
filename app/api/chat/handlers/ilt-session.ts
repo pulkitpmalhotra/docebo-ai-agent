@@ -69,8 +69,9 @@ Please verify the course name or use the course ID instead.`,
         }
       }
 
-      // Prepare session data
-      const sessionData = {
+
+      // Prepare session data with proper typing
+      const sessionData: any = {
         course_id: parseInt(finalCourseId),
         name: sessionName || `ILT Session - ${new Date().toLocaleDateString()}`,
         description: description || `Instructor-led training session for course ${finalCourseId}`,
@@ -82,7 +83,7 @@ Please verify the course name or use the course ID instead.`,
         instructor_id: instructor ? parseInt(instructor.user_id || instructor.id) : null,
         auto_enroll: false,
         attendance_tracking: true,
-        session_events: []
+        session_events: [] as any[]
       };
 
       // Add session events if dates/times provided
