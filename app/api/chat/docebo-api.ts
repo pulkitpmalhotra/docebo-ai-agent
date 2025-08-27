@@ -14,7 +14,7 @@ export class DoceboAPI {
   }
 
   // Obtain access token with improved type safety
-  private async getAccessToken(): Promise<string> {
+   private async getAccessToken(): Promise<string> {
     // Check if current token is valid
     if (this._accessToken && 
         this._tokenExpiry && 
@@ -59,7 +59,6 @@ export class DoceboAPI {
     }
   }
 
-  // Generic API request method
   async apiRequest(
     endpoint: string, 
     method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET', 
@@ -117,7 +116,6 @@ export class DoceboAPI {
            'Unknown Course';
   }
 
-  // Helper method to get learning plan name from various possible fields
   getLearningPlanName(learningPlan: any): string {
     return learningPlan.title || 
            learningPlan.name || 
@@ -128,7 +126,6 @@ export class DoceboAPI {
            'Unknown Learning Plan';
   }
 
-  // Helper method to enrich course data with normalized fields
   private enrichCourseData(courseData: any): any {
     return {
       id: courseData.id || courseData.course_id || courseData.idCourse,
@@ -155,7 +152,6 @@ export class DoceboAPI {
       ...courseData
     };
   }
-
   // FIXED: Enroll user in a course using correct API endpoints and parameters
   async enrollUserInCourse(
     userId: string, 
@@ -294,10 +290,11 @@ export class DoceboAPI {
   }
 
   // FIXED: Unenroll user from course using the correct endpoint
-  async unenrollUserFromCourse(userId: string, courseId: string): Promise<any> {
+async unenrollUserFromCourse(userId: string, courseId: string): Promise<any> {
     try {
-      console.log(`🔄 FIXED: Attempting to unenroll user ${userId} from course ${courseId}`);
+      console.log(`🔄 ENHANCED UNENROLL: Attempting to unenroll user ${userId} from course ${courseId}`);
       
+      // Method 1: Use the primary unenrollment endpoint
       const unenrollmentBody = {
         user_ids: [parseInt(userId)],
         course_ids: [parseInt(courseId)],
@@ -305,14 +302,48 @@ export class DoceboAPI {
         delete_issued_certificates: false
       };
 
-      console.log(`📋 FIXED: Using DELETE /learn/v1/enrollments with body:`, unenrollmentBody);
+      console.log(`📋 ENHANCED UNENROLL: Using DELETE /learn/v1/enrollments with body:`, unenrollmentBody);
       
-      const result = await this.apiRequest('/learn/v1/enrollments', 'DELETE', unenrollmentBody);
-      console.log(`✅ FIXED: Course unenrollment successful:`, result);
-      return result;
+      try {
+        const result = await this.apiRequest('/learn/v1/enrollments', 'DELETE', unenrollmentBody);
+        console.log(`✅ ENHANCED UNENROLL: Course unenrollment successful via primary endpoint:`, result);
+        return result;
+      } catch (primaryError) {
+        console.log(`❌ Primary unenroll endpoint failed:`, primaryError);
+        
+        // Method 2: Try alternative endpoint structure
+        try {
+          const alternativeBody = {
+            enrollments: [
+              {
+                user_id: parseInt(userId),
+                course_id: parseInt(courseId)
+              }
+            ],
+            reset_tracks: false,
+            delete_issued_certificates: false
+          };
+          
+          const result = await this.apiRequest('/course/v1/courses/enrollments', 'DELETE', alternativeBody);
+          console.log(`✅ ENHANCED UNENROLL: Course unenrollment successful via alternative endpoint:`, result);
+          return result;
+        } catch (alternativeError) {
+          console.log(`❌ Alternative unenroll endpoint also failed:`, alternativeError);
+          
+          // Method 3: Try individual course unenrollment
+          try {
+            const individualResult = await this.apiRequest(`/course/v1/courses/${courseId}/enrollments/${userId}`, 'DELETE');
+            console.log(`✅ ENHANCED UNENROLL: Course unenrollment successful via individual endpoint:`, individualResult);
+            return individualResult;
+          } catch (individualError) {
+            console.error(`❌ All unenrollment methods failed:`, individualError);
+            throw new Error(`Failed to unenroll user from course. The user may not be enrolled in this course, or there may be a permissions issue.`);
+          }
+        }
+      }
 
     } catch (error) {
-      console.error(`❌ FIXED: Error unenrolling user ${userId} from course ${courseId}:`, error);
+      console.error(`❌ ENHANCED UNENROLL: Error unenrolling user ${userId} from course ${courseId}:`, error);
       throw error;
     }
   }
@@ -368,11 +399,11 @@ export class DoceboAPI {
   }
 
   // FIXED: Enhanced course search with EXACT matching and duplicate detection
-  async findCourseByIdentifier(identifier: string): Promise<any> {
+async findCourseByIdentifier(identifier: string): Promise<any> {
     try {
-      console.log(`🔍 EXACT COURSE SEARCH: Finding course: "${identifier}"`);
+      console.log(`🔍 ENHANCED COURSE SEARCH: Finding course: "${identifier}"`);
       
-      // Try direct ID lookup if it's numeric
+      // Method 1: Try direct ID lookup if it's numeric
       if (/^\d+$/.test(identifier)) {
         try {
           console.log(`🆔 Direct course lookup by ID: ${identifier}`);
@@ -382,12 +413,12 @@ export class DoceboAPI {
             return this.enrichCourseData(directResult.data);
           }
         } catch (directError) {
-          console.log(`❌ Direct course lookup failed for ID ${identifier}`);
+          console.log(`❌ Direct course lookup failed for ID ${identifier}:`, directError);
           throw new Error(`Course with ID ${identifier} not found`);
         }
       }
 
-      // Search by name/keyword with comprehensive search
+      // Method 2: Search by name/keyword with comprehensive search
       console.log(`🔍 Searching courses by name: "${identifier}"`);
       const searchResult = await this.apiRequest('/course/v1/courses', 'GET', null, {
         search_text: identifier,
@@ -415,10 +446,12 @@ export class DoceboAPI {
         console.log(`✅ SINGLE EXACT MATCH: Found exact course match: "${this.getCourseName(exactMatches[0])}"`);
         return this.enrichCourseData(exactMatches[0]);
       } else if (exactMatches.length > 1) {
-        // Multiple exact matches - this is an error condition
-        const courseNames = exactMatches.map((course: any) => `"${this.getCourseName(course)}" (ID: ${course.id || course.course_id})`);
+        // Multiple exact matches - provide detailed error with IDs
+        const courseDetails = exactMatches.map((course: any) => 
+          `"${this.getCourseName(course)}" (ID: ${course.id || course.course_id})`
+        );
         console.log(`❌ MULTIPLE EXACT MATCHES: Found ${exactMatches.length} courses with same name`);
-        throw new Error(`Multiple courses found with the exact name "${identifier}". Please use course ID instead. Found courses: ${courseNames.join(', ')}`);
+        throw new Error(`Multiple courses found with the exact name "${identifier}". Please use course ID instead. Found courses: ${courseDetails.join(', ')}`);
       }
 
       // PRIORITY 2: Find EXACT code matches
@@ -432,25 +465,28 @@ export class DoceboAPI {
       if (exactCodeMatches.length === 1) {
         console.log(`✅ SINGLE CODE MATCH: Found exact code match: "${this.getCourseName(exactCodeMatches[0])}" (${exactCodeMatches[0].code})`);
         return this.enrichCourseData(exactCodeMatches[0]);
-      } else if (exactCodeMatches.length > 1) {
-        const courseNames = exactCodeMatches.map((course: any) => `"${this.getCourseName(course)}" (Code: ${course.code})`);
-        console.log(`❌ MULTIPLE CODE MATCHES: Found ${exactCodeMatches.length} courses with same code`);
-        throw new Error(`Multiple courses found with the exact code "${identifier}". Please use course ID instead. Found courses: ${courseNames.join(', ')}`);
       }
 
-      // NO EXACT MATCHES FOUND - Return error with suggestions
-      console.log(`❌ NO EXACT MATCHES: No exact matches found for "${identifier}"`);
-      
-      // Show partial matches as suggestions
+      // PRIORITY 3: If no exact matches, try partial matching but be very careful
       const partialMatches = courses.filter((course: any) => {
         const courseName = this.getCourseName(course);
         return courseName.toLowerCase().includes(identifier.toLowerCase());
-      }).slice(0, 5);
+      });
 
-      if (partialMatches.length > 0) {
-        const suggestions = partialMatches.map((course: any) => 
-          `"${this.getCourseName(course)}" (ID: ${course.id || course.course_id})`
-        );
+      if (partialMatches.length === 1) {
+        console.log(`⚠️ SINGLE PARTIAL MATCH: Found partial match: "${this.getCourseName(partialMatches[0])}"`);
+        return this.enrichCourseData(partialMatches[0]);
+      }
+
+      // NO CLEAR MATCH FOUND - Return detailed error with suggestions
+      console.log(`❌ NO CLEAR MATCH: No clear match found for "${identifier}"`);
+      
+      // Show best matches as suggestions (limit to top 5)
+      const suggestions = courses.slice(0, 5).map((course: any) => 
+        `"${this.getCourseName(course)}" (ID: ${course.id || course.course_id})`
+      );
+
+      if (suggestions.length > 0) {
         throw new Error(`No exact match found for course "${identifier}". Did you mean one of these? ${suggestions.join(', ')}. For exact matching, use the complete course name or course ID.`);
       }
 
@@ -588,39 +624,42 @@ export class DoceboAPI {
   // Enhanced user search with better email matching
   async findUserByEmail(email: string): Promise<any> {
     try {
-      console.log(`🔍 FIXED: Enhanced user search for: ${email}`);
+      console.log(`🔍 ENHANCED USER SEARCH: Finding user by email: ${email}`);
       
+      // Method 1: Direct search with exact email
       const exactSearch = await this.apiRequest('/manage/v1/user', 'GET', null, {
         search_text: email,
         page_size: 200
       });
       
       const users = exactSearch.data?.items || [];
-      console.log(`📊 FIXED: Found ${users.length} users from search`);
+      console.log(`📊 ENHANCED USER SEARCH: Found ${users.length} users from search`);
       
+      // Look for exact email match first
       const exactMatch = users.find((u: any) => 
         u.email && u.email.toLowerCase() === email.toLowerCase()
       );
       
       if (exactMatch) {
-        console.log(`✅ FIXED: Found exact email match: ${exactMatch.fullname || 'No name'} (${exactMatch.email})`);
+        console.log(`✅ ENHANCED USER SEARCH: Found exact email match: ${exactMatch.fullname || 'No name'} (${exactMatch.email})`);
         return exactMatch;
       }
       
+      // If no exact match, look for partial matches but be careful
       const partialMatch = users.find((u: any) => 
         u.email && u.email.toLowerCase().includes(email.toLowerCase())
       );
       
       if (partialMatch) {
-        console.log(`⚠️ FIXED: Found partial email match: ${partialMatch.fullname || 'No name'} (${partialMatch.email})`);
+        console.log(`⚠️ ENHANCED USER SEARCH: Found partial email match: ${partialMatch.fullname || 'No name'} (${partialMatch.email})`);
         return partialMatch;
       }
       
-      console.log(`❌ FIXED: No user found with email: ${email}`);
+      console.log(`❌ ENHANCED USER SEARCH: No user found with email: ${email}`);
       return null;
       
     } catch (error) {
-      console.error(`❌ FIXED: Error in findUserByEmail for ${email}:`, error);
+      console.error(`❌ ENHANCED USER SEARCH: Error in findUserByEmail for ${email}:`, error);
       throw error;
     }
   }
