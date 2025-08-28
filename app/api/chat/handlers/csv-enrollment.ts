@@ -1,4 +1,5 @@
-// app/api/chat/handlers/csv-enrollment.ts - CSV-based bulk enrollment handler
+// app/api/chat/handlers/csv-enrollment.ts - UPDATED with validity date support
+
 import { NextResponse } from 'next/server';
 import { DoceboAPI } from '../docebo-api';
 
@@ -7,6 +8,8 @@ interface CSVRow {
   resource: string;
   assignmentType?: string;
   resourceType?: string;
+  startValidity?: string;  // NEW
+  endValidity?: string;    // NEW
 }
 
 interface CSVProcessingResult {
@@ -62,6 +65,7 @@ Please check:
 • CSV format is correct
 • All course names exist in Docebo
 • All email addresses are valid
+• Validity dates are in YYYY-MM-DD format
 • You have permission to enroll users`,
         success: false,
         timestamp: new Date().toISOString()
@@ -97,6 +101,7 @@ Please check:
 • CSV format is correct
 • All learning plan names exist in Docebo
 • All email addresses are valid
+• Validity dates are in YYYY-MM-DD format
 • You have permission to enroll users`,
         success: false,
         timestamp: new Date().toISOString()
@@ -132,6 +137,7 @@ Please check:
     }
   }
 
+  // UPDATED: Process CSV enrollment with validity dates support
   private static async processCSVEnrollment(
     rows: string[][],
     headers: string[],
@@ -152,24 +158,60 @@ Please check:
       }
     };
 
-    // Get column indices
+    // Get column indices - UPDATED with validity dates
     const headerLower = headers.map(h => h.toLowerCase().trim());
     const emailIndex = headerLower.indexOf('email');
     const resourceIndex = headerLower.indexOf(resourceType === 'course' ? 'course' : 'learning_plan');
     const assignmentTypeIndex = headerLower.indexOf('assignment_type');
+    
+    // NEW: Get validity date column indices
+    const startValidityIndex = this.findValidityColumn(headerLower, ['start_validity', 'validity_start', 'start_date', 'valid_from']);
+    const endValidityIndex = this.findValidityColumn(headerLower, ['end_validity', 'validity_end', 'end_date', 'valid_until', 'expires']);
+
+    console.log(`📋 CSV Column Mapping:`, {
+      email: emailIndex,
+      resource: resourceIndex,
+      assignmentType: assignmentTypeIndex,
+      startValidity: startValidityIndex,
+      endValidity: endValidityIndex
+    });
 
     // Group by resource to minimize API calls
-    const resourceGroups = new Map<string, Array<{ email: string; assignmentType: string; rowIndex: number }>>();
+    const resourceGroups = new Map<string, Array<{ 
+      email: string; 
+      assignmentType: string; 
+      startValidity?: string;
+      endValidity?: string;
+      rowIndex: number 
+    }>>();
     
     rows.forEach((row, index) => {
       const resourceName = row[resourceIndex]?.trim();
       const email = row[emailIndex]?.trim();
       const assignmentType = assignmentTypeIndex >= 0 ? (row[assignmentTypeIndex]?.trim() || 'required') : 'required';
       
+      // NEW: Extract validity dates
+      const startValidity = startValidityIndex >= 0 ? row[startValidityIndex]?.trim() : undefined;
+      const endValidity = endValidityIndex >= 0 ? row[endValidityIndex]?.trim() : undefined;
+      
+      // Validate date formats if provided
+      if (startValidity && !this.isValidDate(startValidity)) {
+        console.warn(`⚠️ Invalid start validity date format: ${startValidity} (row ${index + 1})`);
+      }
+      if (endValidity && !this.isValidDate(endValidity)) {
+        console.warn(`⚠️ Invalid end validity date format: ${endValidity} (row ${index + 1})`);
+      }
+      
       if (!resourceGroups.has(resourceName)) {
         resourceGroups.set(resourceName, []);
       }
-      resourceGroups.get(resourceName)!.push({ email, assignmentType, rowIndex: index });
+      resourceGroups.get(resourceName)!.push({ 
+        email, 
+        assignmentType, 
+        startValidity,
+        endValidity,
+        rowIndex: index 
+      });
     });
 
     // Process each resource group
@@ -212,11 +254,24 @@ Please check:
                 return;
               }
 
-              // Enroll user
-              await enrollFunction(user.user_id || user.id, resourceId, {
+              // UPDATED: Build enrollment options with validity dates
+              const enrollmentOptions: any = {
                 level: 'student',
                 assignmentType: userInfo.assignmentType
-              });
+              };
+
+              // NEW: Add validity dates if provided
+              if (userInfo.startValidity && this.isValidDate(userInfo.startValidity)) {
+                enrollmentOptions.startValidity = userInfo.startValidity;
+              }
+              if (userInfo.endValidity && this.isValidDate(userInfo.endValidity)) {
+                enrollmentOptions.endValidity = userInfo.endValidity;
+              }
+
+              console.log(`📅 Enrolling ${userInfo.email} with options:`, enrollmentOptions);
+
+              // Enroll user
+              await enrollFunction(user.user_id || user.id, resourceId, enrollmentOptions);
               
               result.successful.push({
                 email: userInfo.email,
@@ -449,6 +504,7 @@ Please check:
 • Review failed entries for data issues
 • Check that all resources exist in Docebo
 • Verify user permissions for failed operations
+• Ensure validity dates are in YYYY-MM-DD format
 • Re-upload corrected CSV for failed entries`;
     } else {
       responseMessage += `🎉 **All CSV operations completed successfully!**
@@ -456,11 +512,12 @@ Please check:
 Perfect execution - all users have been processed without errors.`;
     }
 
-    // Add performance stats
+    // Add performance stats with validity date info
     responseMessage += `\n\n📊 **Performance Stats**:
 • **Processing Rate**: ${Math.round(result.summary.total / (result.summary.processingTime / 1000))} operations/second
 • **Success Rate**: ${Math.round((result.summary.successful / result.summary.total) * 100)}%
-• **Batch Processing**: Optimized for API rate limits`;
+• **Batch Processing**: Optimized for API rate limits
+• **Validity Dates**: Automatically processed when provided`;
 
     return NextResponse.json({
       response: responseMessage,
@@ -479,7 +536,7 @@ Perfect execution - all users have been processed without errors.`;
     });
   }
 
-  // Utility method to validate CSV structure before processing
+  // UPDATED: Utility method to validate CSV structure with validity dates
   static validateCSVStructure(csvData: any, operation: string): { isValid: boolean; errors: string[] } {
     const errors: string[] = [];
     
@@ -537,24 +594,50 @@ Perfect execution - all users have been processed without errors.`;
       }
     }
 
+    // NEW: Validate validity date columns if present
+    const startValidityIndex = this.findValidityColumn(headerLower, ['start_validity', 'validity_start', 'start_date', 'valid_from']);
+    const endValidityIndex = this.findValidityColumn(headerLower, ['end_validity', 'validity_end', 'end_date', 'valid_until', 'expires']);
+
+    if (startValidityIndex >= 0) {
+      const invalidStartDates = sampleRows.filter((row: string[]) => {
+        const date = row[startValidityIndex]?.trim();
+        return date && !this.isValidDate(date);
+      });
+      
+      if (invalidStartDates.length > 0) {
+        errors.push(`Invalid start validity date format detected (use YYYY-MM-DD)`);
+      }
+    }
+
+    if (endValidityIndex >= 0) {
+      const invalidEndDates = sampleRows.filter((row: string[]) => {
+        const date = row[endValidityIndex]?.trim();
+        return date && !this.isValidDate(date);
+      });
+      
+      if (invalidEndDates.length > 0) {
+        errors.push(`Invalid end validity date format detected (use YYYY-MM-DD)`);
+      }
+    }
+
     return {
       isValid: errors.length === 0,
       errors
     };
   }
 
-  // Generate download template for different operations
+  // UPDATED: Generate download template with validity dates
   static generateCSVTemplate(operation: string): string {
     const templates = {
-      course_enrollment: `email,course,assignment_type
-john@company.com,"Python Programming",required
-sarah@company.com,"Data Science Basics",optional
-mike@company.com,"Excel Advanced",required`,
+      course_enrollment: `email,course,assignment_type,start_validity,end_validity
+john@company.com,"Python Programming",required,2025-01-01,2025-12-31
+sarah@company.com,"Data Science Basics",optional,2025-02-01,2025-11-30
+mike@company.com,"Excel Advanced",required,,`,
 
-      lp_enrollment: `email,learning_plan,assignment_type
-john@company.com,"Leadership Development",required
-sarah@company.com,"Technical Skills Path",optional
-mike@company.com,"Management Training",required`,
+      lp_enrollment: `email,learning_plan,assignment_type,start_validity,end_validity
+john@company.com,"Leadership Development",required,2025-01-01,2025-12-31
+sarah@company.com,"Technical Skills Path",optional,2025-02-01,2025-11-30
+mike@company.com,"Management Training",required,,`,
 
       unenrollment: `email,resource,resource_type
 john@company.com,"Old Training Course",course
@@ -563,5 +646,27 @@ mike@company.com,"Deprecated Program",course`
     };
 
     return templates[operation as keyof typeof templates] || '';
+  }
+
+  // NEW: Helper methods for validity date support
+  private static findValidityColumn(headers: string[], possibleNames: string[]): number {
+    for (const name of possibleNames) {
+      const index = headers.indexOf(name);
+      if (index >= 0) return index;
+    }
+    return -1;
+  }
+
+  private static isValidDate(dateString: string): boolean {
+    if (!dateString || dateString.trim() === '') return true; // Empty dates are valid (optional)
+    
+    // Check YYYY-MM-DD format
+    const regex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!regex.test(dateString)) return false;
+    
+    // Check if it's a valid date
+    const date = new Date(dateString);
+    return date instanceof Date && !isNaN(date.getTime()) && 
+           date.toISOString().startsWith(dateString);
   }
 }
