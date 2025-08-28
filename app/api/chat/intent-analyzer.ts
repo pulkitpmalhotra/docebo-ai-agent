@@ -202,34 +202,38 @@ export class IntentAnalyzer {
         confidence: this.extractMultipleEmails(message).length > 1 ? 0.95 : 0
       },
 
-      {
-        intent: 'bulk_unenroll',
-        patterns: [
-          /(?:unenroll|remove|drop)\s+(.+?)\s+(?:from|out of)\s+(.+)/i,
-          /(?:bulk|mass)\s+(?:unenroll|remove)\s+(.+?)\s+(?:from|out of)\s+(.+)/i
-        ],
-        extractEntities: () => {
-          const allEmails = this.extractMultipleEmails(message);
-          
-          if (allEmails.length <= 1) return null; // Not bulk
-          
-          console.log(`🎯 BULK UNENROLL: Analyzing bulk unenrollment: ${allEmails.length} emails`);
-          
-          const resourceMatch = message.match(/(?:from|out of)\s+(?:course|training|learning plan|lp)\s+(.+?)(?:\s*$|\?|!|\.)/i) ||
-                               message.match(/(?:from|out of)\s+(.+?)(?:\s*$|\?|!|\.)/i);
-          
-          const resourceType = /learning plan|lp|learning path/i.test(message) ? 'learning_plan' : 'course';
-          
-          return {
-            emails: allEmails,
-            resourceName: resourceMatch ? resourceMatch[1].trim() : (courseName || learningPlanName),
-            resourceType: resourceType,
-            action: 'bulk_unenroll',
-            isBulk: true
-          };
-        },
-        confidence: this.extractMultipleEmails(message).length > 1 ? 0.95 : 0
-      },
+{
+  intent: 'bulk_unenroll',
+  patterns: [
+    /(?:unenroll|remove|drop)\s+(.+?)\s+(?:from|out of)\s+(.+)/i,
+    /(?:bulk|mass)\s+(?:unenroll|remove)\s+(.+?)\s+(?:from|out of)\s+(.+)/i
+  ],
+  extractEntities: () => {
+    const allEmails = this.extractMultipleEmails(message);
+    
+    // CRITICAL FIX: Only process if multiple emails are actually found
+    if (allEmails.length <= 1) {
+      console.log(`❌ NOT BULK: Only ${allEmails.length} email(s) found, not a bulk operation`);
+      return null; // Not bulk
+    }
+    
+    console.log(`🎯 BULK UNENROLL: Analyzing bulk unenrollment: ${allEmails.length} emails`);
+    
+    const resourceMatch = message.match(/(?:from|out of)\s+(?:course|training|learning plan|lp)\s+(.+?)(?:\s*$|\?|!|\.)/i) ||
+                         message.match(/(?:from|out of)\s+(.+?)(?:\s*$|\?|!|\.)/i);
+    
+    const resourceType = /learning plan|lp|learning path/i.test(message) ? 'learning_plan' : 'course';
+    
+    return {
+      emails: allEmails,
+      resourceName: resourceMatch ? resourceMatch[1].trim() : (courseName || learningPlanName),
+      resourceType: resourceType,
+      action: 'bulk_unenroll',
+      isBulk: true
+    };
+  },
+  confidence: this.extractMultipleEmails(message).length > 1 ? 0.99 : 0 // HIGHER confidence than individual when multiple emails
+},
 
       // ENROLLMENT CHECKING patterns
       {
@@ -270,47 +274,54 @@ export class IntentAnalyzer {
       },
 
       // UNENROLLMENT patterns - HIGHEST PRIORITY for unenroll commands
-      {
-        intent: 'unenroll_user_from_course',
-        patterns: [
-          /(?:unenroll|remove|drop)\s+(.+?)\s+(?:from|out of)\s+(?:course|training)\s+(.+?)(?:\s*$|\?|!|\.)/i,
-          /(?:course unenrollment|remove from course)\s+(.+?)\s+(?:from|out of)\s+(.+)/i
-        ],
-        extractEntities: () => {
-          console.log(`🔍 UNENROLL COURSE: Analyzing message: "${message}"`);
+{
+  intent: 'unenroll_user_from_course',
+  patterns: [
+    /(?:unenroll|remove|drop)\s+(.+?)\s+(?:from|out of)\s+(?:course|training)\s+(.+?)(?:\s*$|\?|!|\.)/i,
+    /(?:course unenrollment|remove from course)\s+(.+?)\s+(?:from|out of)\s+(.+)/i
+  ],
+  extractEntities: () => {
+    console.log(`🔍 UNENROLL COURSE: Analyzing message: "${message}"`);
+    
+    // CRITICAL FIX: Check for multiple emails FIRST - if found, return null to defer to bulk handler
+    const allEmails = this.extractMultipleEmails(message);
+    if (allEmails.length > 1) {
+      console.log(`🔄 DEFER TO BULK: Found ${allEmails.length} emails, deferring to bulk unenrollment handler`);
+      return null; // Let bulk handler process this
+    }
+    
+    const unenrollMatch = message.match(/(?:unenroll|remove|drop)\s+(.+?)\s+(?:from|out of)\s+(?:course|training)\s+(.+?)(?:\s*$|\?|!|\.)/i);
+    
+    if (unenrollMatch) {
+      const userPart = unenrollMatch[1].trim();
+      let coursePart = unenrollMatch[2].trim();
+      
+      // FIXED: Better course name extraction for unenrollment
+      // Remove common trailing words that aren't part of the course name
+      coursePart = coursePart.replace(/\s+(please|now|immediately|today|asap)$/i, '');
+      coursePart = coursePart.replace(/[\.!?]+$/, '');
+      
+      console.log(`👤 UNENROLL: User part: "${userPart}"`);
+      console.log(`📚 UNENROLL: Course part: "${coursePart}"`);
+      
+      return {
+        email: this.extractEmailFromText(userPart) || userPart,
+        courseName: coursePart,
+        resourceType: 'course',
+        action: 'unenroll'
+      };
+    }
           
-          const unenrollMatch = message.match(/(?:unenroll|remove|drop)\s+(.+?)\s+(?:from|out of)\s+(?:course|training)\s+(.+?)(?:\s*$|\?|!|\.)/i);
-          
-          if (unenrollMatch) {
-            const userPart = unenrollMatch[1].trim();
-            let coursePart = unenrollMatch[2].trim();
-            
-            // FIXED: Better course name extraction for unenrollment
-            // Remove common trailing words that aren't part of the course name
-            coursePart = coursePart.replace(/\s+(please|now|immediately|today|asap)$/i, '');
-            coursePart = coursePart.replace(/[\.!?]+$/, '');
-            
-            console.log(`👤 UNENROLL: User part: "${userPart}"`);
-            console.log(`📚 UNENROLL: Course part: "${coursePart}"`);
-            
-            return {
-              email: this.extractEmailFromText(userPart) || userPart,
-              courseName: coursePart,
-              resourceType: 'course',
-              action: 'unenroll'
-            };
-          }
-          
-          // Fallback extraction
-          return {
-            email: email,
-            courseName: this.extractCourseNameForUnenroll(message),
-            resourceType: 'course',
-            action: 'unenroll'
-          };
-        },
-        confidence: 0.98
-      },
+       // Fallback extraction
+    return {
+      email: email,
+      courseName: this.extractCourseNameForUnenroll(message),
+      resourceType: 'course',
+      action: 'unenroll'
+    };
+  },
+  confidence: 0.98 // Keep high confidence but defer to bulk when multiple emails detected
+},
 
       {
         intent: 'unenroll_user_from_learning_plan',
