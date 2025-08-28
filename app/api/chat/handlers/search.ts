@@ -205,105 +205,115 @@ ${users.length > 10 ? `\n... and ${users.length - 10} more users` : ''}
   }
 
   static async handleCourseSearch(entities: any, api: DoceboAPI): Promise<NextResponse> {
-    try {
-      const { searchTerm } = entities;
+  try {
+    const { searchTerm } = entities;
 
-      if (!searchTerm) {
-        return NextResponse.json({
-          response: '❌ **Missing Search Term**: Please provide a course name or keyword.\n\n**Examples**: \n• "Find Python courses"\n• "Search Excel training"',
-          success: false,
-          timestamp: new Date().toISOString()
-        });
-      }
-
-      console.log(`🔍 FIXED: Searching courses: "${searchTerm}"`);
-
-      // FIXED: Use correct endpoint and properly map response fields
-      const result = await api.apiRequest('/course/v1/courses', 'GET', null, {
-        search_text: searchTerm,
-        page_size: 100,
-        sort_attr: 'name',
-        sort_dir: 'asc'
-      });
-
-      const courseItems = result.data?.items || [];
-      console.log(`📊 Found ${courseItems.length} courses from API`);
-
-      if (courseItems.length === 0) {
-        return NextResponse.json({
-          response: `❌ **No Courses Found**: "${searchTerm}"\n\nNo courses found matching your search criteria.\n\n💡 **Try**: \n• Different keywords\n• Broader search terms\n• Check spelling`,
-          success: false,
-          timestamp: new Date().toISOString()
-        });
-      }
-
-      // FIXED: Enhanced course list with proper field mappings from your API response
-      const courseList = courseItems.slice(0, 100).map((course: any, index: number) => {
-        const name = course.title || course.name || 'Unknown Course';
-        const courseId = course.id?.toString() || 'Unknown';
-
-        // FIXED: Correct course type mapping based on actual API response
-        let type = 'Course';
-        if (course.type) {
-          switch(course.type.toLowerCase()) {
-            case 'elearning': type = 'E-Learning'; break;
-            case 'classroom': type = 'Classroom'; break;
-            case 'webinar': type = 'Webinar'; break;
-            default: type = course.type; break;
-          }
-        }
-
-        // FIXED: Proper status mapping based on actual API fields
-        let status = 'Unknown';
-        let statusIcon = '📚';
-
-        if (course.published === true || course.course_status === 'published') {
-          status = 'Published';
-          statusIcon = '🟢';
-        } else if (course.published === false || course.course_status === 'unpublished') {
-          status = 'Unpublished';
-          statusIcon = '🟡';
-        }
-
-        // FIXED: Get enrollment count from actual API fields
-        const enrollments = course.enrolled_count || course.enrolled_users_count || course.waiting_list || 0;
-
-        return `${index + 1}. ${statusIcon} **${name}**\n   Type: ${type} • ID: ${courseId} • Status: ${status} • Enrollments: ${enrollments}`;
-      }).join('\n\n');
-
+    if (!searchTerm || searchTerm.trim().length === 0) {
       return NextResponse.json({
-        response: `📚 **Course Search Results**: "${searchTerm}" (${courseItems.length} found)
-
-${courseList}
-
-${courseItems.length > 20 ? `\n... and ${courseItems.length - 20} more courses` : ''}
-
-💡 **Next Steps**: 
-• "Course info [course name]" for details
-• "Enroll [user] in course [course name]" to enroll users`,
-        success: true,
-        data: {
-          courses: courseItems,
-          totalCount: courseItems.length,
-          query: searchTerm,
-          endpoint_used: '/course/v1/courses'
-        },
-        totalCount: courseItems.length,
-        timestamp: new Date().toISOString()
-      });
-
-    } catch (error) {
-      console.error('❌ Course search error:', error);
-
-      return NextResponse.json({
-        response: `❌ **Course Search Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
-
-**Using endpoint**: /course/v1/courses with search_text parameter`,
+        response: '❌ **Missing Search Term**: Please provide a course name or keyword.\n\n**Examples**: \n• "Find Python courses"\n• "Courses about data science"\n• "Search Excel training"',
         success: false,
         timestamp: new Date().toISOString()
       });
     }
+
+    const cleanSearchTerm = searchTerm.trim();
+    console.log(`🔍 FIXED COURSE SEARCH: Searching courses with full term: "${cleanSearchTerm}"`);
+
+    // FIXED: Use correct endpoint and properly map response fields
+    const result = await api.apiRequest('/course/v1/courses', 'GET', null, {
+      search_text: cleanSearchTerm, // Use the FULL search term
+      page_size: 100,
+      sort_attr: 'name',
+      sort_dir: 'asc'
+    });
+
+    const courseItems = result.data?.items || [];
+    console.log(`📊 FIXED: Found ${courseItems.length} courses from API for search term: "${cleanSearchTerm}"`);
+
+    if (courseItems.length === 0) {
+      return NextResponse.json({
+        response: `❌ **No Courses Found**: "${cleanSearchTerm}"\n\nNo courses found matching your search criteria.\n\n💡 **Try**: \n• Different keywords\n• Broader search terms\n• Check spelling\n\n**Examples**:\n• "Find Python courses" instead of "courses about Python programming language"\n• "Data science courses" instead of "advanced data science with machine learning"`,
+        success: false,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // FIXED: Enhanced course list with proper field mappings from your API response
+    const displayLimit = 50; // Show first 50 courses
+    const coursesToDisplay = courseItems.slice(0, displayLimit);
+    
+    const courseList = coursesToDisplay.map((course: any, index: number) => {
+      const name = course.title || course.name || 'Unknown Course';
+      const courseId = course.id?.toString() || 'Unknown';
+
+      // FIXED: Correct course type mapping based on actual API response
+      let type = 'Course';
+      if (course.type) {
+        switch(course.type.toLowerCase()) {
+          case 'elearning': type = 'E-Learning'; break;
+          case 'classroom': type = 'Classroom'; break;
+          case 'webinar': type = 'Webinar'; break;
+          default: type = course.type; break;
+        }
+      }
+
+      // FIXED: Proper status mapping based on actual API fields
+      let status = 'Unknown';
+      let statusIcon = '📚';
+
+      if (course.published === true || course.course_status === 'published') {
+        status = 'Published';
+        statusIcon = '🟢';
+      } else if (course.published === false || course.course_status === 'unpublished') {
+        status = 'Unpublished';
+        statusIcon = '🟡';
+      }
+
+      // FIXED: Get enrollment count from actual API fields
+      const enrollments = course.enrolled_count || course.enrolled_users_count || course.waiting_list || 0;
+
+      return `${index + 1}. ${statusIcon} **${name}**\n   Type: ${type} • ID: ${courseId} • Status: ${status} • Enrollments: ${enrollments}`;
+    }).join('\n\n');
+
+    // FIXED: Proper calculation for remaining courses display
+    const remainingCourses = Math.max(0, courseItems.length - displayLimit);
+    const remainingText = remainingCourses > 0 ? `\n\n... and ${remainingCourses} more courses` : '';
+
+    let responseMessage = `📚 **Course Search Results**: "${cleanSearchTerm}" (${courseItems.length} found)\n\n${courseList}${remainingText}\n\n💡 **Next Steps**: \n• "Course info [course name]" for details\n• "Enroll [user] in course [course name]" to enroll users`;
+
+    // ENHANCED: Add search optimization tips if many results
+    if (courseItems.length > 20) {
+      responseMessage += `\n\n🎯 **Too Many Results?** Try more specific terms:\n• "${cleanSearchTerm} beginner" for beginner courses\n• "${cleanSearchTerm} advanced" for advanced courses\n• Add specific topics like "${cleanSearchTerm} fundamentals"`;
+    }
+
+    return NextResponse.json({
+      response: responseMessage,
+      success: true,
+      data: {
+        courses: courseItems,
+        totalCount: courseItems.length,
+        displayedCount: coursesToDisplay.length,
+        remainingCount: remainingCourses,
+        query: cleanSearchTerm,
+        endpoint_used: '/course/v1/courses',
+        searchTermUsed: cleanSearchTerm
+      },
+      totalCount: courseItems.length,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ FIXED Course search error:', error);
+
+    return NextResponse.json({
+      response: `❌ **Course Search Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
+
+**Using endpoint**: /course/v1/courses with search_text parameter\n**Search term used**: "${entities.searchTerm || 'undefined'}"`,
+      success: false,
+      timestamp: new Date().toISOString()
+    });
   }
+}
 
 // Fixed version of handleLearningPlanSearch in app/api/chat/handlers/search.ts
 
@@ -311,21 +321,22 @@ static async handleLearningPlanSearch(entities: any, api: DoceboAPI): Promise<Ne
   try {
     const { searchTerm } = entities;
 
-    if (!searchTerm) {
+    if (!searchTerm || searchTerm.trim().length === 0) {
       return NextResponse.json({
-        response: 'Missing Search Term: Please provide a learning plan name or keyword.\n\nExamples: \n• "Find Python learning plans"\n• "Search leadership programs"',
+        response: 'Missing Search Term: Please provide a learning plan name or keyword.\n\nExamples: \n• "Find Python learning plans"\n• "Learning plans about leadership"\n• "Search data science programs"',
         success: false,
         timestamp: new Date().toISOString()
       });
     }
 
-    console.log(`Searching learning plans: "${searchTerm}"`);
+    const cleanSearchTerm = searchTerm.trim();
+    console.log(`🔍 FIXED LP SEARCH: Searching learning plans with full term: "${cleanSearchTerm}"`);
 
     // FIXED: Remove problematic sort_attr parameter
     let result;
     try {
       result = await api.apiRequest('/learningplan/v1/learningplans', 'GET', null, {
-        search_text: searchTerm,
+        search_text: cleanSearchTerm, // Use the FULL search term
         page_size: 100
         // REMOVED: sort_attr and sort_dir parameters that cause 400 error
       });
@@ -337,13 +348,14 @@ static async handleLearningPlanSearch(entities: any, api: DoceboAPI): Promise<Ne
         page_size: 100
       });
       
-      // Manual filtering
+      // Manual filtering with the FULL search term
       const allItems = result.data?.items || [];
       const filteredItems = allItems.filter((lp: any) => {
         const name = (lp.title || lp.name || '').toLowerCase();
         const description = (lp.description || '').toLowerCase();
-        return name.includes(searchTerm.toLowerCase()) || 
-               description.includes(searchTerm.toLowerCase());
+        const cleanSearchTermLower = cleanSearchTerm.toLowerCase();
+        return name.includes(cleanSearchTermLower) || 
+               description.includes(cleanSearchTermLower);
       });
       
       // Replace result with filtered data
@@ -356,18 +368,21 @@ static async handleLearningPlanSearch(entities: any, api: DoceboAPI): Promise<Ne
     }
 
     const lpItems = result.data?.items || [];
-    console.log(`Found ${lpItems.length} learning plans from API`);
+    console.log(`📊 FIXED LP SEARCH: Found ${lpItems.length} learning plans from API for search term: "${cleanSearchTerm}"`);
 
     if (lpItems.length === 0) {
       return NextResponse.json({
-        response: `No Learning Plans Found: "${searchTerm}"\n\nNo learning plans found matching your search criteria.\n\nTry: \n• Different keywords\n• Broader search terms\n• Check spelling`,
+        response: `No Learning Plans Found: "${cleanSearchTerm}"\n\nNo learning plans found matching your search criteria.\n\nTry: \n• Different keywords\n• Broader search terms\n• Check spelling\n\n**Examples**:\n• "Find leadership learning plans" instead of "learning plans about advanced leadership skills"\n• "Data science programs" instead of "comprehensive data science learning paths"`,
         success: false,
         timestamp: new Date().toISOString()
       });
     }
 
-    // Enhanced learning plan list with proper field mappings
-    const planList = lpItems.slice(0, 100).map((plan: any, index: number) => {
+    // FIXED: Enhanced learning plan list with proper field mappings and correct math
+    const displayLimit = 50; // Show first 50 learning plans
+    const plansToDisplay = lpItems.slice(0, displayLimit);
+    
+    const planList = plansToDisplay.map((plan: any, index: number) => {
       const name = plan.title || plan.name || 'Unknown Learning Plan';
       const planId = (plan.learning_plan_id || plan.id || 'Unknown').toString();
 
@@ -389,14 +404,30 @@ static async handleLearningPlanSearch(entities: any, api: DoceboAPI): Promise<Ne
       return `${index + 1}. ${statusIcon} **${name}**\n   ID: ${planId} • Status: ${status} • Enrollments: ${enrollments}`;
     }).join('\n\n');
 
+    // FIXED: Proper calculation for remaining learning plans display
+    const remainingPlans = Math.max(0, lpItems.length - displayLimit);
+    const remainingText = remainingPlans > 0 ? `\n\n... and ${remainingPlans} more learning plans` : '';
+
+    let responseMessage = `Learning Plan Search Results: "${cleanSearchTerm}" (${lpItems.length} found)\n\n${planList}${remainingText}\n\nNext Steps: \n• "Learning plan info [plan name]" for details\n• "Enroll [user] in learning plan [plan name]" to enroll users`;
+
+    // ENHANCED: Add search optimization tips if many results
+    if (lpItems.length > 20) {
+      responseMessage += `\n\n🎯 **Too Many Results?** Try more specific terms:\n• "${cleanSearchTerm} beginner" for beginner programs\n• "${cleanSearchTerm} advanced" for advanced programs\n• Add specific areas like "${cleanSearchTerm} fundamentals"`;
+    }
+
+    responseMessage += `\n\n*Using endpoint: /learningplan/v1/learningplans (search optimized for full phrases)*`;
+
     return NextResponse.json({
-      response: `Learning Plan Search Results: "${searchTerm}" (${lpItems.length} found)\n\n${planList}\n\n${lpItems.length > 20 ? `... and ${lpItems.length - 20} more learning plans\n\n` : ''}Next Steps: \n• "Learning plan info [plan name]" for details\n• "Enroll [user] in learning plan [plan name]" to enroll users\n\n*Using endpoint: /learningplan/v1/learningplans (removed sort_attr to fix 400 error)*`,
+      response: responseMessage,
       success: true,
       data: {
         learningPlans: lpItems,
         totalCount: lpItems.length,
-        query: searchTerm,
-        endpoint_used: '/learningplan/v1/learningplans'
+        displayedCount: plansToDisplay.length,
+        remainingCount: remainingPlans,
+        query: cleanSearchTerm,
+        endpoint_used: '/learningplan/v1/learningplans',
+        searchTermUsed: cleanSearchTerm
       },
       totalCount: lpItems.length,
       timestamp: new Date().toISOString()
@@ -406,7 +437,7 @@ static async handleLearningPlanSearch(entities: any, api: DoceboAPI): Promise<Ne
     console.error('Learning plan search error:', error);
 
     return NextResponse.json({
-      response: `Learning Plan Search Failed: ${error instanceof Error ? error.message : 'Unknown error'}\n\nUsing endpoint: /learningplan/v1/learningplans (removed sort_attr parameter that was causing 400 error)`,
+      response: `Learning Plan Search Failed: ${error instanceof Error ? error.message : 'Unknown error'}\n\nUsing endpoint: /learningplan/v1/learningplans (removed sort_attr parameter that was causing 400 error)\n**Search term used**: "${entities.searchTerm || 'undefined'}"`,
       success: false,
       timestamp: new Date().toISOString()
     });
