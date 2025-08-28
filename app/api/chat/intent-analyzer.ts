@@ -467,25 +467,58 @@ export class IntentAnalyzer {
       },
 
       // Search patterns
-      {
-        intent: 'search_courses',
-        patterns: [
-          /(?:find|search)\s+(.+?)\s+(?:course|courses|training)/i,
-          /(?:course|courses)\s+(?:about|for|on)\s+(.+)/i,
-          /find course\s+(.+)/i,
-          /search course\s+(.+)/i
-        ],
-        extractEntities: () => {
-          const courseMatch = message.match(/(?:find|search)\s+(.+?)\s+(?:course|courses|training)/i) ||
-                             message.match(/(?:course|courses)\s+(?:about|for|on)\s+(.+?)(?:\s|$)/i) ||
-                             message.match(/(?:find course|search course)\s+(.+?)(?:\s|$)/i);
-          
-          return {
-            searchTerm: courseMatch ? courseMatch[1].trim() : (courseName || '')
-          };
-        },
-        confidence: 0.9
-      },
+      {{
+  intent: 'search_courses',
+  patterns: [
+    /(?:find|search)\s+(.+?)\s+(?:course|courses|training)/i,
+    /(?:course|courses)\s+(?:about|for|on)\s+(.+)/i,
+    /find course\s+(.+)/i,
+    /search course\s+(.+)/i,
+    // ADDED: Better patterns for multi-word searches
+    /(?:courses?|training)\s+(?:about|on|for|related to)\s+(.+?)(?:\s*$|\?|!|\.)/i,
+    /(?:find|search for|look for|show me)\s+(.+?)\s+courses?/i
+  ],
+  extractEntities: () => {
+    console.log(`🔍 COURSE SEARCH: Analyzing message: "${message}"`);
+    
+    // ENHANCED: Better search term extraction for multi-word phrases
+    const searchPatterns = [
+      // Pattern 1: "courses about data science" 
+      /(?:courses?|training)\s+(?:about|on|for|related to)\s+(.+?)(?:\s*$|\?|!|\.)/i,
+      // Pattern 2: "find data science courses"
+      /(?:find|search for|look for|show me)\s+(.+?)\s+courses?/i,
+      // Pattern 3: "find/search [term] course/courses"
+      /(?:find|search)\s+(.+?)\s+(?:course|courses|training)/i,
+      // Pattern 4: "course/courses about/for [term]"
+      /(?:course|courses)\s+(?:about|for|on)\s+(.+?)(?:\s*$|\?|!|\.)/i,
+      // Pattern 5: Simple "find course [term]"
+      /(?:find course|search course)\s+(.+?)(?:\s*$|\?|!|\.)/i
+    ];
+    
+    for (const pattern of searchPatterns) {
+      const courseMatch = message.match(pattern);
+      if (courseMatch && courseMatch[1]) {
+        let searchTerm = courseMatch[1].trim();
+        
+        // ENHANCED: Clean up extracted search term better
+        searchTerm = searchTerm.replace(/\s+(courses?|training|class|classes)$/i, '');
+        searchTerm = searchTerm.replace(/^(about|for|on|related to)\s+/i, '');
+        searchTerm = searchTerm.trim();
+        
+        if (searchTerm.length > 0) {
+          console.log(`✅ COURSE SEARCH: Extracted search term: "${searchTerm}" using pattern: ${pattern.source}`);
+          return { searchTerm: searchTerm };
+        }
+      }
+    }
+    
+    // FALLBACK: Use courseName from global extraction if available
+    const fallbackTerm = courseName || '';
+    console.log(`⚠️ COURSE SEARCH: Using fallback term: "${fallbackTerm}"`);
+    return { searchTerm: fallbackTerm };
+  },
+  confidence: 0.9
+},
 
       // User search patterns
       {
@@ -508,24 +541,49 @@ export class IntentAnalyzer {
       },
 
       // SEARCH LEARNING PLANS patterns
-      {
-        intent: 'search_learning_plans',
-        patterns: [
-          /(?:find|search)\s+(.+?)\s+(?:learning plan|learning plans|lp|lps)/i,
-          /(?:learning plan|learning plans|lp|lps)\s+(?:about|for|on)\s+(.+)/i,
-          /find\s+learning plan\s+(.+)/i
-        ],
-        extractEntities: () => {
-          const lpMatch = message.match(/(?:find|search)\s+(.+?)\s+(?:learning plan|learning plans|lp|lps)/i) ||
-                         message.match(/(?:learning plan|learning plans|lp|lps)\s+(?:about|for|on)\s+(.+?)(?:\s|$)/i) ||
-                         message.match(/find\s+learning plan\s+(.+?)(?:\s|$)/i);
-          
-          return {
-            searchTerm: lpMatch ? lpMatch[1].trim() : learningPlanName || ''
-          };
-        },
-        confidence: 0.9
-      },
+      
+  intent: 'search_learning_plans',
+  patterns: [
+    /(?:find|search)\s+(.+?)\s+(?:learning plan|learning plans|lp|lps)/i,
+    /(?:learning plan|learning plans|lp|lps)\s+(?:about|for|on)\s+(.+)/i,
+    /find\s+learning plan\s+(.+)/i,
+    // ADDED: Better patterns for multi-word searches
+    /(?:learning plans?|lps?)\s+(?:about|on|for|related to)\s+(.+?)(?:\s*$|\?|!|\.)/i,
+    /(?:find|search for|look for|show me)\s+(.+?)\s+(?:learning plans?|lps?)/i
+  ],
+  extractEntities: () => {
+    console.log(`🔍 LP SEARCH: Analyzing message: "${message}"`);
+    
+    // ENHANCED: Better search term extraction for multi-word phrases
+    const searchPatterns = [
+      // Pattern 1: "learning plans about data science"
+      /(?:learning plans?|lps?)\s+(?:about|on|for|related to)\s+(.+?)(?:\s*$|\?|!|\.)/i,
+      // Pattern 2: "find data science learning plans"
+      /(?:find|search for|look for|show me)\s+(.+?)\s+(?:learning plans?|lps?)/i,
+      // Pattern 3: "find/search [term] learning plan"
+      /(?:find|search)\s+(.+?)\s+(?:learning plan|learning plans|lp|lps)/i,
+      // Pattern 4: "learning plan/plans about/for [term]"
+      /(?:learning plan|learning plans|lp|lps)\s+(?:about|for|on)\s+(.+?)(?:\s*$|\?|!|\.)/i,
+      // Pattern 5: Simple "find learning plan [term]"
+      /find\s+learning plan\s+(.+?)(?:\s*$|\?|!|\.)/i
+    ];
+    
+    for (const pattern of searchPatterns) {
+      const lpMatch = message.match(pattern);
+      if (lpMatch && lpMatch[1]) {
+        let searchTerm = lpMatch[1].trim();
+        
+        // ENHANCED: Clean up extracted search term better
+        searchTerm = searchTerm.replace(/\s+(learning plans?|lps?|programs?|paths?)$/i, '');
+        searchTerm = searchTerm.replace(/^(about|for|on|related to)\s+/i, '');
+        searchTerm = searchTerm.trim();
+        
+        if (searchTerm.length > 0) {
+          console.log(`✅ LP SEARCH: Extracted search term: "${searchTerm}" using pattern: ${pattern.source}`);
+          return { searchTerm: searchTerm };
+        }
+      }
+    },
 
       // INFO patterns
       {
