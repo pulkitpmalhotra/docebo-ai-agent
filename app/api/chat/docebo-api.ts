@@ -350,54 +350,340 @@ async unenrollUserFromCourse(userId: string, courseId: string): Promise<any> {
 
   // FIXED: Unenroll user from learning plan using multiple fallback endpoints
   async unenrollUserFromLearningPlan(userId: string, learningPlanId: string): Promise<any> {
-    try {
-      console.log(`🔄 FIXED LP UNENROLL: Attempting to unenroll user ${userId} from learning plan ${learningPlanId}`);
-      
-      const unenrollmentBody = {
-        user_ids: [parseInt(userId)],
-        learningplan_ids: [parseInt(learningPlanId)],
-        reset_tracks: false,
-        cascade_unenroll_from_courses_in_selected_learning_plan: false,
-        delete_issued_certificates: false
-      };
-
-      console.log(`📋 FIXED LP UNENROLL: Using DELETE /learningplan/v1/learningplans/enrollments with body:`, unenrollmentBody);
-      
-      // Try the primary learning plan unenrollment endpoint
-      try {
-        const result = await this.apiRequest('/learningplan/v1/learningplans/enrollments', 'DELETE', unenrollmentBody);
-        console.log(`✅ FIXED LP UNENROLL: Learning plan unenrollment successful via primary endpoint:`, result);
-        return result;
-      } catch (primaryError) {
-        console.log(`❌ Primary LP unenroll endpoint failed, trying alternative:`, primaryError);
-        
-        // Try alternative endpoint format
-        try {
-          const result = await this.apiRequest('/learningplan/v1/enrollments', 'DELETE', unenrollmentBody);
-          console.log(`✅ FIXED LP UNENROLL: Learning plan unenrollment successful via alternative endpoint:`, result);
-          return result;
-        } catch (alternativeError) {
-          console.log(`❌ Alternative LP unenroll endpoint also failed:`, alternativeError);
-          
-          // Try the generic unenrollment endpoint
-          const genericBody = {
-            learningplan_ids: [parseInt(learningPlanId)],
-            user_ids: [parseInt(userId)],
-            reset_tracks: false
+  try {
+    console.log(`🔄 INTELLIGENT LP UNENROLL: Starting intelligent unenrollment for user ${userId} from learning plan ${learningPlanId}`);
+    
+    // STEP 1: Get learning plan details to find associated courses
+    const learningPlanDetails = await this.getLearningPlanCourses(learningPlanId);
+    console.log(`📋 Found ${learningPlanDetails.courses.length} courses in learning plan`);
+    
+    // STEP 2: Get user's enrollment status in each course
+    const courseEnrollmentStatuses = await this.analyzeUserCourseProgress(userId, learningPlanDetails.courses);
+    
+    // STEP 3: Categorize courses by progress status
+    const coursesToKeep: string[] = []; // In-progress or completed
+    const coursesToRemove: string[] = []; // Not started or enrolled only
+    
+    for (const courseStatus of courseEnrollmentStatuses) {
+      if (this.shouldPreserveCourseEnrollment(courseStatus.status)) {
+        coursesToKeep.push(courseStatus.courseId);
+        console.log(`✅ KEEP: ${courseStatus.courseName} (${courseStatus.status})`);
+      } else {
+        coursesToRemove.push(courseStatus.courseId);
+        console.log(`🗑️ REMOVE: ${courseStatus.courseName} (${courseStatus.status})`);
+      }
+    }
+    
+    console.log(`📊 SUMMARY: Keeping ${coursesToKeep.length} courses, removing ${coursesToRemove.length} courses`);
+    
+    // STEP 4: Execute intelligent unenrollment
+    const result = await this.executeIntelligentUnenrollment(userId, learningPlanId, coursesToRemove);
+    
+    return {
+      ...result,
+      intelligentUnenrollment: {
+        totalCourses: courseEnrollmentStatuses.length,
+        coursesPreserved: coursesToKeep.length,
+        coursesRemoved: coursesToRemove.length,
+        preservedCourses: coursesToKeep.map(courseId => {
+          const courseInfo = courseEnrollmentStatuses.find(c => c.courseId === courseId);
+          return {
+            courseId: courseId,
+            courseName: courseInfo?.courseName || 'Unknown',
+            status: courseInfo?.status || 'unknown',
+            reason: 'Has progress - preserving enrollment'
           };
+        }),
+        removedCourses: coursesToRemove.map(courseId => {
+          const courseInfo = courseEnrollmentStatuses.find(c => c.courseId === courseId);
+          return {
+            courseId: courseId,
+            courseName: courseInfo?.courseName || 'Unknown',
+            status: courseInfo?.status || 'unknown',
+            reason: 'No progress - cleaning up enrollment'
+          };
+        })
+      }
+    };
+
+  } catch (error) {
+    console.error(`❌ INTELLIGENT LP UNENROLL: Failed for user ${userId}:`, error);
+    throw error;
+  }
+}
+
+// Get courses associated with a learning plan
+private async getLearningPlanCourses(learningPlanId: string): Promise<{courses: any[]}> {
+  try {
+    console.log(`🔍 Getting courses for learning plan ${learningPlanId}`);
+    
+    // Method 1: Try to get learning plan details with courses
+    try {
+      const lpDetails = await this.apiRequest(`/learningplan/v1/learningplans/${learningPlanId}`, 'GET');
+      if (lpDetails.data?.courses) {
+        return { courses: lpDetails.data.courses };
+      }
+    } catch (error) {
+      console.log(`❌ Direct LP details failed:`, error);
+    }
+    
+    // Method 2: Try to get courses via learning plan content endpoint
+    try {
+      const lpContent = await this.apiRequest(`/learningplan/v1/learningplans/${learningPlanId}/courses`, 'GET');
+      if (lpContent.data?.items) {
+        return { courses: lpContent.data.items };
+      }
+    } catch (error) {
+      console.log(`❌ LP content endpoint failed:`, error);
+    }
+    
+    // Method 3: Get all learning plans and find this one
+    const allLPs = await this.apiRequest('/learningplan/v1/learningplans', 'GET');
+    const thisLP = allLPs.data?.items?.find((lp: any) => 
+      (lp.learning_plan_id || lp.id)?.toString() === learningPlanId.toString()
+    );
+    
+    if (thisLP?.courses) {
+      return { courses: thisLP.courses };
+    }
+    
+    // If no courses found, return empty array
+    console.log(`⚠️ No courses found for learning plan ${learningPlanId}`);
+    return { courses: [] };
+    
+  } catch (error) {
+    console.error(`❌ Error getting learning plan courses:`, error);
+    return { courses: [] };
+  }
+}
+
+// Analyze user's progress in each course
+private async analyzeUserCourseProgress(userId: string, courses: any[]): Promise<Array<{
+  courseId: string;
+  courseName: string;
+  status: string;
+  progress: number;
+  completionDate?: string;
+}>> {
+  const courseStatuses = [];
+  
+  for (const course of courses) {
+    const courseId = (course.id || course.course_id || course.idCourse)?.toString();
+    const courseName = course.name || course.title || course.course_name || 'Unknown Course';
+    
+    if (!courseId) {
+      console.log(`⚠️ Skipping course with no ID: ${courseName}`);
+      continue;
+    }
+    
+    try {
+      console.log(`🔍 Checking progress for course: ${courseName} (${courseId})`);
+      
+      // Get user's enrollment in this specific course
+      const enrollmentCheck = await this.checkDirectCourseEnrollment(userId, courseId);
+      
+      if (enrollmentCheck.found) {
+        const enrollment = enrollmentCheck.enrollment;
+        courseStatuses.push({
+          courseId: courseId,
+          courseName: courseName,
+          status: enrollment.enrollmentStatus || 'enrolled',
+          progress: enrollment.progress || 0,
+          completionDate: enrollment.completionDate
+        });
+        
+        console.log(`📊 ${courseName}: ${enrollment.enrollmentStatus} (${enrollment.progress || 0}% progress)`);
+      } else {
+        // Not enrolled in this course (which is odd for a LP course, but handle it)
+        courseStatuses.push({
+          courseId: courseId,
+          courseName: courseName,
+          status: 'not_enrolled',
+          progress: 0
+        });
+        
+        console.log(`📊 ${courseName}: not enrolled`);
+      }
+      
+    } catch (error) {
+      console.log(`❌ Error checking course ${courseName}:`, error);
+      // Default to safe option - preserve the enrollment
+      courseStatuses.push({
+        courseId: courseId,
+        courseName: courseName,
+        status: 'unknown',
+        progress: 0
+      });
+    }
+  }
+  
+  return courseStatuses;
+}
+
+// Determine if we should preserve a course enrollment based on status
+private shouldPreserveCourseEnrollment(status: string): boolean {
+  const statusLower = status.toLowerCase();
+  
+  // PRESERVE: Any progress made or completed
+  const preserveStatuses = [
+    'in_progress',
+    'in progress', 
+    'completed',
+    'passed',
+    'failed', // Even failed attempts show the user tried
+    'unknown' // Safe option - preserve if we're not sure
+  ];
+  
+  // REMOVE: No progress made
+  const removeStatuses = [
+    'enrolled',
+    'not_started',
+    'not started',
+    'waiting',
+    'not_enrolled'
+  ];
+  
+  if (preserveStatuses.includes(statusLower)) {
+    return true;
+  }
+  
+  if (removeStatuses.includes(statusLower)) {
+    return false;
+  }
+  
+  // Default: preserve if we don't recognize the status
+  console.log(`⚠️ Unknown status "${status}" - defaulting to preserve enrollment`);
+  return true;
+}
+
+// Execute the intelligent unenrollment with specific course handling
+private async executeIntelligentUnenrollment(userId: string, learningPlanId: string, coursesToRemove: string[]): Promise<any> {
+  console.log(`🎯 EXECUTING: Intelligent unenrollment - LP + ${coursesToRemove.length} courses`);
+  
+  try {
+    // STEP 1: Unenroll from learning plan only (preserve all course enrollments initially)
+    const lpUnenrollmentBody = {
+      user_ids: [parseInt(userId)],
+      learningplan_ids: [parseInt(learningPlanId)],
+      cascade_unenroll_from_courses_in_selected_learning_plan: false, // Keep all courses initially
+      reset_tracks: false,
+      delete_issued_certificates: false
+    };
+    
+    console.log(`📋 Step 1: Unenrolling from learning plan only`);
+    let lpResult;
+    
+    // Try multiple LP unenrollment endpoints
+    const lpEndpoints = [
+      '/learn/v1/enrollments',
+      '/learningplan/v1/learningplans/enrollments',
+      '/learningplan/v1/enrollments'
+    ];
+    
+    for (const endpoint of lpEndpoints) {
+      try {
+        lpResult = await this.apiRequest(endpoint, 'DELETE', lpUnenrollmentBody);
+        console.log(`✅ LP unenrollment successful via ${endpoint}`);
+        break;
+      } catch (error) {
+        console.log(`❌ LP unenrollment failed via ${endpoint}:`, error);
+        continue;
+      }
+    }
+    
+    if (!lpResult) {
+      throw new Error('All learning plan unenrollment endpoints failed');
+    }
+    
+    // STEP 2: Remove courses with no progress
+    const courseUnenrollmentResults = [];
+    
+    if (coursesToRemove.length > 0) {
+      console.log(`📋 Step 2: Removing ${coursesToRemove.length} courses with no progress`);
+      
+      // Process courses in small batches to avoid API rate limits
+      const batchSize = 5;
+      for (let i = 0; i < coursesToRemove.length; i += batchSize) {
+        const batch = coursesToRemove.slice(i, i + batchSize);
+        
+        for (const courseId of batch) {
+          try {
+            const courseUnenrollResult = await this.unenrollUserFromCourse(userId, courseId);
+            courseUnenrollmentResults.push({
+              courseId: courseId,
+              success: true,
+              result: courseUnenrollResult
+            });
+            console.log(`✅ Removed user from course ${courseId}`);
+          } catch (error) {
+            console.log(`❌ Failed to remove user from course ${courseId}:`, error);
+            courseUnenrollmentResults.push({
+              courseId: courseId,
+              success: false,
+              error: error instanceof Error ? error.message : 'Unknown error'
+            });
+          }
           
-          const result = await this.apiRequest('/learn/v1/enrollments', 'DELETE', genericBody);
-          console.log(`✅ FIXED LP UNENROLL: Learning plan unenrollment successful via generic endpoint:`, result);
-          return result;
+          // Small delay between course unenrollments
+          await new Promise(resolve => setTimeout(resolve, 300));
         }
       }
+    } else {
+      console.log(`📋 Step 2: No courses to remove - all had progress`);
+    }
+    
+    // STEP 3: Return comprehensive results
+    return {
+      learningPlanUnenrollment: lpResult,
+      courseUnenrollments: courseUnenrollmentResults,
+      totalCoursesProcessed: coursesToRemove.length,
+      successfulCourseRemovals: courseUnenrollmentResults.filter(r => r.success).length,
+      failedCourseRemovals: courseUnenrollmentResults.filter(r => !r.success).length
+    };
+    
+  } catch (error) {
+    console.error(`❌ Intelligent unenrollment execution failed:`, error);
+    throw error;
+  }
+}
 
+// Helper method to check direct course enrollment (reuse existing method)
+private async checkDirectCourseEnrollment(userId: string, courseId: string): Promise<any> {
+  // This should call the existing method from the main class
+  // Implementation depends on your existing checkDirectCourseEnrollment method
+  const endpoints = [
+    `/course/v1/courses/${courseId}/enrollments?search_text=${userId}`,
+    `/course/v1/courses/enrollments?user_id[]=${userId}&course_id[]=${courseId}`,
+    `/learn/v1/enrollments?user_id=${userId}&course_id=${courseId}`
+  ];
+
+  for (const endpoint of endpoints) {
+    try {
+      const result = await this.apiRequest(endpoint, 'GET');
+      
+      if (result.data?.items?.length > 0) {
+        const userEnrollment = result.data.items.find((enrollment: any) => {
+          const enrollmentUserId = enrollment.user_id || enrollment.id_user;
+          return enrollmentUserId?.toString() === userId.toString();
+        });
+        
+        if (userEnrollment) {
+          return {
+            found: true,
+            enrollment: this.formatEnhancedCourseEnrollment(userEnrollment),
+            method: 'direct_api',
+            endpoint: endpoint
+          };
+        }
+      }
     } catch (error) {
-      console.error(`❌ FIXED LP UNENROLL: Error unenrolling user ${userId} from learning plan ${learningPlanId}:`, error);
-      throw error;
+      console.log(`❌ Course enrollment check failed for ${endpoint}:`, error);
+      continue;
     }
   }
 
+  return { found: false };
+}
   // FIXED: Enhanced course search with EXACT matching and duplicate detection
 async findCourseByIdentifier(identifier: string): Promise<any> {
     try {
