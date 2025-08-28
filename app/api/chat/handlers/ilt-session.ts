@@ -26,6 +26,39 @@ interface SessionData {
   session_events: SessionEvent[];
 }
 
+interface BulkOperationResult {
+  successful: Array<{
+    email: string;
+    userId: string;
+  }>;
+  failed: Array<{
+    email: string;
+    error: string;
+  }>;
+  summary: {
+    total: number;
+    successful: number;
+    failed: number;
+  };
+}
+
+interface AttendanceResult {
+  successful: Array<{
+    email: string;
+    userId: string;
+    status: string;
+  }>;
+  failed: Array<{
+    email: string;
+    error: string;
+  }>;
+  summary: {
+    total: number;
+    successful: number;
+    failed: number;
+  };
+}
+
 export class ILTSessionHandlers {
   
   // Create ILT Session with Events
@@ -614,8 +647,8 @@ ${errorGuidance}`,
   }
 
   // Private helper methods
-  private static async processBulkILTEnrollment(emails: string[], session: any, api: DoceboAPI): Promise<any> {
-    const result = {
+  private static async processBulkILTEnrollment(emails: string[], session: any, api: DoceboAPI): Promise<BulkOperationResult> {
+    const result: BulkOperationResult = {
       successful: [],
       failed: [],
       summary: { total: emails.length, successful: 0, failed: 0 }
@@ -655,8 +688,8 @@ ${errorGuidance}`,
     return result;
   }
 
-  private static async processAttendanceMarking(emails: string[], session: any, attendanceStatus: string, completionStatus: string, api: DoceboAPI): Promise<any> {
-    const result = {
+  private static async processAttendanceMarking(emails: string[], session: any, attendanceStatus: string, completionStatus: string, api: DoceboAPI): Promise<AttendanceResult> {
+    const result: AttendanceResult = {
       successful: [],
       failed: [],
       summary: { total: emails.length, successful: 0, failed: 0 }
@@ -695,7 +728,7 @@ ${errorGuidance}`,
     return result;
   }
 
-  private static formatBulkILTResponse(result: any, session: any, action: string): NextResponse {
+  private static formatBulkILTResponse(result: BulkOperationResult, session: any, action: string): NextResponse {
     let responseMessage = `📊 **Bulk ILT Session ${action === 'enroll' ? 'Enrollment' : 'Unenrollment'} Results**
 
 🎓 **Session**: ${session.name || session.session_name}
@@ -732,7 +765,7 @@ ${errorGuidance}`,
     });
   }
 
-  private static formatAttendanceResponse(result: any, session: any, attendanceStatus: string, completionStatus: string): NextResponse {
+  private static formatAttendanceResponse(result: AttendanceResult, session: any, attendanceStatus: string, completionStatus: string): NextResponse {
     let responseMessage = `📊 **Session Attendance Marking Results**
 
 🎓 **Session**: ${session.name || session.session_name}
