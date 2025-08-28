@@ -1164,7 +1164,7 @@ async findCourseByIdentifier(identifier: string): Promise<any> {
     }
   }
 
-  // Format course enrollment
+ // Format course enrollment
   formatCourseEnrollment(enrollment: any): FormattedEnrollment {
     return {
       courseId: (enrollment.course_id || enrollment.id)?.toString(),
@@ -1177,6 +1177,108 @@ async findCourseByIdentifier(identifier: string): Promise<any> {
       dueDate: enrollment.due_date,
       assignmentType: enrollment.assignment_type
     };
+  }
+
+  // Enhanced course enrollment formatting with detailed status mapping
+  formatEnhancedCourseEnrollment(enrollment: any): any {
+    console.log(`🔧 Formatting enhanced course enrollment:`, JSON.stringify(enrollment, null, 2));
+    
+    // Map the status from the API response - handle both formats
+    let enrollmentStatus = 'unknown';
+    const statusField = enrollment.enrollment_status || enrollment.status;
+    
+    if (statusField) {
+      switch (statusField.toLowerCase()) {
+        case 'completed':
+          enrollmentStatus = 'completed';
+          break;
+        case 'in progress':
+        case 'in_progress':
+        case 'enrolled':
+          enrollmentStatus = 'in_progress';
+          break;
+        case 'not started':
+        case 'not_started':
+          enrollmentStatus = 'not_started';
+          break;
+        case 'suspended':
+          enrollmentStatus = 'suspended';
+          break;
+        default:
+          enrollmentStatus = statusField.toLowerCase().replace(' ', '_');
+      }
+    } else if (enrollment.status_id || enrollment.enrollment_status_id) {
+      // Map by status ID if available
+      const statusId = enrollment.status_id || enrollment.enrollment_status_id;
+      switch (statusId.toString()) {
+        case '0':
+          enrollmentStatus = 'not_started';
+          break;
+        case '1':
+          enrollmentStatus = 'in_progress';
+          break;
+        case '2':
+          enrollmentStatus = 'completed';
+          break;
+        case '3':
+          enrollmentStatus = 'suspended';
+          break;
+        default:
+          enrollmentStatus = `status_${statusId}`;
+      }
+    }
+
+    // Calculate progress based on status and available data
+    let progress = this.calculateProgressFromStatus(enrollmentStatus);
+    if (enrollment.enrollment_score !== undefined && enrollmentStatus === 'completed') {
+      progress = 100;
+    }
+
+    const formatted = {
+      courseId: (enrollment.course_id || enrollment.id_course)?.toString(),
+      courseName: enrollment.course_name || enrollment.name || 'Unknown Course',
+      courseCode: enrollment.course_code || enrollment.code,
+      courseUid: enrollment.course_uid || enrollment.uid,
+      courseType: enrollment.course_type || enrollment.type,
+      enrollmentStatus: enrollmentStatus,
+      enrollmentDate: enrollment.enrollment_created_at || enrollment.enrollment_date || enrollment.enroll_date_of_enrollment,
+      completionDate: enrollment.enrollment_completion_date || enrollment.date_complete || enrollment.completion_date,
+      progress: progress,
+      score: enrollment.enrollment_score !== undefined ? parseFloat(enrollment.enrollment_score) : 
+             (enrollment.score_given !== undefined ? parseFloat(enrollment.score_given) : 0),
+      assignmentType: enrollment.assignment_type,
+      enrollmentLevel: enrollment.enrollment_level || enrollment.level,
+      validityBegin: enrollment.enrollment_validity_begin_datetime || enrollment.active_from,
+      validityEnd: enrollment.enrollment_validity_end_datetime || enrollment.active_until,
+      lastUpdated: enrollment.enrollment_date_last_updated || enrollment.last_update,
+      createdBy: enrollment.enrollment_created_by,
+      // Additional API fields
+      userLevel: enrollment.level,
+      userStatus: enrollment.user_status,
+      statusId: enrollment.status_id || enrollment.enrollment_status_id,
+      levelId: enrollment.level_id,
+      userStatusId: enrollment.user_status_id,
+      forcedScore: enrollment.forced_score_given
+    };
+
+    console.log(`✅ Formatted course enrollment:`, JSON.stringify(formatted, null, 2));
+    return formatted;
+  }
+
+  // Helper method for calculating progress from status
+  private calculateProgressFromStatus(status: string): number {
+    switch (status) {
+      case 'completed':
+        return 100;
+      case 'in_progress':
+        return 50; // Default assumption for in-progress
+      case 'not_started':
+        return 0;
+      case 'suspended':
+        return 0;
+      default:
+        return 0;
+    }
   }
 
   // Format learning plan enrollment
