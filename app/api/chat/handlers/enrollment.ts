@@ -498,72 +498,163 @@ ${errorGuidance}`,
   }
 
   // Unenroll user from learning plan
-  static async handleUnenrollUserFromLearningPlan(entities: any, api: DoceboAPI): Promise<NextResponse> {
-    try {
-      const { email, learningPlanName } = entities;
-      
-      if (!email || !learningPlanName) {
-        return NextResponse.json({
-          response: `❌ **Missing Information**: I need both a user email and learning plan name to unenroll.
+  // ENHANCED handler response for intelligent learning plan unenrollment
+// In app/api/chat/handlers/enrollment.ts - handleUnenrollUserFromLearningPlan method
+
+static async handleUnenrollUserFromLearningPlan(entities: any, api: DoceboAPI): Promise<NextResponse> {
+  try {
+    const { email, learningPlanName } = entities;
+    
+    if (!email || !learningPlanName) {
+      return NextResponse.json({
+        response: `❌ **Missing Information**: I need both a user email and learning plan name to unenroll.
 
 **Example**: "Unenroll john@company.com from learning plan Data Science"`,
-          success: false,
-          timestamp: new Date().toISOString()
-        });
-      }
-
-      // Find user
-      const users = await api.searchUsers(email, 5);
-      const user = users.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
-      
-      if (!user) {
-        return NextResponse.json({
-          response: `❌ **User Not Found**: ${email}`,
-          success: false,
-          timestamp: new Date().toISOString()
-        });
-      }
-
-      // Find learning plan
-      const learningPlan = await api.findLearningPlanByIdentifier(learningPlanName);
-      const learningPlanId = (learningPlan.learning_plan_id || learningPlan.id).toString();
-      const displayLearningPlanName = api.getLearningPlanName(learningPlan);
-
-      // Unenroll user
-      await api.unenrollUserFromLearningPlan(user.user_id || user.id, learningPlanId);
-
-      return NextResponse.json({
-        response: `✅ **Learning Plan Unenrollment Successful**
-
-👤 **User**: ${user.fullname} (${email})
-📋 **Learning Plan**: ${displayLearningPlanName}
-🔗 **Learning Plan ID**: ${learningPlanId}
-📅 **Unenrolled**: ${new Date().toLocaleDateString()}
-
-The user has been successfully removed from the learning plan.`,
-        success: true,
-        data: {
-          user: {
-            id: user.user_id || user.id,
-            fullname: user.fullname,
-            email: user.email
-          },
-          learningPlan: {
-            id: learningPlanId,
-            name: displayLearningPlanName
-          }
-        },
-        timestamp: new Date().toISOString()
-      });
-
-    } catch (error) {
-      console.error('❌ Learning plan unenrollment error:', error);
-      
-      return NextResponse.json({
-        response: `❌ **Learning Plan Unenrollment Failed**: ${error instanceof Error ? error.message : 'Unknown error'}`,
         success: false,
         timestamp: new Date().toISOString()
       });
     }
+
+    console.log(`🧠 INTELLIGENT LP UNENROLL: Processing ${email} from "${learningPlanName}"`);
+
+    // Find user
+    const users = await api.searchUsers(email, 5);
+    const user = users.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
+    
+    if (!user) {
+      return NextResponse.json({
+        response: `❌ **User Not Found**: ${email}`,
+        success: false,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // Find learning plan
+    const learningPlan = await api.findLearningPlanByIdentifier(learningPlanName);
+    const learningPlanId = (learningPlan.learning_plan_id || learningPlan.id).toString();
+    const displayLearningPlanName = api.getLearningPlanName(learningPlan);
+
+    // Execute intelligent unenrollment
+    const unenrollmentResult = await api.unenrollUserFromLearningPlan(user.user_id || user.id, learningPlanId);
+    
+    // Build comprehensive response based on intelligent unenrollment results
+    let responseMessage = `✅ **Intelligent Learning Plan Unenrollment Completed**
+
+👤 **User**: ${user.fullname} (${email})
+📋 **Learning Plan**: ${displayLearningPlanName}
+🔗 **Learning Plan ID**: ${learningPlanId}
+📅 **Processed**: ${new Date().toLocaleDateString()}
+
+🧠 **Intelligent Logic Applied**:
+The system analyzed each course in the learning plan and made smart decisions about what to keep vs. remove.`;
+
+    if (unenrollmentResult.intelligentUnenrollment) {
+      const intel = unenrollmentResult.intelligentUnenrollment;
+      
+      responseMessage += `\n\n📊 **Processing Summary**:
+• **Total Courses Analyzed**: ${intel.totalCourses}
+• **Courses Preserved**: ${intel.coursesPreserved} (had progress)
+• **Courses Removed**: ${intel.coursesRemoved} (no progress)
+
+🔄 **What Happened**:
+1. **Learning Plan**: Unenrolled successfully
+2. **Course Analysis**: Checked progress in all ${intel.totalCourses} courses
+3. **Smart Cleanup**: Removed only courses with no progress
+4. **Progress Preservation**: Kept courses where learning occurred`;
+
+      // Show preserved courses (with progress)
+      if (intel.preservedCourses && intel.preservedCourses.length > 0) {
+        responseMessage += `\n\n✅ **Courses KEPT** (${intel.preservedCourses.length}) - *User had progress*:`;
+        intel.preservedCourses.slice(0, 10).forEach((course: any, index: number) => {
+          let statusIcon = course.status === 'completed' ? '🎯' : 
+                          course.status === 'in_progress' ? '🔄' : '📚';
+          responseMessage += `\n${index + 1}. ${statusIcon} ${course.courseName} - ${course.status.toUpperCase()}`;
+        });
+        
+        if (intel.preservedCourses.length > 10) {
+          responseMessage += `\n... and ${intel.preservedCourses.length - 10} more courses preserved`;
+        }
+      }
+
+      // Show removed courses (no progress)
+      if (intel.removedCourses && intel.removedCourses.length > 0) {
+        responseMessage += `\n\n🗑️ **Courses REMOVED** (${intel.removedCourses.length}) - *No progress made*:`;
+        intel.removedCourses.slice(0, 5).forEach((course: any, index: number) => {
+          responseMessage += `\n${index + 1}. 📤 ${course.courseName} - ${course.status.toUpperCase()}`;
+        });
+        
+        if (intel.removedCourses.length > 5) {
+          responseMessage += `\n... and ${intel.removedCourses.length - 5} more courses removed`;
+        }
+      }
+
+      // Processing results
+      if (unenrollmentResult.courseUnenrollments && unenrollmentResult.courseUnenrollments.length > 0) {
+        const successful = unenrollmentResult.successfulCourseRemovals || 0;
+        const failed = unenrollmentResult.failedCourseRemovals || 0;
+        
+        responseMessage += `\n\n🔧 **Technical Results**:
+• **Course Removals Attempted**: ${successful + failed}
+• **Successful**: ${successful}
+• **Failed**: ${failed}`;
+
+        if (failed > 0) {
+          responseMessage += `\n\n⚠️ **Note**: ${failed} course removal(s) failed but the user is still unenrolled from the learning plan. The failed courses may need manual cleanup.`;
+        }
+      }
+    } else {
+      // Fallback for non-intelligent unenrollment
+      responseMessage += `\n\n📋 **Standard Processing**: Learning plan unenrollment completed using standard method.`;
+    }
+
+    responseMessage += `\n\n🎯 **Benefits of Intelligent Unenrollment**:
+• **Preserves Learning Progress**: Completed and in-progress courses remain accessible
+• **Prevents Data Loss**: Course completion records and certificates are retained  
+• **Clean Organization**: Removes unused course enrollments to reduce clutter
+• **Compliance Friendly**: Maintains audit trail of actual learning activities
+
+💡 **What This Means**:
+• User can no longer access the learning plan structure
+• Courses with progress remain individually accessible
+• Completion records and certificates are preserved
+• Only "unused" course enrollments were cleaned up`;
+
+    return NextResponse.json({
+      response: responseMessage,
+      success: true,
+      data: {
+        user: {
+          id: user.user_id || user.id,
+          fullname: user.fullname,
+          email: user.email
+        },
+        learningPlan: {
+          id: learningPlanId,
+          name: displayLearningPlanName
+        },
+        intelligentUnenrollment: unenrollmentResult.intelligentUnenrollment,
+        unenrollmentResult: unenrollmentResult,
+        processingType: 'intelligent',
+        preservedProgress: true
+      },
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ Intelligent learning plan unenrollment error:', error);
+    
+    return NextResponse.json({
+      response: `❌ **Intelligent Learning Plan Unenrollment Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
+
+The intelligent unenrollment system was unable to process this request. This could be due to:
+• Learning plan not found or incorrect name
+• User not enrolled in the learning plan
+• API connectivity issues
+• Complex learning plan structure
+
+**Alternative**: Try manual unenrollment in the Docebo admin panel, or contact support.`,
+      success: false,
+      timestamp: new Date().toISOString()
+    });
   }
 }
