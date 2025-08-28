@@ -541,7 +541,7 @@ export class IntentAnalyzer {
       },
 
       // SEARCH LEARNING PLANS patterns
-      
+        {
   intent: 'search_learning_plans',
   patterns: [
     /(?:find|search)\s+(.+?)\s+(?:learning plan|learning plans|lp|lps)/i,
