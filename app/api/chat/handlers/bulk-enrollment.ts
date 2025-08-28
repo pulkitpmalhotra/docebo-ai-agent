@@ -113,37 +113,43 @@ Please check:
     }
   }
 
-  static async handleBulkLearningPlanEnrollment(entities: any, api: DoceboAPI): Promise<NextResponse> {
+ static async handleBulkLearningPlanEnrollment(entities: any, api: DoceboAPI): Promise<NextResponse> {
+  try {
+    const { emails, learningPlanName, assignmentType, startValidity, endValidity } = entities;
+    
+    console.log(`🎯 BULK LP: Processing entities:`, { 
+      emails, 
+      learningPlanName, 
+      assignmentType, 
+      startValidity, 
+      endValidity 
+    });
+    
+    if (!emails || !Array.isArray(emails) || emails.length === 0) {
+      return NextResponse.json({
+        response: '❌ **Missing Information**: I need a list of user emails for bulk enrollment.\n\n**Examples**: \n• "Enroll john@co.com,sarah@co.com in learning plan Data Science"\n• "Bulk enroll sales team in learning plan Leadership Development"',
+        success: false,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    if (!learningPlanName) {
+      return NextResponse.json({
+        response: '❌ **Missing Learning Plan**: Please specify which learning plan to enroll users in.\n\n**Example**: "Enroll john@co.com,sarah@co.com in learning plan Data Science"',
+        success: false,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    console.log(`🎯 BULK LP: Processing bulk learning plan enrollment: ${emails.length} users -> ${learningPlanName}`);
+
+    // Find the learning plan first with EXACT matching
+    let learningPlan;
     try {
-      const { emails, learningPlanName } = entities;
-      
-      console.log(`🎯 BULK LP: Processing entities:`, { emails, learningPlanName });
-      
-      if (!emails || !Array.isArray(emails) || emails.length === 0) {
-        return NextResponse.json({
-          response: '❌ **Missing Information**: I need a list of user emails for bulk enrollment.\n\n**Examples**: \n• "Enroll john@co.com,sarah@co.com in learning plan Data Science"\n• "Bulk enroll sales team in learning plan Leadership Development"',
-          success: false,
-          timestamp: new Date().toISOString()
-        });
-      }
-
-      if (!learningPlanName) {
-        return NextResponse.json({
-          response: '❌ **Missing Learning Plan**: Please specify which learning plan to enroll users in.\n\n**Example**: "Enroll john@co.com,sarah@co.com in learning plan Data Science"',
-          success: false,
-          timestamp: new Date().toISOString()
-        });
-      }
-
-      console.log(`🎯 BULK LP: Processing bulk learning plan enrollment: ${emails.length} users -> ${learningPlanName}`);
-
-      // Find the learning plan first with EXACT matching
-      let learningPlan;
-      try {
-        learningPlan = await api.findLearningPlanByIdentifier(learningPlanName);
-      } catch (lpError) {
-        return NextResponse.json({
-          response: `❌ **Learning Plan Not Found for Bulk Enrollment**: ${lpError instanceof Error ? lpError.message : 'Unknown error'}
+      learningPlan = await api.findLearningPlanByIdentifier(learningPlanName);
+    } catch (lpError) {
+      return NextResponse.json({
+        response: `❌ **Learning Plan Not Found for Bulk Enrollment**: ${lpError instanceof Error ? lpError.message : 'Unknown error'}
 
 **💡 For bulk operations, exact learning plan matching is critical:**
 • Use the complete, exact learning plan name
@@ -152,36 +158,45 @@ Please check:
 • If multiple learning plans exist with similar names, use learning plan ID
 
 **⚠️ Important**: Bulk enrollment requires exact matching to prevent enrolling users in the wrong learning plan.`,
-          success: false,
-          timestamp: new Date().toISOString()
-        });
-      }
+        success: false,
+        timestamp: new Date().toISOString()
+      });
+    }
 
-      const learningPlanId = (learningPlan.learning_plan_id || learningPlan.id).toString();
-      const displayLearningPlanName = api.getLearningPlanName(learningPlan);
+    const learningPlanId = (learningPlan.learning_plan_id || learningPlan.id).toString();
+    const displayLearningPlanName = api.getLearningPlanName(learningPlan);
 
-      console.log(`📋 BULK LP: Found exact learning plan match "${displayLearningPlanName}" (ID: ${learningPlanId}) for ${emails.length} users`);
+    console.log(`📋 BULK LP: Found exact learning plan match "${displayLearningPlanName}" (ID: ${learningPlanId}) for ${emails.length} users`);
 
-      const result = await this.processBulkLearningPlanEnrollment(emails, learningPlanId, displayLearningPlanName, api);
+    // FIXED: Pass assignment type and validity dates to the processing method
+    const result = await this.processBulkLearningPlanEnrollment(
+      emails, 
+      learningPlanId, 
+      displayLearningPlanName, 
+      api,
+      assignmentType,
+      startValidity,
+      endValidity
+    );
 
-      return this.formatBulkResponse(result, displayLearningPlanName, 'learning_plan');
+    return this.formatBulkResponse(result, displayLearningPlanName, 'learning_plan');
 
-    } catch (error) {
-      console.error('❌ Bulk learning plan enrollment error:', error);
-      
-      return NextResponse.json({
-        response: `❌ **Bulk Learning Plan Enrollment Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
+  } catch (error) {
+    console.error('❌ Bulk learning plan enrollment error:', error);
+    
+    return NextResponse.json({
+      response: `❌ **Bulk Learning Plan Enrollment Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
 
 Please check:
 • All email addresses are correct
 • Learning plan name is **exact** and matches exactly one learning plan
 • You have permission to enroll users
 • Users don't already have conflicting enrollments`,
-        success: false,
-        timestamp: new Date().toISOString()
-      });
-    }
+      success: false,
+      timestamp: new Date().toISOString()
+    });
   }
+}
 
   static async handleBulkUnenrollment(entities: any, api: DoceboAPI): Promise<NextResponse> {
     try {
@@ -332,82 +347,107 @@ Please check:
   }
 
   private static async processBulkLearningPlanEnrollment(
-    emails: string[], 
-    learningPlanId: string, 
-    learningPlanName: string,
-    api: DoceboAPI
-  ): Promise<BulkEnrollmentResult> {
-    const result: BulkEnrollmentResult = {
-      successful: [],
-      failed: [],
-      summary: {
-        total: emails.length,
-        successful: 0,
-        failed: 0
-      }
-    };
+  emails: string[], 
+  learningPlanId: string, 
+  learningPlanName: string,
+  api: DoceboAPI,
+  assignmentType?: string,
+  startValidity?: string, 
+  endValidity?: string
+): Promise<BulkEnrollmentResult> {
+  const result: BulkEnrollmentResult = {
+    successful: [],
+    failed: [],
+    summary: {
+      total: emails.length,
+      successful: 0,
+      failed: 0
+    }
+  };
 
-    console.log(`🔄 BULK LP: Processing ${emails.length} learning plan enrollments for plan ${learningPlanId}`);
+  console.log(`🔄 BULK LP: Processing ${emails.length} learning plan enrollments for plan ${learningPlanId}`);
+  console.log(`🔧 BULK LP: Assignment type: ${assignmentType || 'default'}`);
+  console.log(`📅 BULK LP: Start validity: ${startValidity || 'none'}`);
+  console.log(`📅 BULK LP: End validity: ${endValidity || 'none'}`);
 
-    const batchSize = 3;
-    for (let i = 0; i < emails.length; i += batchSize) {
-      const batch = emails.slice(i, i + batchSize);
+  const batchSize = 3;
+  for (let i = 0; i < emails.length; i += batchSize) {
+    const batch = emails.slice(i, i + batchSize);
+    
+    await Promise.all(batch.map(async (email, index) => {
+      const globalIndex = i + index + 1;
+      console.log(`📧 BULK LP [${globalIndex}/${emails.length}]: Processing ${email}`);
       
-      await Promise.all(batch.map(async (email, index) => {
-        const globalIndex = i + index + 1;
-        console.log(`📧 BULK LP [${globalIndex}/${emails.length}]: Processing ${email}`);
+      try {
+        const users = await api.searchUsers(email, 5);
+        const user = users.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
         
-        try {
-          const users = await api.searchUsers(email, 5);
-          const user = users.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
-          
-          if (!user) {
-            console.log(`❌ BULK LP [${globalIndex}]: User not found: ${email}`);
-            result.failed.push({
-              email: email,
-              error: 'User not found',
-              resourceName: learningPlanName
-            });
-            return;
-          }
-
-          const userId = (user.user_id || user.id).toString();
-          console.log(`👤 BULK LP [${globalIndex}]: Found user ${user.fullname} (ID: ${userId})`);
-
-          await api.enrollUserInLearningPlan(userId, learningPlanId, {});
-          
-          result.successful.push({
-            email: email,
-            userId: userId,
-            resourceName: learningPlanName,
-            resourceId: learningPlanId
-          });
-
-          console.log(`✅ BULK LP [${globalIndex}]: Successfully enrolled ${email} in ${learningPlanName}`);
-
-        } catch (error) {
-          console.error(`❌ BULK LP [${globalIndex}]: Failed to enroll ${email}:`, error);
+        if (!user) {
+          console.log(`❌ BULK LP [${globalIndex}]: User not found: ${email}`);
           result.failed.push({
             email: email,
-            error: error instanceof Error ? error.message : 'Enrollment failed',
+            error: 'User not found',
             resourceName: learningPlanName
           });
+          return;
         }
-      }));
 
-      if (i + batchSize < emails.length) {
-        console.log(`⏸️ BULK LP: Pausing between batches (processed ${Math.min(i + batchSize, emails.length)}/${emails.length})`);
-        await new Promise(resolve => setTimeout(resolve, 500));
+        const userId = (user.user_id || user.id).toString();
+        console.log(`👤 BULK LP [${globalIndex}]: Found user ${user.fullname} (ID: ${userId})`);
+
+        // FIXED: Pass all enrollment options including assignment type and validity dates
+        const enrollmentOptions: any = {};
+        
+        if (assignmentType && assignmentType !== 'none') {
+          enrollmentOptions.assignmentType = assignmentType;
+          console.log(`📋 BULK LP [${globalIndex}]: Using assignment type: ${assignmentType}`);
+        }
+        
+        if (startValidity) {
+          enrollmentOptions.startValidity = startValidity;
+          console.log(`📅 BULK LP [${globalIndex}]: Using start validity: ${startValidity}`);
+        }
+        
+        if (endValidity) {
+          enrollmentOptions.endValidity = endValidity;
+          console.log(`📅 BULK LP [${globalIndex}]: Using end validity: ${endValidity}`);
+        }
+
+        console.log(`🔧 BULK LP [${globalIndex}]: Final enrollment options:`, enrollmentOptions);
+
+        await api.enrollUserInLearningPlan(userId, learningPlanId, enrollmentOptions);
+        
+        result.successful.push({
+          email: email,
+          userId: userId,
+          resourceName: learningPlanName,
+          resourceId: learningPlanId
+        });
+
+        console.log(`✅ BULK LP [${globalIndex}]: Successfully enrolled ${email} in ${learningPlanName}`);
+
+      } catch (error) {
+        console.error(`❌ BULK LP [${globalIndex}]: Failed to enroll ${email}:`, error);
+        result.failed.push({
+          email: email,
+          error: error instanceof Error ? error.message : 'Enrollment failed',
+          resourceName: learningPlanName
+        });
       }
+    }));
+
+    if (i + batchSize < emails.length) {
+      console.log(`⏸️ BULK LP: Pausing between batches (processed ${Math.min(i + batchSize, emails.length)}/${emails.length})`);
+      await new Promise(resolve => setTimeout(resolve, 500));
     }
-
-    result.summary.successful = result.successful.length;
-    result.summary.failed = result.failed.length;
-
-    console.log(`📊 BULK LP: Completed - ${result.summary.successful}/${result.summary.total} successful enrollments`);
-    return result;
   }
 
+  result.summary.successful = result.successful.length;
+  result.summary.failed = result.failed.length;
+
+  console.log(`📊 BULK LP: Completed - ${result.summary.successful}/${result.summary.total} successful enrollments`);
+  return result;
+}
   private static async processBulkUnenrollment(
     emails: string[],
     resourceName: string,
