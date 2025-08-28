@@ -174,33 +174,58 @@ export class IntentAnalyzer {
       },
 
       {
-        intent: 'bulk_enroll_learning_plan',
-        patterns: [
-          /(?:enroll|add|assign|register)\s+(.+?)\s+(?:in|to|for)\s+(?:learning plan|lp|learning path)\s+(.+)/i,
-          /(?:bulk|mass)\s+(?:enroll|add)\s+(.+?)\s+(?:to|in)\s+(?:learning plan|lp)\s+(.+)/i
-        ],
-        extractEntities: () => {
-          const allEmails = this.extractMultipleEmails(message);
-          
-          if (allEmails.length <= 1) return null; // Not bulk
-          
-          console.log(`🎯 BULK LP: Analyzing bulk learning plan enrollment: ${allEmails.length} emails`);
-          
-          const lpMatch = message.match(/(?:learning plan|lp|learning path)\s+(.+?)(?:\s+with|\s+as|\s+from|\s*$|\?|!|\.)/i);
-          
-          return {
-            emails: allEmails,
-            learningPlanName: lpMatch ? lpMatch[1].trim() : learningPlanName,
-            assignmentType: this.extractAssignmentType(message),
-            startValidity: this.extractStartDate(message),
-            endValidity: this.extractEndDate(message),
-            resourceType: 'learning_plan',
-            action: 'bulk_enroll',
-            isBulk: true
-          };
-        },
-        confidence: this.extractMultipleEmails(message).length > 1 ? 0.95 : 0
-      },
+  intent: 'bulk_enroll_learning_plan',
+  patterns: [
+    /(?:enroll|add|assign|register)\s+(.+?)\s+(?:in|to|for)\s+(?:learning plan|lp|learning path)\s+(.+)/i,
+    /(?:bulk|mass)\s+(?:enroll|add)\s+(.+?)\s+(?:to|in)\s+(?:learning plan|lp)\s+(.+)/i
+  ],
+  extractEntities: () => {
+    const allEmails = this.extractMultipleEmails(message);
+    
+    if (allEmails.length <= 1) return null; // Not bulk
+    
+    console.log(`🎯 BULK LP: Analyzing bulk learning plan enrollment: ${allEmails.length} emails`);
+    console.log(`🎯 BULK LP: Original message: "${message}"`);
+    
+    // ENHANCED: Better learning plan name extraction for bulk operations
+    const lpMatch = message.match(/(?:learning plan|lp|learning path)\s+([^,\n\r]+?)(?:\s+as\s+|$)/i) ||
+                   message.match(/(?:for\s+learning\s+plan)\s+([^,\n\r]+?)(?:\s+as\s+|$)/i);
+    
+    let lpName = lpMatch ? lpMatch[1].trim() : learningPlanName;
+    
+    // ENHANCED: Clean up learning plan name better
+    if (lpName) {
+      // Remove assignment type from LP name if it got included
+      lpName = lpName.replace(/\s+(as|with)\s+(mandatory|required|recommended|optional).*$/i, '');
+      lpName = lpName.replace(/\s+from\s+\d{4}-\d{2}-\d{2}.*$/i, '');
+      lpName = lpName.trim();
+    }
+    
+    const extractedAssignmentType = this.extractAssignmentType(message);
+    const extractedStartValidity = this.extractStartDate(message); 
+    const extractedEndValidity = this.extractEndDate(message);
+    
+    console.log(`🎯 BULK LP: Extracted data:`, {
+      emails: allEmails,
+      learningPlanName: lpName,
+      assignmentType: extractedAssignmentType,
+      startValidity: extractedStartValidity,
+      endValidity: extractedEndValidity
+    });
+    
+    return {
+      emails: allEmails,
+      learningPlanName: lpName,
+      assignmentType: extractedAssignmentType,
+      startValidity: extractedStartValidity,  
+      endValidity: extractedEndValidity,
+      resourceType: 'learning_plan',
+      action: 'bulk_enroll',
+      isBulk: true
+    };
+  },
+  confidence: this.extractMultipleEmails(message).length > 1 ? 0.95 : 0
+},
 
 {
   intent: 'bulk_unenroll',
@@ -954,51 +979,76 @@ export class IntentAnalyzer {
   }
 
   static extractAssignmentType(message: string): string | null {
-    const patterns = [
-      /(?:assignment\s+type|as)\s+(mandatory|required|recommended|optional)/i,
-      /(?:with|using)\s+assignment\s+type\s+(mandatory|required|recommended|optional)/i,
-      /(?:make\s+it|set\s+as|mark\s+as|assign\s+as)\s+(mandatory|required|recommended|optional)/i,
-      /(mandatory|required|recommended|optional)\s+assignment/i
-    ];
-    
-    for (const pattern of patterns) {
-      const match = message.match(pattern);
-      if (match && match[1]) {
-        return match[1].toLowerCase();
-      }
+  const patterns = [
+    // FIXED: Better pattern to catch "as Recommended" format
+    /\bas\s+(mandatory|required|recommended|optional)\b/i,
+    /(?:assignment\s+type|with\s+assignment\s+type)\s+(mandatory|required|recommended|optional)/i,
+    /(?:with|using)\s+assignment\s+type\s+(mandatory|required|recommended|optional)/i,
+    /(?:make\s+it|set\s+as|mark\s+as|assign\s+as)\s+(mandatory|required|recommended|optional)/i,
+    /(mandatory|required|recommended|optional)\s+assignment/i,
+    // ADDED: More flexible patterns
+    /\b(mandatory|required|recommended|optional)\s+(?:course|learning|plan|training)/i,
+    /\b(mandatory|required|recommended|optional)\s+from\s+\d{4}-\d{2}-\d{2}/i
+  ];
+  
+  for (const pattern of patterns) {
+    const match = message.match(pattern);
+    if (match && match[1]) {
+      const assignmentType = match[1].toLowerCase();
+      console.log(`✅ ASSIGNMENT TYPE: Found "${assignmentType}" with pattern: ${pattern.source}`);
+      return assignmentType;
     }
-    return null;
   }
+  
+  console.log(`❌ ASSIGNMENT TYPE: Not found in "${message}"`);
+  return null;
+}
 
-  static extractStartDate(message: string): string | null {
-    const patterns = [
-      /(?:start\s+(?:validity|date)|from|beginning|starts?)\s+(\d{4}-\d{2}-\d{2})/i,
-      /(?:valid\s+from|effective\s+from|active\s+from)\s+(\d{4}-\d{2}-\d{2})/i
-    ];
-    
-    for (const pattern of patterns) {
-      const match = message.match(pattern);
-      if (match && match[1]) {
-        return match[1];
-      }
+  // FIXED extractStartDate method in intent-analyzer.ts  
+static extractStartDate(message: string): string | null {
+  const patterns = [
+    // FIXED: Better date parsing patterns
+    /\bfrom\s+(\d{4}-\d{2}-\d{2})\b/i,
+    /(?:start\s+(?:validity|date)|beginning|starts?)\s+(\d{4}-\d{2}-\d{2})/i,
+    /(?:valid\s+from|effective\s+from|active\s+from)\s+(\d{4}-\d{2}-\d{2})/i,
+    // ADDED: More flexible patterns
+    /\b(\d{4}-\d{2}-\d{2})\s+to\s+\d{4}-\d{2}-\d{2}/i
+  ];
+  
+  for (const pattern of patterns) {
+    const match = message.match(pattern);
+    if (match && match[1]) {
+      console.log(`✅ START DATE: Found "${match[1]}" with pattern: ${pattern.source}`);
+      return match[1];
     }
-    return null;
   }
+  
+  console.log(`❌ START DATE: Not found in "${message}"`);
+  return null;
+}
 
-  static extractEndDate(message: string): string | null {
-    const patterns = [
-      /(?:end\s+(?:validity|date)|to|until|expires?)\s+(\d{4}-\d{2}-\d{2})/i,
-      /(?:valid\s+until|expires\s+on)\s+(\d{4}-\d{2}-\d{2})/i
-    ];
-    
-    for (const pattern of patterns) {
-      const match = message.match(pattern);
-      if (match && match[1]) {
-        return match[1];
-      }
+// FIXED extractEndDate method in intent-analyzer.ts
+static extractEndDate(message: string): string | null {
+  const patterns = [
+    // FIXED: Better end date parsing
+    /\bto\s+(\d{4}-\d{2}-\d{2})\b/i,
+    /(?:end\s+(?:validity|date)|until|expires?)\s+(\d{4}-\d{2}-\d{2})/i,
+    /(?:valid\s+until|expires\s+on)\s+(\d{4}-\d{2}-\d{2})/i,
+    // ADDED: More flexible patterns  
+    /\d{4}-\d{2}-\d{2}\s+to\s+(\d{4}-\d{2}-\d{2})/i
+  ];
+  
+  for (const pattern of patterns) {
+    const match = message.match(pattern);
+    if (match && match[1]) {
+      console.log(`✅ END DATE: Found "${match[1]}" with pattern: ${pattern.source}`);
+      return match[1];
     }
-    return null;
   }
+  
+  console.log(`❌ END DATE: Not found in "${message}"`);
+  return null;
+}
 
   // ========================= HELPER METHODS FOR ILT =========================
   static extractSessionId(message: string): string | null {
