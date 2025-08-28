@@ -215,79 +215,81 @@ export class DoceboAPI {
 
   // FIXED: Learning Plan enrollment method with proper typing
   async enrollUserInLearningPlan(
-    userId: string, 
-    learningPlanId: string, 
-    options: {
-      assignmentType?: string;
-      startValidity?: string;
-      endValidity?: string;
-    } = {}
-  ): Promise<any> {
-    try {
-      console.log(`🔄 FIXED LP: Individual enrollment - user ${userId} in learning plan ${learningPlanId}`);
-      console.log(`🔧 FIXED LP: Options:`, options);
+  userId: string, 
+  learningPlanId: string, 
+  options: {
+    assignmentType?: string;
+    startValidity?: string;
+    endValidity?: string;
+  } = {}
+): Promise<any> {
+  try {
+    console.log(`🔄 FIXED LP: Individual enrollment - user ${userId} in learning plan ${learningPlanId}`);
+    console.log(`🔧 FIXED LP: Options:`, options);
 
-      // FIXED: Properly typed enrollment data with explicit interface
-      const enrollmentData: {
-        items: {
-          user_ids: number[];
-        };
-        options: {
-          assignment_type?: string;
-          validity_start_at?: string;
-          validity_end_at?: string;
-        };
-      } = {
-        items: {
-          user_ids: [parseInt(userId)]
-        },
-        options: {}
+    // FIXED: Properly typed enrollment data with explicit interface
+    const enrollmentData: {
+      items: {
+        user_ids: number[];
       };
+      options: {
+        assignment_type?: string;
+        validity_start_at?: string;
+        validity_end_at?: string;
+      };
+    } = {
+      items: {
+        user_ids: [parseInt(userId)]
+      },
+      options: {}
+    };
 
-      // FIXED: Support ALL assignment types or default to empty (no assignment type)
-      if (options.assignmentType && options.assignmentType.toLowerCase() !== 'none') {
-        const assignmentTypeMap: { [key: string]: string } = {
-          'mandatory': 'mandatory',
-          'required': 'required',
-          'recommended': 'recommended',
-          'optional': 'optional'
-        };
-        
-        const mappedType = assignmentTypeMap[options.assignmentType.toLowerCase()];
-        if (mappedType) {
-          enrollmentData.options.assignment_type = mappedType;
-          console.log(`📋 FIXED LP: Using assignment type: ${mappedType}`);
-        }
-      } else {
-        console.log(`📋 FIXED LP: No assignment type specified - using default (empty)`);
-      }
-
-      // Add validity dates with correct UTC format
-      if (options.startValidity) {
-        enrollmentData.options.validity_start_at = `${options.startValidity} 00:00:00`;
-        console.log(`📅 FIXED LP: Start validity: ${enrollmentData.options.validity_start_at}`);
-      }
-      if (options.endValidity) {
-        enrollmentData.options.validity_end_at = `${options.endValidity} 23:59:59`;
-        console.log(`📅 FIXED LP: End validity: ${enrollmentData.options.validity_end_at}`);
-      }
-
-      console.log(`📋 FIXED LP: Final enrollment data:`, JSON.stringify(enrollmentData, null, 2));
+    // FIXED: Support ALL assignment types or default to empty (no assignment type)
+    if (options.assignmentType && options.assignmentType.toLowerCase() !== 'none') {
+      const assignmentTypeMap: { [key: string]: string } = {
+        'mandatory': 'mandatory',
+        'required': 'required',
+        'recommended': 'recommended',
+        'optional': 'optional'
+      };
       
-      const result = await this.apiRequest(
-        `/learningplan/v1/learningplans/${learningPlanId}/enrollments/bulk`, 
-        'POST', 
-        enrollmentData
-      );
-      
-      console.log(`✅ FIXED LP: Individual enrollment successful:`, result);
-      return result;
-
-    } catch (error) {
-      console.error(`❌ FIXED LP: Individual enrollment error for user ${userId}:`, error);
-      throw error;
+      const mappedType = assignmentTypeMap[options.assignmentType.toLowerCase()];
+      if (mappedType) {
+        enrollmentData.options.assignment_type = mappedType;
+        console.log(`📋 FIXED LP: Using assignment type: ${mappedType}`);
+      }
+    } else {
+      console.log(`📋 FIXED LP: No assignment type specified - using default (empty)`);
     }
+
+    // FIXED: Add validity dates with correct UTC format
+    if (options.startValidity) {
+      // FIXED: Ensure proper date format for Docebo API
+      enrollmentData.options.validity_start_at = `${options.startValidity} 00:00:00`;
+      console.log(`📅 FIXED LP: Start validity: ${enrollmentData.options.validity_start_at}`);
+    }
+    if (options.endValidity) {
+      // FIXED: Ensure proper date format for Docebo API  
+      enrollmentData.options.validity_end_at = `${options.endValidity} 23:59:59`;
+      console.log(`📅 FIXED LP: End validity: ${enrollmentData.options.validity_end_at}`);
+    }
+
+    console.log(`📋 FIXED LP: Final enrollment data:`, JSON.stringify(enrollmentData, null, 2));
+    
+    const result = await this.apiRequest(
+      `/learningplan/v1/learningplans/${learningPlanId}/enrollments/bulk`, 
+      'POST', 
+      enrollmentData
+    );
+    
+    console.log(`✅ FIXED LP: Individual enrollment successful:`, result);
+    return result;
+
+  } catch (error) {
+    console.error(`❌ FIXED LP: Individual enrollment error for user ${userId}:`, error);
+    throw error;
   }
+}
 
   // FIXED: Unenroll user from course using the correct endpoint
 async unenrollUserFromCourse(userId: string, courseId: string): Promise<any> {
