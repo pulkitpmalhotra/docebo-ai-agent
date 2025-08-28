@@ -584,6 +584,14 @@ export class IntentAnalyzer {
         }
       }
     }
+    
+    // FALLBACK: Use learningPlanName from global extraction if available
+    const fallbackTerm = learningPlanName || '';
+    console.log(`⚠️ LP SEARCH: Using fallback term: "${fallbackTerm}"`);
+    return { searchTerm: fallbackTerm };
+  },
+  confidence: 0.9
+}
 
       // INFO patterns
       {
