@@ -591,7 +591,7 @@ export class IntentAnalyzer {
     return { searchTerm: fallbackTerm };
   },
   confidence: 0.9
-}
+},
 
       // INFO patterns
       {
