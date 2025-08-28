@@ -2317,7 +2317,7 @@ static async handleLearningPlanInfo(entities: any, api: DoceboAPI): Promise<Next
 • Learning plan name might not exist or be misspelled
 • Learning plan might be in draft status or restricted
 • Try using exact learning plan name from search results
-• Use learning plan ID for guaranteed exact matching`,
+• Use learning plan ID for guaranteed exact matching`
 
       if (query && query.length > 10) {
         responseMessage += `\n\n**Your Query**: "${query}"
