@@ -604,7 +604,7 @@ export class IntentAnalyzer {
             // Check if it's a bulk operation (multiple emails)
             const allEmails = this.extractMultipleEmails(message);
             
-            const entities = {
+            const entities: any = {
               email: this.extractEmailFromText(userPart) || userPart,
               emails: allEmails.length > 1 ? allEmails : null,
               sessionId: /^\d+$/.test(sessionPart) ? sessionPart : null,
