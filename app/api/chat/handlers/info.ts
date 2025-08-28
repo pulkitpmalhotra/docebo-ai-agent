@@ -2329,32 +2329,13 @@ For specific help with "${query}", try more specific questions.`;
 • [Docebo Help Center](https://help.docebo.com)
 • [API Documentation](https://help.docebo.com/hc/en-us/sections/360004313314-API)
 
-**💡 Tips**:
-• Use exact email addresses for user operations
-• Learning plan IDs (like 274) are supported
-• All operations provide detailed feedback and error messages`;
-
-      return NextResponse.json({
-        response: responseMessage,
-        success: true,
-        helpRequest: true,
-        data: {
-          query: query,
-          helpType: 'docebo_general'
-        },
-        timestamp: new Date().toISOString()
-      });
-
-    } catch (error) {
-      console.error('❌ Docebo help error:', error);
-      
-      return NextResponse.json({
-        response: `❌ **Help System Error**: ${error instanceof Error ? error.message : 'Unknown error'}
-
-Please try asking a specific question about Docebo functionality.`,
-        success: false,
-        timestamp: new Date().toISOString()
-      });
-    }
+**📋 Supported Formats:**
+• "Course info Python Programming" (by name)
+• "Course info 12345" (by ID)
+• "Course details Excel Training" (alternative syntax)`,
+      success: false,
+      timestamp: new Date().toISOString()
+    });
   }
+}
 }
