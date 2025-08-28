@@ -467,7 +467,7 @@ export class IntentAnalyzer {
       },
 
       // Search patterns
-      {{
+      {
   intent: 'search_courses',
   patterns: [
     /(?:find|search)\s+(.+?)\s+(?:course|courses|training)/i,
