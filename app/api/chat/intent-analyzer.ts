@@ -583,7 +583,7 @@ export class IntentAnalyzer {
           return { searchTerm: searchTerm };
         }
       }
-    },
+    }
 
       // INFO patterns
       {
