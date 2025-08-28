@@ -1,6 +1,30 @@
-// app/api/chat/handlers/ilt-session.ts - NEW FILE for ILT Session Management
+// app/api/chat/handlers/ilt-session.ts - ILT Session Management with proper TypeScript
 import { NextResponse } from 'next/server';
 import { DoceboAPI } from '../docebo-api';
+
+interface SessionEvent {
+  start_date: string;
+  end_date: string;
+  start_time: string;
+  end_time: string;
+  timezone: string;
+  location: string;
+}
+
+interface SessionData {
+  course_id: number;
+  name: string;
+  description: string;
+  timezone: string;
+  location_type: string;
+  location: string;
+  max_participants: number;
+  min_participants: number;
+  instructor_id: number | null;
+  auto_enroll: boolean;
+  attendance_tracking: boolean;
+  session_events: SessionEvent[];
+}
 
 export class ILTSessionHandlers {
   
@@ -69,7 +93,6 @@ Please verify the course name or use the course ID instead.`,
         }
       }
 
-
       // Prepare session data with proper typing
       const sessionData: SessionData = {
         course_id: parseInt(finalCourseId),
@@ -118,7 +141,7 @@ Please verify the course name or use the course ID instead.`,
 
       if (sessionData.session_events.length > 0) {
         responseMessage += `\n\n📅 **Scheduled Events**:`;
-        sessionData.session_events.forEach((event, index) => {
+        sessionData.session_events.forEach((event: SessionEvent, index: number) => {
           responseMessage += `\n${index + 1}. ${event.start_date} ${event.start_time} - ${event.end_time} (${event.timezone})`;
         });
       }
@@ -405,6 +428,191 @@ Try creating a session first:
     }
   }
 
+  // Unenroll User from ILT Session
+  static async handleUnenrollUserFromILTSession(entities: any, api: DoceboAPI): Promise<NextResponse> {
+    try {
+      const { email, sessionId, sessionName, courseId, courseName } = entities;
+      
+      if (!email) {
+        return NextResponse.json({
+          response: `❌ **Missing User Email**: I need a user email for ILT session unenrollment.
+
+**Examples**:
+• "Unenroll john@company.com from ILT session 123"
+• "Remove sarah@company.com from session 'Python Workshop'"
+• "Drop mike@company.com from session in course 2420"`,
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      if (!sessionId && !sessionName && !courseId && !courseName) {
+        return NextResponse.json({
+          response: `❌ **Missing Session Information**: I need session ID, session name, or course information.
+
+**Examples**:
+• "Unenroll user@email.com from ILT session 123" (by session ID)
+• "Remove user@email.com from session 'Python Workshop'" (by session name)
+• "Drop user@email.com from ILT session for course 2420" (by course)`,
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      console.log(`🎯 ILT UNENROLL: Unenrolling ${email} from session`);
+
+      // Find user
+      const user = await api.findUserByEmail(email);
+      if (!user) {
+        return NextResponse.json({
+          response: `❌ **User Not Found**: ${email}
+
+Please verify the email address is correct and the user exists in Docebo.`,
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      // Find session
+      let session;
+      try {
+        if (sessionId) {
+          session = await api.getILTSession(sessionId);
+        } else if (sessionName) {
+          session = await api.findILTSessionByName(sessionName);
+        } else if (courseId || courseName) {
+          const sessions = await api.getILTSessionsForCourse(courseId || courseName);
+          if (sessions.length === 1) {
+            session = sessions[0];
+          } else if (sessions.length > 1) {
+            const sessionList = sessions.map((s: any) => `"${s.name}" (ID: ${s.id})`).join(', ');
+            return NextResponse.json({
+              response: `❌ **Multiple Sessions Found**: Found ${sessions.length} sessions for this course.
+
+Please specify which session: ${sessionList}
+
+**Examples**:
+• "Unenroll ${email} from ILT session ${sessions[0].id}"
+• "Remove ${email} from session '${sessions[0].name}'"`,
+              success: false,
+              timestamp: new Date().toISOString()
+            });
+          } else {
+            return NextResponse.json({
+              response: `❌ **No Sessions Found**: No ILT sessions found for the specified course.
+
+The user may not be enrolled in any ILT sessions for this course.`,
+              success: false,
+              timestamp: new Date().toISOString()
+            });
+          }
+        }
+      } catch (sessionError) {
+        return NextResponse.json({
+          response: `❌ **Session Not Found**: ${sessionError instanceof Error ? sessionError.message : 'Unknown error'}`,
+          success: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      // Unenroll user from session
+      try {
+        const unenrollmentResult = await api.unenrollUserFromILTSession(
+          user.user_id || user.id,
+          session.id || session.session_id
+        );
+
+        return NextResponse.json({
+          response: `✅ **ILT Session Unenrollment Successful**
+
+👤 **User**: ${user.fullname} (${email})
+🎓 **Session**: ${session.name || session.session_name}
+🆔 **Session ID**: ${session.id || session.session_id}
+📚 **Course**: ${session.course_name || `Course ${session.course_id}`}
+📅 **Unenrolled**: ${new Date().toLocaleDateString()}
+
+**✅ Confirmation**: The user has been successfully removed from the ILT session.
+
+**💡 Next Steps**:
+• User will no longer receive session notifications
+• Attendance records will be preserved but user cannot attend
+• User can be re-enrolled later if needed
+• "List participants in session ${session.id || session.session_id}" to verify removal`,
+          success: true,
+          data: {
+            user: { id: user.user_id || user.id, fullname: user.fullname, email: user.email },
+            session: session,
+            unenrollmentResult: unenrollmentResult,
+            operation: 'ilt_unenroll'
+          },
+          timestamp: new Date().toISOString()
+        });
+
+      } catch (unenrollError) {
+        console.error('❌ ILT session unenrollment failed:', unenrollError);
+        
+        // Provide specific error guidance
+        let errorGuidance = '';
+        const errorMessage = unenrollError instanceof Error ? unenrollError.message : 'Unknown error';
+        
+        if (errorMessage.includes('not enrolled') || errorMessage.includes('enrollment not found')) {
+          errorGuidance = `**💡 Possible Reason**: The user may not be currently enrolled in this ILT session.
+
+**🔍 Check Enrollment Status**:
+• "List participants in session ${session.id || session.session_id}"
+• "Check ILT enrollments for ${email}"`;
+        } else if (errorMessage.includes('permission') || errorMessage.includes('unauthorized')) {
+          errorGuidance = `**💡 Possible Reason**: Insufficient permissions to unenroll users from ILT sessions.
+
+**🔧 Solutions**:
+• Contact your Docebo administrator
+• Verify your API user has ILT session management permissions`;
+        } else {
+          errorGuidance = `**💡 Alternative Approaches**:
+• Try using the session ID instead: "Unenroll ${email} from ILT session ${session.id || session.session_id}"
+• Check if user is actually enrolled: "List participants in session ${session.id || session.session_id}"
+• Contact support if the issue persists`;
+        }
+        
+        return NextResponse.json({
+          response: `❌ **ILT Session Unenrollment Failed**: ${errorMessage}
+
+👤 **User**: ${user.fullname} (${email})
+🎓 **Session**: ${session.name || session.session_name} (ID: ${session.id || session.session_id})
+
+${errorGuidance}`,
+          success: false,
+          data: {
+            user: { id: user.user_id || user.id, fullname: user.fullname, email: user.email },
+            session: session,
+            error: errorMessage,
+            operation: 'ilt_unenroll_failed'
+          },
+          timestamp: new Date().toISOString()
+        });
+      }
+
+    } catch (error) {
+      console.error('❌ ILT session unenrollment handler error:', error);
+      
+      return NextResponse.json({
+        response: `❌ **ILT Session Unenrollment System Error**: ${error instanceof Error ? error.message : 'Unknown error'}
+
+**🔧 Troubleshooting Steps**:
+1. **Verify Input**: Check that both email and session information are correct
+2. **Try Session ID**: Use the numeric session ID for more reliable matching
+3. **Check Enrollment**: Verify the user is actually enrolled in the ILT session
+4. **Simplify Request**: Try with a simpler session name or ID
+
+**💡 Examples of Working Commands**:
+• "Unenroll user@email.com from ILT session 123"
+• "Remove user@email.com from session 'Exact Session Name'"`,
+        success: false,
+        timestamp: new Date().toISOString()
+      });
+    }
+  }
+
   // Private helper methods
   private static async processBulkILTEnrollment(emails: string[], session: any, api: DoceboAPI): Promise<any> {
     const result = {
@@ -523,190 +731,7 @@ Try creating a session first:
       timestamp: new Date().toISOString()
     });
   }
-// Unenroll User from ILT Session
-static async handleUnenrollUserFromILTSession(entities: any, api: DoceboAPI): Promise<NextResponse> {
-  try {
-    const { email, sessionId, sessionName, courseId, courseName } = entities;
-    
-    if (!email) {
-      return NextResponse.json({
-        response: `❌ **Missing User Email**: I need a user email for ILT session unenrollment.
 
-**Examples**:
-• "Unenroll john@company.com from ILT session 123"
-• "Remove sarah@company.com from session 'Python Workshop'"
-• "Drop mike@company.com from session in course 2420"`,
-        success: false,
-        timestamp: new Date().toISOString()
-      });
-    }
-
-    if (!sessionId && !sessionName && !courseId && !courseName) {
-      return NextResponse.json({
-        response: `❌ **Missing Session Information**: I need session ID, session name, or course information.
-
-**Examples**:
-• "Unenroll user@email.com from ILT session 123" (by session ID)
-• "Remove user@email.com from session 'Python Workshop'" (by session name)
-• "Drop user@email.com from ILT session for course 2420" (by course)`,
-        success: false,
-        timestamp: new Date().toISOString()
-      });
-    }
-
-    console.log(`🎯 ILT UNENROLL: Unenrolling ${email} from session`);
-
-    // Find user
-    const user = await api.findUserByEmail(email);
-    if (!user) {
-      return NextResponse.json({
-        response: `❌ **User Not Found**: ${email}
-
-Please verify the email address is correct and the user exists in Docebo.`,
-        success: false,
-        timestamp: new Date().toISOString()
-      });
-    }
-
-    // Find session
-    let session;
-    try {
-      if (sessionId) {
-        session = await api.getILTSession(sessionId);
-      } else if (sessionName) {
-        session = await api.findILTSessionByName(sessionName);
-      } else if (courseId || courseName) {
-        const sessions = await api.getILTSessionsForCourse(courseId || courseName);
-        if (sessions.length === 1) {
-          session = sessions[0];
-        } else if (sessions.length > 1) {
-          const sessionList = sessions.map((s: any) => `"${s.name}" (ID: ${s.id})`).join(', ');
-          return NextResponse.json({
-            response: `❌ **Multiple Sessions Found**: Found ${sessions.length} sessions for this course.
-
-Please specify which session: ${sessionList}
-
-**Examples**:
-• "Unenroll ${email} from ILT session ${sessions[0].id}"
-• "Remove ${email} from session '${sessions[0].name}'"`,
-            success: false,
-            timestamp: new Date().toISOString()
-          });
-        } else {
-          return NextResponse.json({
-            response: `❌ **No Sessions Found**: No ILT sessions found for the specified course.
-
-The user may not be enrolled in any ILT sessions for this course.`,
-            success: false,
-            timestamp: new Date().toISOString()
-          });
-        }
-      }
-    } catch (sessionError) {
-      return NextResponse.json({
-        response: `❌ **Session Not Found**: ${sessionError instanceof Error ? sessionError.message : 'Unknown error'}`,
-        success: false,
-        timestamp: new Date().toISOString()
-      });
-    }
-
-    // Unenroll user from session
-    try {
-      const unenrollmentResult = await api.unenrollUserFromILTSession(
-        user.user_id || user.id,
-        session.id || session.session_id
-      );
-
-      return NextResponse.json({
-        response: `✅ **ILT Session Unenrollment Successful**
-
-👤 **User**: ${user.fullname} (${email})
-🎓 **Session**: ${session.name || session.session_name}
-🆔 **Session ID**: ${session.id || session.session_id}
-📚 **Course**: ${session.course_name || `Course ${session.course_id}`}
-📅 **Unenrolled**: ${new Date().toLocaleDateString()}
-
-**✅ Confirmation**: The user has been successfully removed from the ILT session.
-
-**💡 Next Steps**:
-• User will no longer receive session notifications
-• Attendance records will be preserved but user cannot attend
-• User can be re-enrolled later if needed
-• "List participants in session ${session.id || session.session_id}" to verify removal`,
-        success: true,
-        data: {
-          user: { id: user.user_id || user.id, fullname: user.fullname, email: user.email },
-          session: session,
-          unenrollmentResult: unenrollmentResult,
-          operation: 'ilt_unenroll'
-        },
-        timestamp: new Date().toISOString()
-      });
-
-    } catch (unenrollError) {
-      console.error('❌ ILT session unenrollment failed:', unenrollError);
-      
-      // Provide specific error guidance
-      let errorGuidance = '';
-      const errorMessage = unenrollError instanceof Error ? unenrollError.message : 'Unknown error';
-      
-      if (errorMessage.includes('not enrolled') || errorMessage.includes('enrollment not found')) {
-        errorGuidance = `**💡 Possible Reason**: The user may not be currently enrolled in this ILT session.
-
-**🔍 Check Enrollment Status**:
-• "List participants in session ${session.id || session.session_id}"
-• "Check ILT enrollments for ${email}"`;
-      } else if (errorMessage.includes('permission') || errorMessage.includes('unauthorized')) {
-        errorGuidance = `**💡 Possible Reason**: Insufficient permissions to unenroll users from ILT sessions.
-
-**🔧 Solutions**:
-• Contact your Docebo administrator
-• Verify your API user has ILT session management permissions`;
-      } else {
-        errorGuidance = `**💡 Alternative Approaches**:
-• Try using the session ID instead: "Unenroll ${email} from ILT session ${session.id || session.session_id}"
-• Check if user is actually enrolled: "List participants in session ${session.id || session.session_id}"
-• Contact support if the issue persists`;
-      }
-      
-      return NextResponse.json({
-        response: `❌ **ILT Session Unenrollment Failed**: ${errorMessage}
-
-👤 **User**: ${user.fullname} (${email})
-🎓 **Session**: ${session.name || session.session_name} (ID: ${session.id || session.session_id})
-
-${errorGuidance}`,
-        success: false,
-        data: {
-          user: { id: user.user_id || user.id, fullname: user.fullname, email: user.email },
-          session: session,
-          error: errorMessage,
-          operation: 'ilt_unenroll_failed'
-        },
-        timestamp: new Date().toISOString()
-      });
-    }
-
-  } catch (error) {
-    console.error('❌ ILT session unenrollment handler error:', error);
-    
-    return NextResponse.json({
-      response: `❌ **ILT Session Unenrollment System Error**: ${error instanceof Error ? error.message : 'Unknown error'}
-
-**🔧 Troubleshooting Steps**:
-1. **Verify Input**: Check that both email and session information are correct
-2. **Try Session ID**: Use the numeric session ID for more reliable matching
-3. **Check Enrollment**: Verify the user is actually enrolled in the ILT session
-4. **Simplify Request**: Try with a simpler session name or ID
-
-**💡 Examples of Working Commands**:
-• "Unenroll user@email.com from ILT session 123"
-• "Remove user@email.com from session 'Exact Session Name'"`,
-      success: false,
-      timestamp: new Date().toISOString()
-    });
-  }
-}
   private static formatAttendanceResponse(result: any, session: any, attendanceStatus: string, completionStatus: string): NextResponse {
     let responseMessage = `📊 **Session Attendance Marking Results**
 
