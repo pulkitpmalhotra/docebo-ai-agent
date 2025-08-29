@@ -1572,7 +1572,22 @@ private static cleanDescription(description: string): string {
   
   return cleanWhitespace || 'No description available';
 }
-
+private static getDoceboDomainFromConfig(api: DoceboAPI): string {
+  try {
+    // Access config through the public interface
+    const apiAsAny = api as any;
+    
+    if (apiAsAny.config && apiAsAny.config.domain) {
+      return apiAsAny.config.domain;
+    }
+    
+    // Fallback to placeholder
+    return 'your-docebo-domain.docebosaas.com';
+  } catch (error) {
+    console.log('Could not determine Docebo domain, using placeholder');
+    return 'your-docebo-domain.docebosaas.com';
+  }
+}
 private static extractCustomFields(details: any): { [key: string]: any } {
   const customFields: { [key: string]: any } = {};
   
@@ -2388,7 +2403,7 @@ static async handleLearningPlanInfo(entities: any, api: DoceboAPI): Promise<Next
     }
     
     const displayName = api.getLearningPlanName(learningPlanDetails);
-    const doceboDomain = api.baseUrl.replace('https://', '').replace('http://', '');
+    const doceboDomain = this.getDoceboDomainFromConfig(api);
     
     console.log(`📊 LP DETAILS FOUND:`, Object.keys(learningPlanDetails));
     
