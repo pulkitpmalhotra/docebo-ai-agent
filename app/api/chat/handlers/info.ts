@@ -1407,7 +1407,15 @@ private static formatCourseType(courseType: string): string {
   
   return typeMap[courseType.toLowerCase()] || `📋 ${courseType.charAt(0).toUpperCase() + courseType.slice(1)}`;
 }
-
+private static getDoceboDomain(api: DoceboAPI): string {
+  try {
+    // Extract domain from the API baseUrl
+    const baseUrl = api.baseUrl || '';
+    return baseUrl.replace('https://', '').replace('http://', '').replace('/api', '');
+  } catch (error) {
+    return 'your-docebo-domain.docebosaas.com';
+  }
+}
 private static determineCourseStatus(courseDetails: any): string {
   if (courseDetails.is_published === true || courseDetails.published === true) {
     return '🟢 Published';
@@ -2380,6 +2388,8 @@ static async handleLearningPlanInfo(entities: any, api: DoceboAPI): Promise<Next
     }
     
     const displayName = api.getLearningPlanName(learningPlanDetails);
+    const doceboDomain = api.baseUrl.replace('https://', '').replace('http://', '');
+    
     console.log(`📊 LP DETAILS FOUND:`, Object.keys(learningPlanDetails));
     
     // Build comprehensive learning plan information response
@@ -2435,8 +2445,8 @@ static async handleLearningPlanInfo(entities: any, api: DoceboAPI): Promise<Next
       responseMessage += `• **Assigned Channels**: ${learningPlanDetails.assigned_channels_count}\n`;
     }
 
-    // Timeline Information
-    responseMessage += `\n**📅 Timeline:**\n`;
+    // MERGED: Timeline & Administration Section
+    responseMessage += `\n**📅 Timeline & Administration:**\n`;
     
     if (learningPlanDetails.created_on || learningPlanDetails.creation_date) {
       const creationDate = this.formatDate(learningPlanDetails.created_on || learningPlanDetails.creation_date);
@@ -2446,6 +2456,14 @@ static async handleLearningPlanInfo(entities: any, api: DoceboAPI): Promise<Next
     if (learningPlanDetails.updated_on || learningPlanDetails.last_update) {
       const updateDate = this.formatDate(learningPlanDetails.updated_on || learningPlanDetails.last_update);
       responseMessage += `• **Last Updated**: ${updateDate}\n`;
+    }
+
+    if (learningPlanDetails.created_by && learningPlanDetails.created_by.fullname) {
+      responseMessage += `• **Created by**: ${learningPlanDetails.created_by.fullname}\n`;
+    }
+
+    if (learningPlanDetails.updated_by && learningPlanDetails.updated_by.fullname) {
+      responseMessage += `• **Updated by**: ${learningPlanDetails.updated_by.fullname}\n`;
     }
 
     // Completion and Duration Settings
@@ -2516,35 +2534,39 @@ static async handleLearningPlanInfo(entities: any, api: DoceboAPI): Promise<Next
       responseMessage += `\n**🏆 Certificate**: Not configured\n`;
     }
 
-    // Administration
-    responseMessage += `\n**👨‍💼 Administration:**\n`;
-    
-    if (learningPlanDetails.created_by && learningPlanDetails.created_by.fullname) {
-      responseMessage += `• **Created by**: ${learningPlanDetails.created_by.fullname}\n`;
-    }
-
-    if (learningPlanDetails.updated_by && learningPlanDetails.updated_by.fullname) {
-      responseMessage += `• **Updated by**: ${learningPlanDetails.updated_by.fullname}\n`;
-    }
-
     // Media and Assets
     if (learningPlanDetails.thumbnail_url) {
       responseMessage += `\n**📸 Media:**\n`;
       responseMessage += `• **Has Thumbnail**: Yes\n`;
     }
 
-    // Access and Deep Links
-    if (learningPlanDetails.deeplink && learningPlanDetails.deeplink.hash) {
-      responseMessage += `\n**🔗 Access:**\n`;
-      responseMessage += `• **Deep Link Available**: Yes\n`;
-      responseMessage += `• **Deep Link Hash**: ${learningPlanDetails.deeplink.hash}\n`;
+    // NEW: Enhanced Access Section with Enrollment and Admin URLs
+    responseMessage += `\n**🔗 Access & Management:**\n`;
+    
+    // Generate enrollment link
+    if (finalLpId) {
+      // Create URL-friendly learning plan name (replace spaces with hyphens, remove special chars)
+      const urlFriendlyName = displayName
+        .toLowerCase()
+        .replace(/[^a-z0-9\s-]/g, '')
+        .replace(/\s+/g, '-')
+        .replace(/-+/g, '-')
+        .trim();
+      
+      // Get hash from deeplink if available, otherwise use a default
+      const hash = learningPlanDetails.deeplink?.hash || 'enrollment-link';
+      
+      // Generate user ID (this would typically come from the current user context)
+      // For now, we'll use a placeholder
+      const userId = 'USER_ID'; // This should be replaced with actual user ID
+      
+      const enrollmentUrl = `https://${doceboDomain}/learn/lp/${finalLpId}/${urlFriendlyName}?generated_by=${userId}&hash=${hash}`;
+      responseMessage += `• **Enrollment Link**: ${enrollmentUrl}\n`;
+      
+      // Generate admin URL
+      const adminUrl = `https://${doceboDomain}/learningplan/manage/learning-plans/${finalLpId}/properties#general-settings`;
+      responseMessage += `• **Admin URL**: ${adminUrl}\n`;
     }
-
-    // Technical Information
-    responseMessage += `\n**🔧 Technical Details:**\n`;
-    responseMessage += `• **Search Method**: ${searchMethod}\n`;
-    responseMessage += `• **API Endpoint Used**: Multiple endpoints for comprehensive data\n`;
-    responseMessage += `• **Fields Retrieved**: ${Object.keys(learningPlanDetails).length}\n`;
 
     // Additional Custom Fields (if any)
     const customFields = this.extractCustomFields(learningPlanDetails);
@@ -2565,7 +2587,12 @@ static async handleLearningPlanInfo(entities: any, api: DoceboAPI): Promise<Next
         status: status,
         enrollmentCount: enrollmentCount,
         searchMethod: searchMethod,
-        fieldsFound: Object.keys(learningPlanDetails).length
+        fieldsFound: Object.keys(learningPlanDetails).length,
+        // Include URLs in response data for programmatic access
+        urls: {
+          enrollment: finalLpId ? `https://${doceboDomain}/learn/lp/${finalLpId}/${displayName.toLowerCase().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-')}?generated_by=USER_ID&hash=${learningPlanDetails.deeplink?.hash || 'enrollment-link'}` : null,
+          admin: finalLpId ? `https://${doceboDomain}/learningplan/manage/learning-plans/${finalLpId}/properties#general-settings` : null
+        }
       },
       timestamp: new Date().toISOString()
     });
@@ -2575,11 +2602,6 @@ static async handleLearningPlanInfo(entities: any, api: DoceboAPI): Promise<Next
     
     return NextResponse.json({
       response: `❌ **Learning Plan Information Failed**: ${error instanceof Error ? error.message : 'Unknown error'}
-
-**🔍 Search Methods Used:**
-• Direct ID lookup via multiple endpoints
-• Comprehensive search with fallback filtering
-• Additional detail enhancement when possible
 
 **💡 Common Issues:**
 • Learning plan name might not exist or be misspelled
