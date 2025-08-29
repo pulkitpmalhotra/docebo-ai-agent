@@ -709,7 +709,77 @@ This user is enrolled but has not yet started this ${isLearningPlan ? 'learning 
       timestamp: new Date().toISOString()
     });
   }
+static async handleDoceboHelp(entities: any, api: DoceboAPI): Promise<NextResponse> {
+  try {
+    const { query } = entities;
+    
+    let responseMessage = `🆘 **Docebo Help**
 
+I can help you with various Docebo administration tasks:
+
+**📚 Enrollment Management**:
+• "Enroll john@company.com in course Python Programming"
+• "Enroll sarah@company.com in learning plan Data Science"
+• "Check if user@company.com is enrolled in learning plan 274"
+
+**🔍 Search Functions**:
+• "Find user mike@company.com" - Get user details
+• "Find Python courses" - Search for courses
+• "Find Python learning plans" - Search learning plans
+
+**📊 Information & Status**:
+• "User enrollments mike@company.com" - See all enrollments
+• "Course info Python Programming" - Get course details
+• "Learning plan info Data Science" - Get learning plan details
+
+**🎓 ILT Session Management**:
+• "Create ILT session for course Python Programming on 2025-02-15"
+• "Enroll john@company.com in ILT session 123"
+• "Mark sarah@company.com as attended in session 'Python Workshop'"
+
+**🚀 Bulk Operations**:
+• "Enroll john@co.com,sarah@co.com,mike@co.com in course Python Programming"
+• "Bulk enroll sales team in learning plan Leadership Development"
+• "Remove marketing team from course Old Training"`;
+
+    if (query && query.length > 10) {
+      responseMessage += `\n\n**Your Query**: "${query}"
+
+For specific help with "${query}", try more specific questions.`;
+    }
+
+    responseMessage += `\n\n**🌐 Additional Resources**:
+• [Docebo Help Center](https://help.docebo.com)
+• [API Documentation](https://help.docebo.com/hc/en-us/sections/360004313314-API)
+
+**💡 Tips**:
+• Use exact email addresses for user operations
+• Learning plan IDs (like 274) are supported
+• All operations provide detailed feedback and error messages`;
+
+    return NextResponse.json({
+      response: responseMessage,
+      success: true,
+      helpRequest: true,
+      data: {
+        query: query,
+        helpType: 'docebo_general'
+      },
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ Docebo help error:', error);
+    
+    return NextResponse.json({
+      response: `❌ **Help System Error**: ${error instanceof Error ? error.message : 'Unknown error'}
+
+Please try asking a specific question about Docebo functionality.`,
+      success: false,
+      timestamp: new Date().toISOString()
+    });
+  }
+}
 // REPLACE the existing methods in app/api/chat/handlers/info.ts with these optimized versions
 
 static async handleUserSummary(entities: any, api: DoceboAPI): Promise<NextResponse> {
