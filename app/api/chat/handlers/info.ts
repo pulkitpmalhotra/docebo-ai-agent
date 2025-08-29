@@ -1407,15 +1407,6 @@ private static formatCourseType(courseType: string): string {
   
   return typeMap[courseType.toLowerCase()] || `📋 ${courseType.charAt(0).toUpperCase() + courseType.slice(1)}`;
 }
-private static getDoceboDomain(api: DoceboAPI): string {
-  try {
-    // Extract domain from the API baseUrl
-    const baseUrl = api.baseUrl || '';
-    return baseUrl.replace('https://', '').replace('http://', '').replace('/api', '');
-  } catch (error) {
-    return 'your-docebo-domain.docebosaas.com';
-  }
-}
 private static determineCourseStatus(courseDetails: any): string {
   if (courseDetails.is_published === true || courseDetails.published === true) {
     return '🟢 Published';
