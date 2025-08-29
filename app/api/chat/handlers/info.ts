@@ -1324,7 +1324,205 @@ private static async getOptimizedEnrollmentPages(userId: string, api: DoceboAPI,
     hasMorePages: hasMorePages
   };
 }
+// Helper Methods for Enhanced Info Handlers
 
+private static formatCourseType(courseType: string): string {
+  const typeMap: { [key: string]: string } = {
+    'elearning': '💻 E-Learning',
+    'classroom': '🏫 Classroom',
+    'webinar': '🎥 Webinar',
+    'learning_object': '📚 Learning Object',
+    'external_training': '🌐 External Training'
+  };
+  
+  return typeMap[courseType.toLowerCase()] || `📋 ${courseType.charAt(0).toUpperCase() + courseType.slice(1)}`;
+}
+
+private static determineCourseStatus(courseDetails: any): string {
+  if (courseDetails.is_published === true || courseDetails.published === true) {
+    return '🟢 Published';
+  } else if (courseDetails.is_published === false || courseDetails.published === false) {
+    return '🟡 Unpublished';
+  } else if (courseDetails.course_status) {
+    const status = courseDetails.course_status;
+    switch(status.toLowerCase()) {
+      case 'published': return '🟢 Published';
+      case 'unpublished': return '🟡 Unpublished';
+      case 'draft': return '📝 Draft';
+      case 'archived': return '📦 Archived';
+      default: return `📋 ${status.charAt(0).toUpperCase() + status.slice(1)}`;
+    }
+  }
+  return '❓ Unknown';
+}
+
+private static determineLearningPlanStatus(lpDetails: any): string {
+  if (lpDetails.is_published === true) {
+    return '🟢 Published';
+  } else if (lpDetails.is_published === false) {
+    return '🟡 Draft';
+  } else if (lpDetails.is_publishable === true && lpDetails.is_published !== false) {
+    return '✅ Ready to Publish';
+  } else if (lpDetails.is_publishable === false) {
+    return '❌ Not Publishable';
+  } else if (lpDetails.status) {
+    return `📋 ${lpDetails.status.charAt(0).toUpperCase() + lpDetails.status.slice(1)}`;
+  }
+  return '❓ Unknown';
+}
+
+private static getEnrollmentCount(courseDetails: any): string {
+  const possibleFields = [
+    'enrolled_count',
+    'enrolled_users_count', 
+    'enrolled_users',
+    'subscription_count',
+    'total_enrollments',
+    'enrollment_count'
+  ];
+  
+  for (const field of possibleFields) {
+    if (courseDetails[field] !== undefined) {
+      return courseDetails[field].toString();
+    }
+  }
+  
+  return 'Not available';
+}
+
+private static getLearningPlanEnrollmentCount(lpDetails: any): string {
+  const possibleFields = [
+    'assigned_enrollments_count',
+    'enrolled_users_count',
+    'enrolled_users',
+    'total_users',
+    'user_count',
+    'enrollment_count'
+  ];
+  
+  for (const field of possibleFields) {
+    if (lpDetails[field] !== undefined) {
+      return `${lpDetails[field]} users`;
+    }
+  }
+  
+  return 'Not available';
+}
+
+private static getLearningPlanCourseInfo(lpDetails: any): { total: number; mandatory: number; optional: number } {
+  const result = { total: 0, mandatory: 0, optional: 0 };
+  
+  // Try different field combinations
+  if (lpDetails.assigned_courses_count !== undefined) {
+    result.total = lpDetails.assigned_courses_count;
+  } else if (lpDetails.courses_count !== undefined) {
+    result.total = lpDetails.courses_count;
+  } else if (lpDetails.total_courses !== undefined) {
+    result.total = lpDetails.total_courses;
+  }
+  
+  if (lpDetails.mandatory_courses_count !== undefined) {
+    result.mandatory = lpDetails.mandatory_courses_count;
+  }
+  
+  if (lpDetails.optional_courses_count !== undefined) {
+    result.optional = lpDetails.optional_courses_count;
+  }
+  
+  return result;
+}
+
+private static formatDate(dateValue: any): string {
+  if (!dateValue) return 'Not available';
+  
+  try {
+    let date: Date;
+    
+    if (typeof dateValue === 'string') {
+      date = new Date(dateValue);
+    } else if (typeof dateValue === 'number') {
+      // Handle Unix timestamps (seconds or milliseconds)
+      date = dateValue > 1000000000000 
+        ? new Date(dateValue) 
+        : new Date(dateValue * 1000);
+    } else {
+      return 'Invalid date format';
+    }
+    
+    if (isNaN(date.getTime())) {
+      return 'Invalid date';
+    }
+    
+    return date.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  } catch (error) {
+    return `Parse error: ${dateValue}`;
+  }
+}
+
+private static formatDuration(seconds: number): string {
+  if (seconds < 60) {
+    return `${seconds} seconds`;
+  } else if (seconds < 3600) {
+    const minutes = Math.floor(seconds / 60);
+    return `${minutes} minutes`;
+  } else {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    return minutes > 0 ? `${hours}h ${minutes}m` : `${hours} hours`;
+  }
+}
+
+private static cleanDescription(description: string): string {
+  if (!description) return 'No description available';
+  
+  // Remove HTML tags
+  const cleanHtml = description.replace(/<[^>]*>/g, ' ');
+  
+  // Clean up whitespace
+  const cleanWhitespace = cleanHtml.replace(/\s+/g, ' ').trim();
+  
+  // Truncate if too long
+  if (cleanWhitespace.length > 500) {
+    return cleanWhitespace.substring(0, 500) + '...';
+  }
+  
+  return cleanWhitespace || 'No description available';
+}
+
+private static extractCustomFields(details: any): { [key: string]: any } {
+  const customFields: { [key: string]: any } = {};
+  
+  // Look for field_X patterns and other custom fields
+  Object.keys(details).forEach(key => {
+    if (key.match(/^field_\d+$/) && details[key] !== null && details[key] !== '') {
+      customFields[`Custom Field ${key.replace('field_', '')}`] = details[key];
+    }
+    
+    // Additional field patterns that might be custom
+    const customPatterns = [
+      /^additional_field_/,
+      /^custom_/,
+      /^extra_/,
+      /^metadata_/
+    ];
+    
+    if (customPatterns.some(pattern => pattern.test(key)) && 
+        details[key] !== null && 
+        details[key] !== '') {
+      const cleanKey = key.replace(/_/g, ' ')
+                          .replace(/\b\w/g, l => l.toUpperCase());
+      customFields[cleanKey] = details[key];
+    }
+  });
+  
+  return customFields;
+}
 // OPTIMIZED: Get recent enrollments with sorting
 private static async getOptimizedRecentEnrollments(userId: string, api: DoceboAPI, limit: number): Promise<any[]> {
   console.log(`📅 OPTIMIZED: Getting recent enrollments for user: ${userId}, limit: ${limit}`);
@@ -2317,22 +2515,12 @@ static async handleLearningPlanInfo(entities: any, api: DoceboAPI): Promise<Next
 • Learning plan name might not exist or be misspelled
 • Learning plan might be in draft status or restricted
 • Try using exact learning plan name from search results
-• Use learning plan ID for guaranteed exact matching`
-
-      if (query && query.length > 10) {
-        responseMessage += `\n\n**Your Query**: "${query}"
-
-For specific help with "${query}", try more specific questions.`;
-      }
-
-      responseMessage += `\n\n**🌐 Additional Resources**:
-• [Docebo Help Center](https://help.docebo.com)
-• [API Documentation](https://help.docebo.com/hc/en-us/sections/360004313314-API)
+• Use learning plan ID for guaranteed exact matching
 
 **📋 Supported Formats:**
-• "Course info Python Programming" (by name)
-• "Course info 12345" (by ID)
-• "Course details Excel Training" (alternative syntax)`,
+• "Learning plan info Data Science Program" (by name)
+• "LP info 274" (by ID)
+• "Learning plan details Leadership Development" (alternative syntax)`,
       success: false,
       timestamp: new Date().toISOString()
     });
