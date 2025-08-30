@@ -8,4 +8,14 @@ export interface ILTSession {
   status: string;
   createdAt: Date;
   updatedAt: Date;
+  instructors: string[];
+  location: string;
+  capacity: number;
+  enrolledCount: number;
+  waitlistCount: number;
+  minEnrollments: number;
+  maxEnrollments: number;
+  enrollmentDeadline: Date;
+  cancellationDeadline: Date;
+  // Add more fields as needed
 }
