@@ -9,11 +9,17 @@ export class BulkEnrollmentService {
 
   async enrollUsersInCourse(userIds: number[], courseId: number) {
     const enrollmentPromises = userIds.map(userId =>
-      this.enrollmentService.enrollUserInCourse(userId, courseId)
+      this.enrollmentService.enrollUser(userId, courseId)
     );
 
     return Promise.all(enrollmentPromises);
   }
 
-  // Add more bulk enrollment-related methods as needed
+  async unenrollUsersFromCourse(userIds: number[], courseId: number) {
+    const unenrollmentPromises = userIds.map(userId =>
+      this.enrollmentService.unenrollUser(userId, courseId)
+    );
+
+    return Promise.all(unenrollmentPromises);
+  }
 }
