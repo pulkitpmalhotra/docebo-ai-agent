@@ -1,5 +1,4 @@
 import { UsersAPI } from '../docebo/UsersAPI';
-import { User } from '../../../domain/entities/User';
 
 export class UserService {
   private usersAPI: UsersAPI;
@@ -8,25 +7,23 @@ export class UserService {
     this.usersAPI = new UsersAPI();
   }
 
-  async getUser(userId: number) {
-    return this.usersAPI.getUser(userId);
+  async getUsers(params: any) {
+    return this.usersAPI.getUsers(params);
   }
 
-  async searchUsers(query: string) {
-    return this.usersAPI.searchUsers(query);
+  async getUser(id: number) {
+    return this.usersAPI.getUser(id);
   }
 
-  async createUser(user: Partial<User>) {
-    // Assuming there's an API endpoint for creating users
-    // return this.usersAPI.createUser(user);
-    throw new Error('Not implemented');
+  async createUser(data: any) {
+    return this.usersAPI.createUser(data);
   }
 
-  async updateUser(userId: number, updatedUser: Partial<User>) {
-    // Assuming there's an API endpoint for updating users
-    // return this.usersAPI.updateUser(userId, updatedUser);
-    throw new Error('Not implemented');
+  async updateUser(id: number, data: any) {
+    return this.usersAPI.updateUser(id, data);
   }
 
-  // Add more user-related methods as needed
+  async deleteUser(id: number) {
+    return this.usersAPI.deleteUser(id);
+  }
 }
